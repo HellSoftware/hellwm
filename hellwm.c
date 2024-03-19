@@ -20,9 +20,11 @@
 #include <wlr/types/wlr_scene.h>
 #include <wlr/types/wlr_seat.h>
 #include <wlr/types/wlr_subcompositor.h>
+#include <wlr/types/wlr_layer_shell_v1.h>
 #include <wlr/types/wlr_xcursor_manager.h>
 #include <wlr/types/wlr_xdg_shell.h>
 #include <wlr/util/log.h>
+#include <wlr/xwayland.h>
 #include <xkbcommon/xkbcommon-keysyms.h>
 #include <xkbcommon/xkbcommon.h>
 
@@ -192,12 +194,11 @@ static bool handle_keybinding(struct hellwm_server *server, xkb_keysym_t sym) {
 		break;
 	case XKB_KEY_Q:
 		//this should kill window XD
-
 		break;
 	case XKB_KEY_Escape:
 		wl_display_terminate(server->wl_display);
 		break;
-	case XKB_KEY_F1:
+	case XKB_KEY_F:
 		/* Cycle to the next toplevel */
 		if (wl_list_length(&server->toplevels) < 2) {
 			break;
