@@ -47,6 +47,8 @@ enum hellwm_cursor_mode {
 	HELLWM_CURSOR_RESIZE,
 };
 
+char *cmds_autostart = {};
+
 struct hellwm_server {
 	struct wl_display *wl_display;
 	struct wlr_backend *backend;
@@ -59,6 +61,8 @@ struct hellwm_server {
 	struct wl_listener new_xdg_toplevel;
 	struct wl_listener new_xdg_popup;
 	struct wl_list toplevels;
+
+	struct wlr_layer_shell_v1 *layer_shell;
 
 	struct wlr_cursor *cursor;
 	struct wlr_xcursor_manager *cursor_mgr;
@@ -194,7 +198,7 @@ static bool handle_keybinding(struct hellwm_server *server, xkb_keysym_t sym) {
 	 */
 	switch (sym) {
 	case XKB_KEY_Return:
-		exec_cmd("kitty");
+		exec_cmd("alacritty");
 		break;
 	case XKB_KEY_Q:
 		//this should kill window XD
@@ -899,30 +903,19 @@ static void server_new_xdg_popup(struct wl_listener *listener, void *data) {
 	wl_signal_add(&xdg_popup->events.destroy, &popup->destroy);
 }
 
-int main(int argc, char *argv[]) {
-	wlr_log_init(WLR_DEBUG, NULL);
-	char *startup_cmd = "kitty";
+struct hellwm_server server = {0};
 
-	int c;
-	while ((c = getopt(argc, argv, "s:h")) != -1) {
-		switch (c) {
-		case 's':
-			startup_cmd = optarg;
-			break;
-		default:
-			printf("Usage: %s [-s startup command]\n", argv[0]);
-			return 0;
-		}
-	}
-	if (optind < argc) {
-		printf("Usage: %s [-s startup command]\n", argv[0]);
-		return 0;
-	}
+void setup(void)
+{
+	//	FUTURE SETUP OF EVERYTING
+	
+	server.wl_display = wl_display_create();
+	
+	server.xdg_shell = wlr_xdg_shell_create(server.wl_display, 6);
+	server.layer_shell = wlr_layer_shell_v1_create(server.wl_display, 3);
 
-	struct hellwm_server server = {0};
 	/* The Wayland display is managed by libwayland. It handles accepting
 	 * clients from the Unix socket, manging Wayland globals, and so on. */
-	server.wl_display = wl_display_create();
 	/* The backend is a wlroots feature which abstracts the underlying input and
 	 * output hardware. The autocreate option will choose the most suitable
 	 * backend based on the current environment, such as opening an X11 window
@@ -930,9 +923,9 @@ int main(int argc, char *argv[]) {
 	server.backend = wlr_backend_autocreate(wl_display_get_event_loop(server.wl_display), NULL);
 	if (server.backend == NULL) {
 		wlr_log(WLR_ERROR, "failed to create wlr_backend");
-		return 1;
+		exit(EXIT_FAILURE);
 	}
-
+	
 	/* Autocreates a renderer, either Pixman, GLES2 or Vulkan for us. The user
 	 * can also specify a renderer using the WLR_RENDERER env var.
 	 * The renderer is responsible for defining the various pixel formats it
@@ -940,7 +933,7 @@ int main(int argc, char *argv[]) {
 	server.renderer = wlr_renderer_autocreate(server.backend);
 	if (server.renderer == NULL) {
 		wlr_log(WLR_ERROR, "failed to create wlr_renderer");
-		return 1;
+		exit(EXIT_FAILURE);
 	}
 
 	wlr_renderer_init_wl_display(server.renderer, server.wl_display);
@@ -953,7 +946,7 @@ int main(int argc, char *argv[]) {
 		server.renderer);
 	if (server.allocator == NULL) {
 		wlr_log(WLR_ERROR, "failed to create wlr_allocator");
-		return 1;
+		exit(EXIT_FAILURE);
 	}
 
 	/* This creates some hands-off wlroots interfaces. The compositor is
@@ -977,6 +970,7 @@ int main(int argc, char *argv[]) {
 	server.new_output.notify = server_new_output;
 	wl_signal_add(&server.backend->events.new_output, &server.new_output);
 
+
 	/* Create a scene graph. This is a wlroots abstraction that handles all
 	 * rendering and damage tracking. All the compositor author needs to do
 	 * is add things that should be rendered to the scene graph at the proper
@@ -986,7 +980,7 @@ int main(int argc, char *argv[]) {
 	server.scene = wlr_scene_create();
 	server.scene_layout = wlr_scene_attach_output_layout(server.scene, server.output_layout);
 
-	/* Set up xdg-shell version 3. The xdg-shell is a Wayland protocol which is
+	 /* Set up xdg-shell version 3. The xdg-shell is a Wayland protocol which is
 	 * used for application windows. For more detail on shells, refer to
 	 * https://drewdevault.com/2018/07/29/Wayland-shells.html.
 	 */
@@ -1054,7 +1048,7 @@ int main(int argc, char *argv[]) {
 	const char *socket = wl_display_add_socket_auto(server.wl_display);
 	if (!socket) {
 		wlr_backend_destroy(server.backend);
-		return 1;
+		exit(EXIT_FAILURE);
 	}
 
 	/* Start the backend. This will enumerate outputs and inputs, become the DRM
@@ -1062,22 +1056,47 @@ int main(int argc, char *argv[]) {
 	if (!wlr_backend_start(server.backend)) {
 		wlr_backend_destroy(server.backend);
 		wl_display_destroy(server.wl_display);
-		return 1;
+		exit(EXIT_FAILURE);
 	}
 
-	/* Set the WAYLAND_DISPLAY environment variable to our socket and run the
-	 * startup command if requested. */
+	/* Set the WAYLAND_DISPLAY environment variable to our socket, XDG_CURRENT_DESKTOP to HellWM and run the
+	 * startup commands if ANY. */
 	setenv("WAYLAND_DISPLAY", socket, true);
 	setenv("XDG_CURRENT_DESKTOP", "HellWM", true);	
-	if (startup_cmd) {
-		exec_cmd(startup_cmd);
+
+	if (0==1) {
+		for (int i=0;i<sizeof(cmds_autostart);i++)
+		{
+			exec_cmd(cmds_autostart);
+		}
 	}
-	/* Run the Wayland event loop. This does not return until you exit the
+
+/* Run the Wayland event loop. This does not return until you exit the
 	 * compositor. Starting the backend rigged up all of the necessary event
 	 * loop configuration to listen to libinput events, DRM events, generate
 	 * frame events at the refresh rate, and so on. */
 	wlr_log(WLR_INFO, "Running Wayland compositor on WAYLAND_DISPLAY=%s",
 			socket);
+}
+
+int main(int argc, char *argv[]) {
+	wlr_log_init(WLR_DEBUG, NULL);
+
+	int c;
+	while ((c = getopt(argc, argv, "s:h")) != -1) {
+		switch (c) {
+		default:
+			printf("Usage: %s [-s startup command]\n", argv[0]);
+			return 0;
+		}
+	}
+	if (optind < argc) {
+		printf("Usage: %s [-s startup command]\n", argv[0]);
+		return 0;
+	}
+
+	setup();
+
 	wl_display_run(server.wl_display);
 
 	/* Once wl_display_run returns, we destroy all clients then shut down the
