@@ -198,7 +198,7 @@ static bool handle_keybinding(struct hellwm_server *server, xkb_keysym_t sym) {
 	 */
 	switch (sym) {
 	case XKB_KEY_Return:
-		exec_cmd("alacritty");
+		exec_cmd("kitty");
 		break;
 	case XKB_KEY_Q:
 		//this should kill window XD
