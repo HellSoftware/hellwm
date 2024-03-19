@@ -24,9 +24,13 @@
 #include <wlr/types/wlr_xcursor_manager.h>
 #include <wlr/types/wlr_xdg_shell.h>
 #include <wlr/util/log.h>
-#include <wlr/xwayland.h>
 #include <xkbcommon/xkbcommon-keysyms.h>
 #include <xkbcommon/xkbcommon.h>
+#ifdef XWAYLAND
+#include <wlr/xwayland.h>
+#include <xcb/xcb.h>
+#include <xcb/xcb_icccm.h>
+#endif
 
 // Execute command in new thread
 static void exec_cmd(char *command)
@@ -279,7 +283,7 @@ static void server_new_keyboard(struct hellwm_server *server,
 	wlr_keyboard_set_keymap(wlr_keyboard, keymap);
 	xkb_keymap_unref(keymap);
 	xkb_context_unref(context);
-	wlr_keyboard_set_repeat_info(wlr_keyboard, 25, 600);
+	wlr_keyboard_set_repeat_info(wlr_keyboard, 50, 250);
 
 	/* Here we set up listeners for keyboard events. */
 	keyboard->modifiers.notify = keyboard_handle_modifiers;
