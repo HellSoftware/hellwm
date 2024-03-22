@@ -205,8 +205,15 @@ static void load_config(struct hellwm_server server)
 	int buffer_size = ftell(fconfig);
 	fseek(fconfig, 0, SEEK_SET);
 	
-	printf("Config size: %d", buffer_size);
+	char line[256];
+	while (fgets(line, sizeof(line), fconfig)) 
+	{
+        printf("%s", line);
+   }
+   fclose(fconfig);
 }
+
+
 
 static void destroy_toplevel(struct hellwm_server *server) {
 
@@ -1167,6 +1174,7 @@ int main(int argc, char *argv[]) {
 
 	setup();
 	
+
 	load_config(server);
 	wl_display_run(server.wl_display);
 
