@@ -50,7 +50,7 @@ enum hellwm_cursor_mode {
 };
 
 enum hellwm_kbind_type {
-	KBIND_COMMAND,
+	KBIND_CMD,
 	KBIND_KILL,
 	KBIND_EXIT,
 	KBIND_RELOAD,
@@ -212,8 +212,6 @@ static void load_config(struct hellwm_server server)
    }
    fclose(fconfig);
 }
-
-
 
 static void destroy_toplevel(struct hellwm_server *server) {
 
