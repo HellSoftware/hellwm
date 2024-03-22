@@ -140,6 +140,7 @@ static void focus_toplevel(struct hellwm_toplevel *toplevel, struct wlr_surface 
 		/* Don't re-focus an already focused surface. */
 		return;
 	}
+	
 	if (prev_surface) {
 		/*
 		 * Deactivate the previously focused surface. This lets the client know
@@ -150,6 +151,8 @@ static void focus_toplevel(struct hellwm_toplevel *toplevel, struct wlr_surface 
 			wlr_xdg_toplevel_try_from_wlr_surface(prev_surface);
 		if (prev_toplevel != NULL) {
 			wlr_xdg_toplevel_set_activated(prev_toplevel, false);
+			// idk
+			//wlr_xdg_toplevel_send_close(prev_toplevel);
 		}
 	}
 	struct wlr_keyboard *keyboard = wlr_seat_get_keyboard(seat);
@@ -168,6 +171,16 @@ static void focus_toplevel(struct hellwm_toplevel *toplevel, struct wlr_surface 
 		wlr_seat_keyboard_notify_enter(seat, toplevel->xdg_toplevel->base->surface,
 			keyboard->keycodes, keyboard->num_keycodes, &keyboard->modifiers);
 	}
+}
+
+static void destroy_toplevel(struct hellwm_toplevel *toplevel, struct wlr_surface *surface) {
+
+	struct hellwm_server *server = toplevel->server;
+	struct wlr_seat *seat = server->seat;
+	struct wlr_surface *prev_surface = seat->keyboard_state.focused_surface;
+	struct wlr_xdg_toplevel *prev_toplevel =
+			wlr_xdg_toplevel_try_from_wlr_surface(prev_surface);
+	wlr_xdg_toplevel_send_close(prev_toplevel);
 }
 
 static void keyboard_handle_modifiers(
@@ -200,13 +213,17 @@ static bool handle_keybinding(struct hellwm_server *server, xkb_keysym_t sym) {
 	case XKB_KEY_Return:
 		exec_cmd("kitty");
 		break;
-	case XKB_KEY_Q:
+	case XKB_KEY_q:
+		//kill_toplevel();
 		//this should kill window XD
+		break;
+	case XKB_KEY_b:
+		exec_cmd("firefox");
 		break;
 	case XKB_KEY_Escape:
 		wl_display_terminate(server->wl_display);
 		break;
-	case XKB_KEY_F:
+	case XKB_KEY_f:
 		/* Cycle to the next toplevel */
 		if (wl_list_length(&server->toplevels) < 2) {
 			break;
@@ -911,7 +928,7 @@ void setup(void)
 	
 	server.wl_display = wl_display_create();
 	
-	server.xdg_shell = wlr_xdg_shell_create(server.wl_display, 6);
+	server.xdg_shell = wlr_xdg_shell_create(server.wl_display, 3);
 	server.layer_shell = wlr_layer_shell_v1_create(server.wl_display, 3);
 
 	/* The Wayland display is managed by libwayland. It handles accepting
