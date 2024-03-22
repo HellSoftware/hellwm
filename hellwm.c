@@ -173,9 +173,8 @@ static void focus_toplevel(struct hellwm_toplevel *toplevel, struct wlr_surface 
 	}
 }
 
-static void destroy_toplevel(struct hellwm_toplevel *toplevel, struct wlr_surface *surface) {
+static void destroy_toplevel(struct hellwm_server *server) {
 
-	struct hellwm_server *server = toplevel->server;
 	struct wlr_seat *seat = server->seat;
 	struct wlr_surface *prev_surface = seat->keyboard_state.focused_surface;
 	struct wlr_xdg_toplevel *prev_toplevel =
@@ -214,7 +213,7 @@ static bool handle_keybinding(struct hellwm_server *server, xkb_keysym_t sym) {
 		exec_cmd("kitty");
 		break;
 	case XKB_KEY_q:
-		//kill_toplevel();
+		destroy_toplevel(server);
 		//this should kill window XD
 		break;
 	case XKB_KEY_b:
@@ -1113,7 +1112,7 @@ int main(int argc, char *argv[]) {
 	}
 
 	setup();
-
+	
 	wl_display_run(server.wl_display);
 
 	/* Once wl_display_run returns, we destroy all clients then shut down the
