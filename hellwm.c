@@ -59,17 +59,16 @@ enum hellwm_kbind_type {
 
 char *cmds_autostart = {};
 
-struct cf_kbinding
-{
+typedef struct {
 	char *name;
 	enum hellwm_kbind_type type;	
 	char *content;
-};
-
+} cf_kbinding;
 
 struct hellwm_config_file
 {
-	struct cf_kbinding keyboard_binding;	
+	cf_kbinding *keyboard_binding;
+	int kbinding_size;
 };
 
 struct hellwm_server {
@@ -198,6 +197,17 @@ static void focus_toplevel(struct hellwm_toplevel *toplevel, struct wlr_surface 
 	}
 }
 
+static void load_config(struct hellwm_server server)
+{
+	FILE* fconfig;
+	fconfig = fopen("config.conf","r");
+	fseek(fconfig,0L,SEEK_END);
+	int buffer_size = ftell(fconfig);
+	fseek(fconfig, 0, SEEK_SET);
+	
+	printf("Config size: %d", buffer_size);
+}
+
 static void destroy_toplevel(struct hellwm_server *server) {
 
 	if (wl_list_length(&server->toplevels) < 1)
@@ -244,7 +254,7 @@ static bool handle_keybinding(struct hellwm_server *server, xkb_keysym_t sym) {
 	 *
 	 * This function assumes Alt is held down.
 	 */
-
+		
 	if (config_status == 1)
 	{
 		// function to reload keybinding config file;
@@ -1157,6 +1167,7 @@ int main(int argc, char *argv[]) {
 
 	setup();
 	
+	load_config(server);
 	wl_display_run(server.wl_display);
 
 	/* Once wl_display_run returns, we destroy all clients then shut down the
