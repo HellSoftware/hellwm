@@ -32,6 +32,8 @@
 #include <xcb/xcb_icccm.h>
 #endif
 
+#define config_status 0
+
 // Execute command in new thread
 static void exec_cmd(char *command)
 {
@@ -47,7 +49,28 @@ enum hellwm_cursor_mode {
 	HELLWM_CURSOR_RESIZE,
 };
 
+enum hellwm_kbind_type {
+	KBIND_COMMAND,
+	KBIND_KILL,
+	KBIND_EXIT,
+	KBIND_RELOAD,
+	KBIND_MAXW,
+};
+
 char *cmds_autostart = {};
+
+struct cf_kbinding
+{
+	char *name;
+	enum hellwm_kbind_type type;	
+	char *content;
+};
+
+
+struct hellwm_config_file
+{
+	struct cf_kbinding keyboard_binding;	
+};
 
 struct hellwm_server {
 	struct wl_display *wl_display;
@@ -86,6 +109,8 @@ struct hellwm_server {
 	struct wlr_output_layout *output_layout;
 	struct wl_list outputs;
 	struct wl_listener new_output;
+	
+	struct hellwm_config_file config_file;
 };
 
 struct hellwm_output {
@@ -210,6 +235,8 @@ static void keyboard_handle_modifiers(
 }
 
 static bool handle_keybinding(struct hellwm_server *server, xkb_keysym_t sym) {
+	
+	
 	/*
 	 * Here we handle compositor keybindings. This is when the compositor is
 	 * processing keys, rather than passing them on to the client for its own
@@ -217,6 +244,12 @@ static bool handle_keybinding(struct hellwm_server *server, xkb_keysym_t sym) {
 	 *
 	 * This function assumes Alt is held down.
 	 */
+
+	if (config_status == 1)
+	{
+		// function to reload keybinding config file;
+	}
+
 	switch (sym) {
 	case XKB_KEY_Return:
 		exec_cmd("kitty");
