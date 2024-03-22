@@ -175,10 +175,19 @@ static void focus_toplevel(struct hellwm_toplevel *toplevel, struct wlr_surface 
 
 static void destroy_toplevel(struct hellwm_server *server) {
 
+	if (wl_list_length(&server->toplevels) < 1)
+		return;
+
 	struct wlr_seat *seat = server->seat;
 	struct wlr_surface *prev_surface = seat->keyboard_state.focused_surface;
 	struct wlr_xdg_toplevel *prev_toplevel =
 			wlr_xdg_toplevel_try_from_wlr_surface(prev_surface);
+	
+	struct hellwm_toplevel *next_toplevel =
+		wl_container_of(server->toplevels.prev, next_toplevel, link);
+
+	focus_toplevel(next_toplevel, next_toplevel->xdg_toplevel->base->surface);
+
 	wlr_xdg_toplevel_send_close(prev_toplevel);
 }
 
@@ -214,7 +223,9 @@ static bool handle_keybinding(struct hellwm_server *server, xkb_keysym_t sym) {
 		break;
 	case XKB_KEY_q:
 		destroy_toplevel(server);
-		//this should kill window XD
+		break;
+	case XKB_KEY_e:
+		exec_cmd("nemo");	
 		break;
 	case XKB_KEY_b:
 		exec_cmd("firefox");
