@@ -1,3 +1,7 @@
+/* 
+ * its part for main code, its created for easier testing and developing
+*/
+
 #include <stdlib.h>
 #include <stdio.h>
 #include <string.h>
