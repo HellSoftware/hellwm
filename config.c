@@ -18,11 +18,15 @@ static void hellwm_config_kbind_give()
 static int hellwm_config_parse_line(char *line)
 {
 	char *type;
+	char *keybind;
 
 	type = strtok(line,",");
 	printf("%s\n",type);
 	
-		
+	memcpy(line + strlen(type), line, strlen(line));		
+
+	keybind = strtok(line,",");
+	printf("%s\n",type);
 
 	return 0;
 }
