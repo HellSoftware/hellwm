@@ -334,13 +334,13 @@ static bool handle_keybinding(struct hellwm_server *server, xkb_keysym_t sym) {
 	case XKB_KEY_l:
 		hellwm_resize_width_toplevel_by(server, 50);
 		break;
-	case XKB_KEY_j:
+	case XKB_KEY_h:
 		hellwm_resize_width_toplevel_by(server, -50);
 		break;
 	case XKB_KEY_k:
 		hellwm_resize_height_toplevel_by(server, -50);
 		break;
-	case XKB_KEY_k:
+	case XKB_KEY_j:
 		hellwm_resize_height_toplevel_by(server, 50);
 		break;
 	case XKB_KEY_f:
