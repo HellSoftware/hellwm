@@ -169,7 +169,7 @@ static void set_toplevel_pos(struct hellwm_server *server) {
 
 static void hellwm_resize_height_toplevel_by(struct hellwm_server *server, int32_t amount) {
 	struct wlr_surface *focused_surface =
-		server->seat->pointer_state.focused_surface;
+		server->seat->keyboard_state.focused_surface;
 	
 	amount += wlr_xdg_toplevel_try_from_wlr_surface(focused_surface )->current.height;
 	wlr_xdg_toplevel_set_size(wlr_xdg_toplevel_try_from_wlr_surface(focused_surface),
@@ -178,7 +178,7 @@ static void hellwm_resize_height_toplevel_by(struct hellwm_server *server, int32
 
 static void hellwm_resize_width_toplevel_by(struct hellwm_server *server, int32_t amount) {
 	struct wlr_surface *focused_surface =
-		server->seat->pointer_state.focused_surface;
+		server->seat->keyboard_state.focused_surface;
 	
 	amount += wlr_xdg_toplevel_try_from_wlr_surface(focused_surface )->current.width;
 	wlr_xdg_toplevel_set_size(wlr_xdg_toplevel_try_from_wlr_surface(focused_surface),
@@ -187,10 +187,11 @@ static void hellwm_resize_width_toplevel_by(struct hellwm_server *server, int32_
 
 static void hellwm_toggle_fullscreen_toplevel(struct hellwm_server *server) {
 	struct wlr_surface *focused_surface =
-		server->seat->pointer_state.focused_surface;
+		server->seat->keyboard_state.focused_surface;
 	
 	wlr_xdg_toplevel_set_fullscreen(wlr_xdg_toplevel_try_from_wlr_surface(focused_surface),!wlr_xdg_toplevel_try_from_wlr_surface(focused_surface)->current.fullscreen);	
 }
+
 static void focus_toplevel(struct hellwm_toplevel *toplevel, struct wlr_surface *surface) {
 	/* Note: this function only deals with keyboard focus. */
 	if (toplevel == NULL) {
