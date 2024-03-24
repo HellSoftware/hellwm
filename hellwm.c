@@ -301,7 +301,7 @@ static bool handle_keybinding(struct hellwm_server *server, xkb_keysym_t sym) {
 	 * processing keys, rather than passing them on to the client for its own
 	 * processing.
 	 *
-	 * This function assumes Alt is held down.
+	 * This function assumes Meta key is held down.
 	 */
 		
 	if (config_status == 1)
