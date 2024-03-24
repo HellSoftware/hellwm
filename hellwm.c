@@ -153,25 +153,21 @@ struct hellwm_keyboard {
 	struct wl_listener destroy;
 };
 
-static void set_toplevel_pos(struct hellwm_server *server) {
-	struct wlr_surface *focused_surface =
-		server->seat->pointer_state.focused_surface;
-
+static void set_toplevel_pos(struct hellwm_server *server, int32_t width, int32_t height) {
 	struct wlr_surface *prev_surface = server->seat->keyboard_state.focused_surface;
 
-	if (prev_surface != server->grabbed_toplevel->xdg_toplevel->base->surface)
-	{	
-		return;
-	}
-
-	wlr_xdg_toplevel_set_size(wlr_xdg_toplevel_try_from_wlr_surface(prev_surface), 500, 500);
+	wlr_xdg_toplevel_set_size(wlr_xdg_toplevel_try_from_wlr_surface(prev_surface), width, height);
 }
 
 static void hellwm_resize_height_toplevel_by(struct hellwm_server *server, int32_t amount) {
 	struct wlr_surface *focused_surface =
 		server->seat->keyboard_state.focused_surface;
 	
-	amount += wlr_xdg_toplevel_try_from_wlr_surface(focused_surface )->current.height;
+	amount = amount + wlr_xdg_toplevel_try_from_wlr_surface(focused_surface )->current.height;
+	
+	if (amount<=0)
+		return;
+
 	wlr_xdg_toplevel_set_size(wlr_xdg_toplevel_try_from_wlr_surface(focused_surface),
 			wlr_xdg_toplevel_try_from_wlr_surface(focused_surface)->current.width, amount);
 }
@@ -180,7 +176,11 @@ static void hellwm_resize_width_toplevel_by(struct hellwm_server *server, int32_
 	struct wlr_surface *focused_surface =
 		server->seat->keyboard_state.focused_surface;
 	
-	amount += wlr_xdg_toplevel_try_from_wlr_surface(focused_surface )->current.width;
+	amount = amount + wlr_xdg_toplevel_try_from_wlr_surface(focused_surface )->current.width;
+
+	if (amount<=0)
+		return;
+
 	wlr_xdg_toplevel_set_size(wlr_xdg_toplevel_try_from_wlr_surface(focused_surface),
 			amount, wlr_xdg_toplevel_try_from_wlr_surface(focused_surface)->current.height);
 }
@@ -188,8 +188,14 @@ static void hellwm_resize_width_toplevel_by(struct hellwm_server *server, int32_
 static void hellwm_toggle_fullscreen_toplevel(struct hellwm_server *server) {
 	struct wlr_surface *focused_surface =
 		server->seat->keyboard_state.focused_surface;
+/*
+	wlr_xdg_toplevel_set_fullscreen(wlr_xdg_toplevel_try_from_wlr_surface(focused_surface),!wlr_xdg_toplevel_try_from_wlr_surface(focused_surface)->current.fullscreen);
+
+	int32_t max_width = wlr_xdg_toplevel_try_from_wlr_surface(server->seat->keyboard_state.focused_surface)->
+	int32_t max_height = wlr_xdg_toplevel_try_from_wlr_surface(server->seat->keyboard_state.focused_surface)->current.max_height;
 	
-	wlr_xdg_toplevel_set_fullscreen(wlr_xdg_toplevel_try_from_wlr_surface(focused_surface),!wlr_xdg_toplevel_try_from_wlr_surface(focused_surface)->current.fullscreen);	
+	set_toplevel_pos(server, max_width, max_height);
+	*/
 }
 
 static void focus_toplevel(struct hellwm_toplevel *toplevel, struct wlr_surface *surface) {
@@ -317,7 +323,7 @@ static bool handle_keybinding(struct hellwm_server *server, xkb_keysym_t sym) {
 		exec_cmd("firefox");
 		break;
 	case XKB_KEY_r:
-		set_toplevel_pos(server);
+		set_toplevel_pos(server, 100, 100);
 		break;
 	case XKB_KEY_p:
 		exec_cmd("pavucontrol");
@@ -328,8 +334,14 @@ static bool handle_keybinding(struct hellwm_server *server, xkb_keysym_t sym) {
 	case XKB_KEY_l:
 		hellwm_resize_width_toplevel_by(server, 50);
 		break;
-	case XKB_KEY_h:
+	case XKB_KEY_j:
 		hellwm_resize_width_toplevel_by(server, -50);
+		break;
+	case XKB_KEY_k:
+		hellwm_resize_height_toplevel_by(server, -50);
+		break;
+	case XKB_KEY_k:
+		hellwm_resize_height_toplevel_by(server, 50);
 		break;
 	case XKB_KEY_f:
 		hellwm_toggle_fullscreen_toplevel(server);	
@@ -767,11 +779,12 @@ static void server_new_output(struct wl_listener *listener, void *data) {
 	 * refresh rate), and each monitor supports only a specific set of modes. We
 	 * just pick the monitor's preferred mode, a more sophisticated compositor
 	 * would let the user configure it. */
+
 	struct wlr_output_mode *mode = wlr_output_preferred_mode(wlr_output);
 	if (mode != NULL) {
 		wlr_output_state_set_mode(&state, mode);
 	}
-
+	
 	/* Atomically applies the new output state. */
 	wlr_output_commit_state(wlr_output, &state);
 	wlr_output_state_finish(&state);
