@@ -167,18 +167,30 @@ static void set_toplevel_pos(struct hellwm_server *server) {
 	wlr_xdg_toplevel_set_size(wlr_xdg_toplevel_try_from_wlr_surface(prev_surface), 500, 500);
 }
 
-static void hellwm_resize_toplevel_by(struct hellwm_server *server, int32_t width_amount, int32_t height_amount) {
+static void hellwm_resize_height_toplevel_by(struct hellwm_server *server, int32_t amount) {
 	struct wlr_surface *focused_surface =
 		server->seat->pointer_state.focused_surface;
-
-	struct wlr_surface *prev_surface = server->seat->keyboard_state.focused_surface;
 	
-	width_amount += wlr_xdg_toplevel_try_from_wlr_surface(prev_surface)->current.width;
-	height_amount += wlr_xdg_toplevel_try_from_wlr_surface(prev_surface)->current.height;
-	
-	wlr_xdg_toplevel_set_size(wlr_xdg_toplevel_try_from_wlr_surface(prev_surface), width_amount, height_amount);
+	amount += wlr_xdg_toplevel_try_from_wlr_surface(focused_surface )->current.height;
+	wlr_xdg_toplevel_set_size(wlr_xdg_toplevel_try_from_wlr_surface(focused_surface),
+			wlr_xdg_toplevel_try_from_wlr_surface(focused_surface)->current.width, amount);
 }
 
+static void hellwm_resize_width_toplevel_by(struct hellwm_server *server, int32_t amount) {
+	struct wlr_surface *focused_surface =
+		server->seat->pointer_state.focused_surface;
+	
+	amount += wlr_xdg_toplevel_try_from_wlr_surface(focused_surface )->current.width;
+	wlr_xdg_toplevel_set_size(wlr_xdg_toplevel_try_from_wlr_surface(focused_surface),
+			amount, wlr_xdg_toplevel_try_from_wlr_surface(focused_surface)->current.height);
+}
+
+static void hellwm_toggle_fullscreen_toplevel(struct hellwm_server *server) {
+	struct wlr_surface *focused_surface =
+		server->seat->pointer_state.focused_surface;
+	
+	wlr_xdg_toplevel_set_fullscreen(wlr_xdg_toplevel_try_from_wlr_surface(focused_surface),!wlr_xdg_toplevel_try_from_wlr_surface(focused_surface)->current.fullscreen);	
+}
 static void focus_toplevel(struct hellwm_toplevel *toplevel, struct wlr_surface *surface) {
 	/* Note: this function only deals with keyboard focus. */
 	if (toplevel == NULL) {
@@ -313,12 +325,15 @@ static bool handle_keybinding(struct hellwm_server *server, xkb_keysym_t sym) {
 		wl_display_terminate(server->wl_display);
 		break;
 	case XKB_KEY_l:
-		hellwm_resize_toplevel_by(server,50,50);	
+		hellwm_resize_width_toplevel_by(server, 50);
 		break;
 	case XKB_KEY_h:
-		hellwm_resize_toplevel_by(server,-50,-50);	
+		hellwm_resize_width_toplevel_by(server, -50);
 		break;
 	case XKB_KEY_f:
+		hellwm_toggle_fullscreen_toplevel(server);	
+		break;
+	case XKB_KEY_c:
 		/* Cycle to the next toplevel */
 		if (wl_list_length(&server->toplevels) < 2) {
 			break;
