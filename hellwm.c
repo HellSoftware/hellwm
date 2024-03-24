@@ -152,6 +152,24 @@ struct hellwm_keyboard {
 	struct wl_listener destroy;
 };
 
+static void set_toplevel_pos(struct hellwm_server *server) {
+	struct wlr_surface *focused_surface =
+		server->seat->pointer_state.focused_surface;
+
+	struct wlr_xdg_toplevel *toplevel = 
+		wlr_xdg_toplevel_try_from_wlr_surface(focused_surface);
+	
+	if (toplevel->base->surface !=
+			wlr_surface_get_root_surface(focused_surface)) { 
+		return;
+	}
+
+	toplevel->scheduled.width = 500;
+//	wlr_scene_node_set_position(&toplevel->scene_tree->node,
+//		0,
+//		0);
+}
+
 static void focus_toplevel(struct hellwm_toplevel *toplevel, struct wlr_surface *surface) {
 	/* Note: this function only deals with keyboard focus. */
 	if (toplevel == NULL) {
@@ -222,9 +240,9 @@ static void destroy_toplevel(struct hellwm_server *server) {
 	struct wlr_surface *prev_surface = seat->keyboard_state.focused_surface;
 	struct wlr_xdg_toplevel *prev_toplevel =
 			wlr_xdg_toplevel_try_from_wlr_surface(prev_surface);
-	
+
 	struct hellwm_toplevel *next_toplevel =
-		wl_container_of(server->toplevels.prev, next_toplevel, link);
+			wl_container_of(server->toplevels.prev, next_toplevel, link);
 
 	focus_toplevel(next_toplevel, next_toplevel->xdg_toplevel->base->surface);
 
@@ -250,8 +268,6 @@ static void keyboard_handle_modifiers(
 }
 
 static bool handle_keybinding(struct hellwm_server *server, xkb_keysym_t sym) {
-	
-	
 	/*
 	 * Here we handle compositor keybindings. This is when the compositor is
 	 * processing keys, rather than passing them on to the client for its own
@@ -277,6 +293,12 @@ static bool handle_keybinding(struct hellwm_server *server, xkb_keysym_t sym) {
 		break;
 	case XKB_KEY_b:
 		exec_cmd("firefox");
+		break;
+	case XKB_KEY_r:
+		set_toplevel_pos(server);
+		break;
+	case XKB_KEY_p:
+		exec_cmd("pavucontrol");
 		break;
 	case XKB_KEY_Escape:
 		wl_display_terminate(server->wl_display);
@@ -543,7 +565,7 @@ static void process_cursor_motion(struct hellwm_server *server, uint32_t time) {
 		process_cursor_move(server, time);
 		return;
 	} else if (server->cursor_mode == HELLWM_CURSOR_RESIZE) {
-		process_cursor_resize(server, time);
+		//process_cursor_resize(server, time); //REM
 		return;
 	}
 
@@ -816,7 +838,7 @@ static void begin_interactive(struct hellwm_toplevel *toplevel,
 	struct wlr_surface *focused_surface =
 		server->seat->pointer_state.focused_surface;
 	if (toplevel->xdg_toplevel->base->surface !=
-			wlr_surface_get_root_surface(focused_surface)) {
+			wlr_surface_get_root_surface(focused_surface)) { 
 		/* Deny move/resize requests from unfocused clients. */
 		return;
 	}
@@ -1077,7 +1099,7 @@ void setup(void)
 	 * Xcursor themes to source cursor images from and makes sure that cursor
 	 * images are available at all scale factors on the screen (necessary for
 	 * HiDPI support). */
-	server.cursor_mgr = wlr_xcursor_manager_create(NULL, 24);
+	server.cursor_mgr = wlr_xcursor_manager_create("Sweet-cursors", 24);
 
 	/*
 	 * wlr_cursor *only* displays an image on screen. It does not move around

@@ -1,0 +1,2 @@
+- array of sorted toplevels on screen, to identify which should be focused next after one is closed
+- monitors, cursor, keyboard - config
