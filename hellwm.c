@@ -156,18 +156,14 @@ static void set_toplevel_pos(struct hellwm_server *server) {
 	struct wlr_surface *focused_surface =
 		server->seat->pointer_state.focused_surface;
 
-	struct wlr_xdg_toplevel *toplevel = 
-		wlr_xdg_toplevel_try_from_wlr_surface(focused_surface);
-	
-	if (toplevel->base->surface !=
-			wlr_surface_get_root_surface(focused_surface)) { 
-		return;
-	}
+	struct wlr_surface *prev_surface = server->seat->keyboard_state.focused_surface;
 
-	toplevel->scheduled.width = 500;
-//	wlr_scene_node_set_position(&toplevel->scene_tree->node,
-//		0,
-//		0);
+//	if (prev_surface != server->grabbed_toplevel->)
+//	{
+//		return;
+//	}
+
+	wlr_xdg_toplevel_set_size(wlr_xdg_toplevel_try_from_wlr_surface(prev_surface), 500, 500);
 }
 
 static void focus_toplevel(struct hellwm_toplevel *toplevel, struct wlr_surface *surface) {
@@ -565,7 +561,7 @@ static void process_cursor_motion(struct hellwm_server *server, uint32_t time) {
 		process_cursor_move(server, time);
 		return;
 	} else if (server->cursor_mode == HELLWM_CURSOR_RESIZE) {
-		//process_cursor_resize(server, time); //REM
+		process_cursor_resize(server, time); 
 		return;
 	}
 
