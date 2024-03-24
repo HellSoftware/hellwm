@@ -1,6 +1,7 @@
 #include <assert.h>
 #include <getopt.h>
 #include <stdbool.h>
+#include <stdint.h>
 #include <stdlib.h>
 #include <stdio.h>
 #include <time.h>
@@ -158,12 +159,24 @@ static void set_toplevel_pos(struct hellwm_server *server) {
 
 	struct wlr_surface *prev_surface = server->seat->keyboard_state.focused_surface;
 
-//	if (prev_surface != server->grabbed_toplevel->)
-//	{
-//		return;
-//	}
+	if (prev_surface != server->grabbed_toplevel->xdg_toplevel->base->surface)
+	{	
+		return;
+	}
 
 	wlr_xdg_toplevel_set_size(wlr_xdg_toplevel_try_from_wlr_surface(prev_surface), 500, 500);
+}
+
+static void hellwm_resize_toplevel_by(struct hellwm_server *server, int32_t width_amount, int32_t height_amount) {
+	struct wlr_surface *focused_surface =
+		server->seat->pointer_state.focused_surface;
+
+	struct wlr_surface *prev_surface = server->seat->keyboard_state.focused_surface;
+	
+	width_amount += wlr_xdg_toplevel_try_from_wlr_surface(prev_surface)->current.width;
+	height_amount += wlr_xdg_toplevel_try_from_wlr_surface(prev_surface)->current.height;
+	
+	wlr_xdg_toplevel_set_size(wlr_xdg_toplevel_try_from_wlr_surface(prev_surface), width_amount, height_amount);
 }
 
 static void focus_toplevel(struct hellwm_toplevel *toplevel, struct wlr_surface *surface) {
@@ -298,6 +311,12 @@ static bool handle_keybinding(struct hellwm_server *server, xkb_keysym_t sym) {
 		break;
 	case XKB_KEY_Escape:
 		wl_display_terminate(server->wl_display);
+		break;
+	case XKB_KEY_l:
+		hellwm_resize_toplevel_by(server,50,50);	
+		break;
+	case XKB_KEY_h:
+		hellwm_resize_toplevel_by(server,-50,-50);	
 		break;
 	case XKB_KEY_f:
 		/* Cycle to the next toplevel */
