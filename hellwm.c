@@ -1050,6 +1050,7 @@ void setup(void)
 {
 	//	FUTURE SETUP OF EVERYTING
 	
+	wlr_log_init(WLR_DEBUG, NULL);
 	server.wl_display = wl_display_create();
 	
 	server.xdg_shell = wlr_xdg_shell_create(server.wl_display, 3);
@@ -1220,30 +1221,8 @@ void setup(void)
 			socket);
 }
 
-int main(int argc, char *argv[]) {
-	wlr_log_init(WLR_DEBUG, NULL);
-
-	int c;
-	while ((c = getopt(argc, argv, "s:h")) != -1) {
-		switch (c) {
-		default:
-			printf("Usage: %s [-s startup command]\n", argv[0]);
-			return 0;
-		}
-	}
-	if (optind < argc) {
-		printf("Usage: %s [-s startup command]\n", argv[0]);
-		return 0;
-	}
-
-	setup();
-	
-
-	load_config(server);
-	wl_display_run(server.wl_display);
-
-	/* Once wl_display_run returns, we destroy all clients then shut down the
-	 * server. */
+void hellwm_destroy_everything(void)
+{
 	wl_display_destroy_clients(server.wl_display);
 	wlr_scene_node_destroy(&server.scene->tree.node);
 	wlr_xcursor_manager_destroy(server.cursor_mgr);
@@ -1252,5 +1231,22 @@ int main(int argc, char *argv[]) {
 	wlr_renderer_destroy(server.renderer);
 	wlr_backend_destroy(server.backend);
 	wl_display_destroy(server.wl_display);
+}
+
+void hellwm_print_usage(int *argc, char**argv[])
+{
+	// TODO add usage options under -h
+}
+
+int main(int argc, char *argv[]) {
+	
+	hellwm_print_usage(&argc,&argv);
+	
+	setup();
+
+	load_config(server);
+	
+	wl_display_run(server.wl_display);
+
 	return 0;
 }
