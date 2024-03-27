@@ -1311,9 +1311,9 @@ int main(int argc, char *argv[]) {
 
 	hellwm_setup(&server);
 
-	load_config(server);
+	//load_config(server);
 
-	//hellwm_log("Started HellWM Wayland Session at %s, server->socket);
+	hellwm_log("Started HellWM Wayland Session at ", server.socket);
 	wl_display_run(server.wl_display);
 	hellwm_log("Close HellWM Wayland Session");
 
