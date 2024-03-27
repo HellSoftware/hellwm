@@ -1097,12 +1097,6 @@ void hellwm_setup(struct hellwm_server *server)
 	wlr_log_init(WLR_DEBUG, NULL);
 	server->wl_display = wl_display_create();
 	
-	/* The Wayland display is managed by libwayland. It handles accepting
-	 * clients from the Unix socket, manging Wayland globals, and so on. */
-	/* The backend is a wlroots feature which abstracts the underlying input and
-	 * output hardware. The autocreate option will choose the most suitable
-	 * backend based on the current environment, such as opening an X11 window
-	 * if an X11 server is running. */
 	server->backend = wlr_backend_autocreate(wl_display_get_event_loop(
 				server->wl_display), NULL);
 	if (server->backend == NULL) {
@@ -1110,10 +1104,6 @@ void hellwm_setup(struct hellwm_server *server)
 		exit(EXIT_FAILURE);
 	}
 	
-	/* Autocreates a renderer, either Pixman, GLES2 or Vulkan for us. The user
-	 * can also specify a renderer using the WLR_RENDERER env var.
-	 * The renderer is responsible for defining the various pixel formats it
-	 * supports for shared memory, this configures that for clients. */
 	server->renderer = wlr_renderer_autocreate(server->backend);
 	if (server->renderer == NULL) {
 		wlr_log(WLR_ERROR, "failed to create wlr_renderer");
@@ -1123,10 +1113,6 @@ void hellwm_setup(struct hellwm_server *server)
 	wlr_renderer_init_wl_display(server->renderer, 
 			server->wl_display);
 
-	/* Autocreates an allocator for us.
-	 * The allocator is the bridge between the renderer and the backend. It
-	 * handles the buffer creation, allowing wlroots to render onto the
-	 * screen */
 	server->allocator = wlr_allocator_autocreate(server->backend,
 		server->renderer);
 	if (server->allocator == NULL) {
@@ -1137,43 +1123,22 @@ void hellwm_setup(struct hellwm_server *server)
 	server->compositor = wlr_compositor_create(server->wl_display,
 		6,server->renderer);
 
-	/* This creates some hands-off wlroots interfaces. The compositor is
-	 * necessary for clients to allocate surfaces, the subcompositor allows to
-	 * assign the role of subsurfaces to surfaces and the data device manager
-	 * handles the clipboard. Each of these wlroots interfaces has room for you
-	 * to dig your fingers in and play with their behavior if you want. Note that
-	 * the clients cannot set the selection directly without compositor approval,
-	 * see the handling of the request_set_selection event below.*/
 	wlr_compositor_create(server->wl_display, 5, server->renderer);
 	wlr_subcompositor_create(server->wl_display);
 	wlr_data_device_manager_create(server->wl_display);
 
-	/* Creates an output layout, which a wlroots utility for working with an
-	 * arrangement of screens in a physical layout. */
 	server->output_layout = wlr_output_layout_create(
 			server->wl_display);
 
-	/* Configure a listener to be notified when new outputs are available 
-	 * on the backend. */
 	wl_list_init(&server->outputs);
 	server->new_output.notify = server_new_output;
 	wl_signal_add(&server->backend->events.new_output, 
 			&server->new_output);
 
-	/* Create a scene graph. This is a wlroots abstraction that handles all
-	 * rendering and damage tracking. All the compositor author needs to do
-	 * is add things that should be rendered to the scene graph at the proper
-	 * positions and then call wlr_scene_output_commit() to render a frame if
-	 * necessary.
-	 */
 	server->scene = wlr_scene_create();
 	server->scene_layout = wlr_scene_attach_output_layout(server->scene, 
 			server->output_layout);
 
-	 /* Set up xdg-shell version 3. The xdg-shell is a Wayland protocol which is
-	 * used for application windows. For more detail on shells, refer to
-	 * https://drewdevault.com/2018/07/29/Wayland-shells.html.
-	 */
 	wl_list_init(&server->toplevels);
 	server->xdg_shell = wlr_xdg_shell_create(
 			server->wl_display, 3);
@@ -1184,37 +1149,18 @@ void hellwm_setup(struct hellwm_server *server)
 	wl_signal_add(&server->xdg_shell->events.new_popup,
 			&server->new_xdg_popup);
 
-
-	// set wlr_layer shell ver 4 and create it 
 	server->layer_shell = wlr_layer_shell_v1_create(server->wl_display,
 		4);
 	wl_signal_add(&server->layer_shell->events.new_surface,
 		&server->layer_shell_surface);
 	server->layer_shell_surface.notify = handle_layer_shell_surface;
 
-	/*
-	 * Creates a cursor, which is a wlroots utility for tracking the cursor
-	 * image shown on screen.
-	 */
+	
 	server->cursor = wlr_cursor_create();
 	wlr_cursor_attach_output_layout(server->cursor, server->output_layout);
 
-	/* Creates an xcursor manager, another wlroots utility which loads up
-	 * Xcursor themes to source cursor images from and makes sure that cursor
-	 * images are available at all scale factors on the screen (necessary for
-	 * HiDPI support). */
 	server->cursor_mgr = wlr_xcursor_manager_create(NULL, 24);
 
-	/*
-	 * wlr_cursor *only* displays an image on screen. It does not move around
-	 * when the pointer moves. However, we can attach input devices to it, and
-	 * it will generate aggregate events for all of them. In these events, we
-	 * can choose how we want to process them, forwarding them to clients and
-	 * moving the cursor around. More detail on this process is described in
-	 * https://drewdevault.com/2018/07/17/Input-handling-in-wlroots.html.
-	 *
-	 * And more comments are sprinkled throughout the notify functions above.
-	 */
 	server->cursor_mode = HELLWM_CURSOR_PASSTHROUGH;
 	server->cursor_motion.notify = server_cursor_motion;
 	wl_signal_add(&server->cursor->events.motion, 
@@ -1231,13 +1177,7 @@ void hellwm_setup(struct hellwm_server *server)
 	server->cursor_frame.notify = server_cursor_frame;
 	wl_signal_add(&server->cursor->events.frame,
 			&server->cursor_frame);
-
-	/*
-	 * Configures a seat, which is a single "seat" at which a user sits and
-	 * operates the computer. This conceptually includes up to one keyboard,
-	 * pointer, touch, and drawing tablet device. We also rig up a listener to
-	 * let us know when new input devices are available on the backend.
-	 */
+	
 	wl_list_init(&server->keyboards);
 	server->new_input.notify = server_new_input;
 	wl_signal_add(&server->backend->events.new_input,
@@ -1252,13 +1192,11 @@ void hellwm_setup(struct hellwm_server *server)
 
 	/* Add a Unix socket to the Wayland display. */
 	server->socket = wl_display_add_socket_auto(server->wl_display);
-	if (server->socket) {
+	if (!server->socket) {
 		wlr_backend_destroy(server->backend);
 		exit(EXIT_FAILURE);
 	}
 
-	/* Start the backend. This will enumerate outputs and inputs, become the DRM
-	 * master, etc */
 	if (!wlr_backend_start(server->backend)) {
 		wlr_backend_destroy(server->backend);
 		wl_display_destroy(server->wl_display);
