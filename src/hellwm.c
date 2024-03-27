@@ -43,6 +43,13 @@ static void exec_cmd(char *command)
 	}
 }
 
+void hellwm_log(char* message)
+{
+	FILE *logfile = fopen("~/.cache/hellwm/logfile.txt", "+w");
+	fprintf(logfile,"LOG: %s\n", message);
+	fclose(logfile);
+}
+
 /* For brevity's sake, struct members are annotated where they are used. */
 enum hellwm_cursor_mode {
 	HELLWM_CURSOR_PASSTHROUGH,
@@ -72,11 +79,21 @@ struct hellwm_config_file
 	int kbinding_size;
 };
 
+#if XWAYLAND
+
+struct hellwm_xwayland {
+	struct wlr_xwayland *wlr_xwayland;
+	struct wlr_xcursor_manager *xcursor_manager;
+};
+
+#endif
+
 struct hellwm_server {
 	struct wl_display *wl_display;
 	struct wlr_backend *backend;
 	struct wlr_renderer *renderer;
 	struct wlr_allocator *allocator;
+	struct wlr_compositor *compositor;
 	struct wlr_scene *scene;
 	struct wlr_scene_output_layout *scene_layout;
 
@@ -86,6 +103,15 @@ struct hellwm_server {
 	struct wl_list toplevels;
 
 	struct wlr_layer_shell_v1 *layer_shell;
+	struct wl_listener layer_shell_surface;
+
+#if XWAYLAND
+
+	struct hellwm_xwayland xwayland;
+	struct wl_listener xwayland_surface;
+	struct wl_listener xwayland_ready;
+
+#endif
 
 	struct wlr_cursor *cursor;
 	struct wlr_xcursor_manager *cursor_mgr;
@@ -942,7 +968,7 @@ static void xdg_toplevel_request_maximize(
 	 * xdg-shell protocol we still must send a configure.
 	 * wlr_xdg_surface_schedule_configure() is used to send an empty reply.
 	 * However, if the request was sent before an initial commit, we don't do
-	 * anything and let the client finish the initial surface setup. */
+	 * anything and let the client finish the initial surface earetup. */
 	struct hellwm_toplevel *toplevel =
 		wl_container_of(listener, toplevel, request_maximize);
 	if (toplevel->xdg_toplevel->base->initialized) {
@@ -1044,6 +1070,9 @@ static void server_new_xdg_popup(struct wl_listener *listener, void *data) {
 	wl_signal_add(&xdg_popup->events.destroy, &popup->destroy);
 }
 
+static void handle_layer_shell_surface(struct wl_listener *listener, void *data) {
+	
+}
 
 void hellwm_setup(struct hellwm_server *server)
 {
@@ -1052,16 +1081,14 @@ void hellwm_setup(struct hellwm_server *server)
 	wlr_log_init(WLR_DEBUG, NULL);
 	server->wl_display = wl_display_create();
 	
-	server->xdg_shell = wlr_xdg_shell_create(server->wl_display, 3);
-	server->layer_shell = wlr_layer_shell_v1_create(server->wl_display, 3);
-
 	/* The Wayland display is managed by libwayland. It handles accepting
 	 * clients from the Unix socket, manging Wayland globals, and so on. */
 	/* The backend is a wlroots feature which abstracts the underlying input and
 	 * output hardware. The autocreate option will choose the most suitable
 	 * backend based on the current environment, such as opening an X11 window
 	 * if an X11 server is running. */
-	server->backend = wlr_backend_autocreate(wl_display_get_event_loop(server->wl_display), NULL);
+	server->backend = wlr_backend_autocreate(wl_display_get_event_loop(
+				server->wl_display), NULL);
 	if (server->backend == NULL) {
 		wlr_log(WLR_ERROR, "failed to create wlr_backend");
 		exit(EXIT_FAILURE);
@@ -1077,7 +1104,8 @@ void hellwm_setup(struct hellwm_server *server)
 		exit(EXIT_FAILURE);
 	}
 
-	wlr_renderer_init_wl_display(server->renderer, server->wl_display);
+	wlr_renderer_init_wl_display(server->renderer, 
+			server->wl_display);
 
 	/* Autocreates an allocator for us.
 	 * The allocator is the bridge between the renderer and the backend. It
@@ -1089,6 +1117,9 @@ void hellwm_setup(struct hellwm_server *server)
 		wlr_log(WLR_ERROR, "failed to create wlr_allocator");
 		exit(EXIT_FAILURE);
 	}
+	
+	server->compositor = wlr_compositor_create(server->wl_display,
+		6,server->renderer);
 
 	/* This creates some hands-off wlroots interfaces. The compositor is
 	 * necessary for clients to allocate surfaces, the subcompositor allows to
@@ -1103,14 +1134,15 @@ void hellwm_setup(struct hellwm_server *server)
 
 	/* Creates an output layout, which a wlroots utility for working with an
 	 * arrangement of screens in a physical layout. */
-	server->output_layout = wlr_output_layout_create(server->wl_display);
+	server->output_layout = wlr_output_layout_create(
+			server->wl_display);
 
-	/* Configure a listener to be notified when new outputs are available on the
-	 * backend. */
+	/* Configure a listener to be notified when new outputs are available 
+	 * on the backend. */
 	wl_list_init(&server->outputs);
 	server->new_output.notify = server_new_output;
-	wl_signal_add(&server->backend->events.new_output, &server->new_output);
-
+	wl_signal_add(&server->backend->events.new_output, 
+			&server->new_output);
 
 	/* Create a scene graph. This is a wlroots abstraction that handles all
 	 * rendering and damage tracking. All the compositor author needs to do
@@ -1119,18 +1151,30 @@ void hellwm_setup(struct hellwm_server *server)
 	 * necessary.
 	 */
 	server->scene = wlr_scene_create();
-	server->scene_layout = wlr_scene_attach_output_layout(server->scene, server->output_layout);
+	server->scene_layout = wlr_scene_attach_output_layout(server->scene, 
+			server->output_layout);
 
 	 /* Set up xdg-shell version 3. The xdg-shell is a Wayland protocol which is
 	 * used for application windows. For more detail on shells, refer to
 	 * https://drewdevault.com/2018/07/29/Wayland-shells.html.
 	 */
 	wl_list_init(&server->toplevels);
-	server->xdg_shell = wlr_xdg_shell_create(server->wl_display, 3);
+	server->xdg_shell = wlr_xdg_shell_create(
+			server->wl_display, 3);
 	server->new_xdg_toplevel.notify = server_new_xdg_toplevel;
-	wl_signal_add(&server->xdg_shell->events.new_toplevel, &server->new_xdg_toplevel);
+	wl_signal_add(&server->xdg_shell->events.new_toplevel, 
+			&server->new_xdg_toplevel);
 	server->new_xdg_popup.notify = server_new_xdg_popup;
-	wl_signal_add(&server->xdg_shell->events.new_popup, &server->new_xdg_popup);
+	wl_signal_add(&server->xdg_shell->events.new_popup,
+			&server->new_xdg_popup);
+
+
+	// set wlr_layer shell ver 4 and create it 
+	server->layer_shell = wlr_layer_shell_v1_create(server->wl_display,
+		4);
+	wl_signal_add(&server->layer_shell->events.new_surface,
+		&server->layer_shell_surface);
+	server->layer_shell_surface.notify = handle_layer_shell_surface;
 
 	/*
 	 * Creates a cursor, which is a wlroots utility for tracking the cursor
@@ -1157,16 +1201,20 @@ void hellwm_setup(struct hellwm_server *server)
 	 */
 	server->cursor_mode = HELLWM_CURSOR_PASSTHROUGH;
 	server->cursor_motion.notify = server_cursor_motion;
-	wl_signal_add(&server->cursor->events.motion, &server->cursor_motion);
+	wl_signal_add(&server->cursor->events.motion, 
+			&server->cursor_motion);
 	server->cursor_motion_absolute.notify = server_cursor_motion_absolute;
 	wl_signal_add(&server->cursor->events.motion_absolute,
 			&server->cursor_motion_absolute);
 	server->cursor_button.notify = server_cursor_button;
-	wl_signal_add(&server->cursor->events.button, &server->cursor_button);
+	wl_signal_add(&server->cursor->events.button, 
+			&server->cursor_button);
 	server->cursor_axis.notify = server_cursor_axis;
-	wl_signal_add(&server->cursor->events.axis, &server->cursor_axis);
+	wl_signal_add(&server->cursor->events.axis,
+			&server->cursor_axis);
 	server->cursor_frame.notify = server_cursor_frame;
-	wl_signal_add(&server->cursor->events.frame, &server->cursor_frame);
+	wl_signal_add(&server->cursor->events.frame,
+			&server->cursor_frame);
 
 	/*
 	 * Configures a seat, which is a single "seat" at which a user sits and
@@ -1176,7 +1224,8 @@ void hellwm_setup(struct hellwm_server *server)
 	 */
 	wl_list_init(&server->keyboards);
 	server->new_input.notify = server_new_input;
-	wl_signal_add(&server->backend->events.new_input, &server->new_input);
+	wl_signal_add(&server->backend->events.new_input,
+			&server->new_input);
 	server->seat = wlr_seat_create(server->wl_display, "seat0");
 	server->request_cursor.notify = seat_request_cursor;
 	wl_signal_add(&server->seat->events.request_set_cursor,
@@ -1200,12 +1249,13 @@ void hellwm_setup(struct hellwm_server *server)
 		exit(EXIT_FAILURE);
 	}
 
-	/* Set the WAYLAND_DISPLAY environment variable to our socket, XDG_CURRENT_DESKTOP to HellWM and run the
-	 * startup commands if ANY. */
+	/* Set the WAYLAND_DISPLAY environment variable to our socket, 
+	 * XDG_CURRENT_DESKTOP to HellWM and run the startup commands if ANY. */
+
 	setenv("WAYLAND_DISPLAY", socket, true);
 	setenv("XDG_CURRENT_DESKTOP", "HellWM", true);	
 
-	if (0==1) {
+	if (0==1) { //YES
 		for (int i=0;i<sizeof(cmds_autostart);i++)
 		{
 			exec_cmd(cmds_autostart);
@@ -1216,8 +1266,8 @@ void hellwm_setup(struct hellwm_server *server)
 	 * compositor. Starting the backend rigged up all of the necessary event
 	 * loop configuration to listen to libinput events, DRM events, generate
 	 * frame events at the refresh rate, and so on. */
-	wlr_log(WLR_INFO, "Running Wayland compositor on WAYLAND_DISPLAY=%s",
-			socket);
+	wlr_log(WLR_INFO,
+		"Running Wayland compositor on WAYLAND_DISPLAY=%s",socket);
 }
 
 void hellwm_destroy_everything(struct hellwm_server *server)
@@ -1246,8 +1296,10 @@ int main(int argc, char *argv[]) {
 	hellwm_setup(&server);
 
 	load_config(server);
-	
+
+	hellwm_log("Started HellWM Wayland Session");
 	wl_display_run(server.wl_display);
+	hellwm_log("Close HellWM Wayland Session");
 
 	hellwm_destroy_everything(&server);
 
