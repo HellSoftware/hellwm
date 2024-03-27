@@ -35,6 +35,10 @@
 
 #define config_status 0
 
+#define HELLWM_INFO  "INFO"
+#define HELLWM_ERROR "ERROR"
+#define HELLWM_LOG   "LOG"
+
 // Execute command in new thread
 static void exec_cmd(char *command)
 {
@@ -43,7 +47,8 @@ static void exec_cmd(char *command)
 	}
 }
 
-void hellwm_log(const char *format, ...)
+// LOG
+void hellwm_log(char *log_type ,const char *format, ...)
 {
 	va_list args;
    va_start(args, format);
@@ -51,6 +56,7 @@ void hellwm_log(const char *format, ...)
    va_end(args);
 
 	FILE *logfile = fopen("logfile.txt", "a");
+	fprintf(logfile, "\n%s: ", log_type);
 	vfprintf(logfile, format, args);
 	fclose(logfile);
 }
@@ -284,7 +290,7 @@ static void load_config(struct hellwm_server server)
 	fconfig = fopen(configname,"rb");
 	if (fconfig == NULL)
 	{
-		hellwm_log("LOG: Error while opening file: %s", configname);
+		hellwm_log(HELLWM_LOG, "Error while opening file: %s", configname);
 		return;
 	}
 	fseek(fconfig,0L,SEEK_END);
@@ -1085,9 +1091,7 @@ static void server_new_xdg_popup(struct wl_listener *listener, void *data) {
 }
 
 static void handle_layer_shell_surface(struct wl_listener *listener, void *data) {
-	struct wlr_layer_surface_v1 *layer_surface = data;
-
-	
+	hellwm_log(HELLWM_LOG,"wlr_layer_shell_surface called");	
 }
 
 void hellwm_setup(struct hellwm_server *server)
@@ -1251,9 +1255,9 @@ int main(int argc, char *argv[]) {
 
 	//load_config(server);
 
-	hellwm_log("Started HellWM Wayland Session at ", server.socket);
+	hellwm_log(HELLWM_INFO,"Started HellWM Wayland Session at %s", server.socket);
 	wl_display_run(server.wl_display);
-	hellwm_log("Close HellWM Wayland Session");
+	hellwm_log(HELLWM_INFO, "Close HellWM Wayland Session");
 
 	hellwm_destroy_everything(&server);
 
