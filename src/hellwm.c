@@ -142,6 +142,8 @@ struct hellwm_server {
 	struct wl_listener new_output;
 	
 	struct hellwm_config_file config_file;
+	
+	const char *socket;
 };
 
 struct hellwm_output {
@@ -276,8 +278,15 @@ static void focus_toplevel(struct hellwm_toplevel *toplevel, struct wlr_surface 
 
 static void load_config(struct hellwm_server server)
 {
+	char *configname = "config.conf";
+	
 	FILE* fconfig;
-	fconfig = fopen("config.conf","r");
+	fconfig = fopen(configname,"rb");
+	if (fconfig == NULL)
+	{
+		hellwm_log("LOG: Error while opening file: %s", configname);
+		return;
+	}
 	fseek(fconfig,0L,SEEK_END);
 	int buffer_size = ftell(fconfig);
 	fseek(fconfig, 0, SEEK_SET);
@@ -1242,8 +1251,8 @@ void hellwm_setup(struct hellwm_server *server)
 			&server->request_set_selection);
 
 	/* Add a Unix socket to the Wayland display. */
-	const char *socket = wl_display_add_socket_auto(server->wl_display);
-	if (!socket) {
+	server->socket = wl_display_add_socket_auto(server->wl_display);
+	if (server->socket) {
 		wlr_backend_destroy(server->backend);
 		exit(EXIT_FAILURE);
 	}
@@ -1259,7 +1268,7 @@ void hellwm_setup(struct hellwm_server *server)
 	/* Set the WAYLAND_DISPLAY environment variable to our socket, 
 	 * XDG_CURRENT_DESKTOP to HellWM and run the startup commands if ANY. */
 
-	setenv("WAYLAND_DISPLAY", socket, true);
+	setenv("WAYLAND_DISPLAY", server->socket, true);
 	setenv("XDG_CURRENT_DESKTOP", "HellWM", true);	
 
 	if (0==1) { //YES
@@ -1274,7 +1283,7 @@ void hellwm_setup(struct hellwm_server *server)
 	 * loop configuration to listen to libinput events, DRM events, generate
 	 * frame events at the refresh rate, and so on. */
 	wlr_log(WLR_INFO,
-		"Running Wayland compositor on WAYLAND_DISPLAY=%s",socket);
+		"Running Wayland compositor on WAYLAND_DISPLAY=%s",server->socket);
 }
 
 void hellwm_destroy_everything(struct hellwm_server *server)
@@ -1302,11 +1311,11 @@ int main(int argc, char *argv[]) {
 
 	hellwm_setup(&server);
 
-	//load_config(server);
+	load_config(server);
 
-	//hellwm_log("Started HellWM Wayland Session");
+	//hellwm_log("Started HellWM Wayland Session at %s, server->socket);
 	wl_display_run(server.wl_display);
-	//hellwm_log("Close HellWM Wayland Session");
+	hellwm_log("Close HellWM Wayland Session");
 
 	hellwm_destroy_everything(&server);
 
