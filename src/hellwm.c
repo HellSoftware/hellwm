@@ -50,8 +50,8 @@ void hellwm_log(const char *format, ...)
    vprintf(format, args);
    va_end(args);
 
-	FILE *logfile = fopen("~/.cache/hellwm/logfile.txt", "a");
-	vfprintf(logfile,format, args);
+	FILE *logfile = fopen("logfile.txt", "a");
+	vfprintf(logfile, format, args);
 	fclose(logfile);
 }
 
@@ -1302,11 +1302,11 @@ int main(int argc, char *argv[]) {
 
 	hellwm_setup(&server);
 
-	load_config(server);
+	//load_config(server);
 
-	hellwm_log("Started HellWM Wayland Session");
+	//hellwm_log("Started HellWM Wayland Session");
 	wl_display_run(server.wl_display);
-	hellwm_log("Close HellWM Wayland Session");
+	//hellwm_log("Close HellWM Wayland Session");
 
 	hellwm_destroy_everything(&server);
 
