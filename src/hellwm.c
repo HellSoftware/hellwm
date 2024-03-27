@@ -43,10 +43,15 @@ static void exec_cmd(char *command)
 	}
 }
 
-void hellwm_log(char* message)
+void hellwm_log(const char *format, ...)
 {
-	FILE *logfile = fopen("~/.cache/hellwm/logfile.txt", "+w");
-	fprintf(logfile,"LOG: %s\n", message);
+	va_list args;
+   va_start(args, format);
+   vprintf(format, args);
+   va_end(args);
+
+	FILE *logfile = fopen("~/.cache/hellwm/logfile.txt", "a");
+	vfprintf(logfile,format, args);
 	fclose(logfile);
 }
 
@@ -1071,6 +1076,8 @@ static void server_new_xdg_popup(struct wl_listener *listener, void *data) {
 }
 
 static void handle_layer_shell_surface(struct wl_listener *listener, void *data) {
+	struct wlr_layer_surface_v1 *layer_surface = data;
+
 	
 }
 
