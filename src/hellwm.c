@@ -32,6 +32,7 @@
 #include <xcb/xcb.h>
 #include <xcb/xcb_icccm.h>
 #endif
+#include "config.h"
 
 #define config_status 0
 
@@ -280,29 +281,6 @@ static void focus_toplevel(struct hellwm_toplevel *toplevel, struct wlr_surface 
 		wlr_seat_keyboard_notify_enter(seat, toplevel->xdg_toplevel->base->surface,
 			keyboard->keycodes, keyboard->num_keycodes, &keyboard->modifiers);
 	}
-}
-
-static void load_config(struct hellwm_server server)
-{
-	char *configname = "config.conf";
-	
-	FILE* fconfig;
-	fconfig = fopen(configname,"rb");
-	if (fconfig == NULL)
-	{
-		hellwm_log(HELLWM_LOG, "Error while opening file: %s", configname);
-		return;
-	}
-	fseek(fconfig,0L,SEEK_END);
-	int buffer_size = ftell(fconfig);
-	fseek(fconfig, 0, SEEK_SET);
-	
-	char line[256];
-	while (fgets(line, sizeof(line), fconfig)) 
-	{
-        printf("%s", line);
-   }
-   fclose(fconfig);
 }
 
 static void destroy_toplevel(struct hellwm_server *server) {
@@ -1253,7 +1231,7 @@ int main(int argc, char *argv[]) {
 
 	hellwm_setup(&server);
 
-	//load_config(server);
+	//hellwm_config_load(server);
 
 	hellwm_log(HELLWM_INFO,"Started HellWM Wayland Session at %s", server.socket);
 	wl_display_run(server.wl_display);

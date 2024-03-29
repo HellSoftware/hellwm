@@ -5,21 +5,14 @@
 #include <stdlib.h>
 #include <stdio.h>
 #include <string.h>
+#include "config.h"
 
-enum hellwm_kbind_type {
-	KBIND_CMD,
-	KBIND_KILL,
-	KBIND_EXIT,
-	KBIND_RELOAD,
-	KBIND_MAXW,
-};
-
-static void hellwm_config_kbind_give()
+void hellwm_config_kbind_give()
 {
 	
 }
 
-static int hellwm_config_parse_line(char *line)
+int hellwm_config_parse_line(char *line)
 {
 	char *type;
 	char *keybind;
@@ -35,7 +28,7 @@ static int hellwm_config_parse_line(char *line)
 	return 0;
 }
 
-static void hellwm_config_load()
+void hellwm_config_load()
 {
 	FILE* fconfig;
 	fconfig = fopen("config.conf","r");
@@ -49,10 +42,4 @@ static void hellwm_config_load()
        hellwm_config_parse_line(line);
    }
    fclose(fconfig);
-}
-
-int main()
-{
-  hellwm_config_load();
-  return 0;
 }
