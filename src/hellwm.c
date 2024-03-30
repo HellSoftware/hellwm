@@ -210,18 +210,28 @@ struct hellwm_keyboard
 
 struct hellwm_toplevel_list
 {
-	struct hellwm_toplevel **toplevels;
+	struct wlr_xdg_toplevel **toplevels;
 	int size;
 };
 
-void hellwm_toplevel_add_to_list(struct hellwm_server *server)
+void hellwm_toplevel_add_to_list(struct hellwm_server *server, struct wlr_xdg_toplevel *new_toplevel)
 {
 	if (server->alltoplevels)
 	{
 		struct hellwm_toplevel_list *instance = malloc(sizeof(struct hellwm_toplevel_list));
 		server->alltoplevels = instance;
 	}
-	struct hellwm_toplevel **toplevels = (struct hellwm_toplevel**)realloc(server->alltoplevels->toplevels, (server->alltoplevels->size + 1) * sizeof(struct hellwm_toplevel**));	
+	struct wlr_xdg_toplevel **toplevels = (struct wlr_xdg_toplevel**)realloc(server->alltoplevels->toplevels, (server->alltoplevels->size + 1) * sizeof(struct wlr_xdg_toplevel**));
+
+	toplevels = server->alltoplevels->toplevels;
+	toplevels[server->alltoplevels->size+1] = new_toplevel;
+
+	server->alltoplevels->toplevels=toplevels;
+}
+
+void hellwm_toplevel_remove_from_list(struct wlr_xdg_toplevel *toplevel)
+{
+	free(toplevel);
 }
 
 static void set_toplevel_pos(struct hellwm_server *server, int32_t width, int32_t height) {
@@ -920,6 +930,7 @@ static void xdg_toplevel_destroy(struct wl_listener *listener, void *data) {
 	wl_list_remove(&toplevel->request_fullscreen.link);
 
 	free(toplevel);
+	//TODO free server->alltoplevels	
 }
 
 static void begin_interactive(struct hellwm_toplevel *toplevel,
