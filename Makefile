@@ -21,7 +21,7 @@ hellwm: src/hellwm.c xdg-shell-protocol.h wlr-layer-shell-unstable-v1-protocol.h
 		$(LIBS)
 
 clean:
-	rm -f hellwm xdg-shell-protocol.h xdg-shell-protocol.c wlr-layer-shell-unstable-v1-protocol.h
+	rm -f hellwm xdg-shell-protocol.h xdg-shell-protocol.c wlr-layer-shell-unstable-v1-protocol.h logfile.txt
 
 .DEFAULT_GOAL=hellwm
 .PHONY: clean

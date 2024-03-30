@@ -1,4 +1,5 @@
 #include <assert.h>
+#include <complex.h>
 #include <getopt.h>
 #include <stdbool.h>
 #include <stdint.h>
@@ -36,6 +37,7 @@
 
 #define config_status 0
 
+char *helwm_log_filename = "logfile.txt";
 #define HELLWM_INFO  "INFO"
 #define HELLWM_ERROR "ERROR"
 #define HELLWM_LOG   "LOG"
@@ -56,10 +58,19 @@ void hellwm_log(char *log_type ,const char *format, ...)
    vprintf(format, args);
    va_end(args);
 
-	FILE *logfile = fopen("logfile.txt", "a");
+	FILE *logfile = fopen(helwm_log_filename,"a");
 	fprintf(logfile, "\n%s: ", log_type);
 	vfprintf(logfile, format, args);
 	fclose(logfile);
+}
+
+void hellwm_log_flush()
+{
+	if (remove(helwm_log_filename)==0)
+	{
+		hellwm_log(HELLWM_LOG, "logfile deleted"); 
+	}
+	hellwm_log(HELLWM_ERROR, "unable to delete logfile");
 }
 
 /* For brevity's sake, struct members are annotated where they are used. */
@@ -115,7 +126,7 @@ struct hellwm_server {
 	struct wl_list toplevels;
 
 	struct wlr_layer_shell_v1 *layer_shell;
-	struct wl_listener layer_shell_surface;
+	struct wl_listener new_layer_surface;
 
 #if XWAYLAND
 
@@ -783,28 +794,21 @@ static void output_destroy(struct wl_listener *listener, void *data) {
 }
 
 static void server_new_output(struct wl_listener *listener, void *data) {
-	/* This event is raised by the backend when a new output (aka a display or
-	 * monitor) becomes available. */
+	hellwm_log(HELLWM_LOG, "server_new_output() got called");
+
 	struct hellwm_server *server =
 		wl_container_of(listener, server, new_output);
 	struct wlr_output *wlr_output = data;
 
-	/* Configures the output created by the backend to use our allocator
-	 * and our renderer. Must be done once, before commiting the output */
 	wlr_output_init_render(wlr_output, server->allocator, server->renderer);
 
-	/* The output may be disabled, switch it on. */
 	struct wlr_output_state state;
 	wlr_output_state_init(&state);
 	wlr_output_state_set_enabled(&state, true);
 
-	/* Some backends don't have modes. DRM+KMS does, and we need to set a mode
-	 * before we can use the output. The mode is a tuple of (width, height,
-	 * refresh rate), and each monitor supports only a specific set of modes. We
-	 * just pick the monitor's preferred mode, a more sophisticated compositor
-	 * would let the user configure it. */
-
 	struct wlr_output_mode *mode = wlr_output_preferred_mode(wlr_output);
+	//wlr_output_state_set_custom_mode(&state, 2560, 1440, 60); // just testing and playing with values
+	
 	if (mode != NULL) {
 		wlr_output_state_set_mode(&state, mode);
 	}
@@ -1051,11 +1055,6 @@ static void server_new_xdg_popup(struct wl_listener *listener, void *data) {
 	struct hellwm_popup *popup = calloc(1, sizeof(*popup));
 	popup->xdg_popup = xdg_popup;
 
-	/* We must add xdg popups to the scene graph so they get rendered. The
-	 * wlroots scene graph provides a helper for this, but to use it we must
-	 * provide the proper parent scene node of the xdg popup. To enable this,
-	 * we always set the user data field of xdg_surfaces to the corresponding
-	 * scene node. */
 	struct wlr_xdg_surface *parent = wlr_xdg_surface_try_from_wlr_surface(xdg_popup->parent);
 	assert(parent != NULL);
 	struct wlr_scene_tree *parent_tree = parent->data;
@@ -1068,8 +1067,9 @@ static void server_new_xdg_popup(struct wl_listener *listener, void *data) {
 	wl_signal_add(&xdg_popup->events.destroy, &popup->destroy);
 }
 
-static void handle_layer_shell_surface(struct wl_listener *listener, void *data) {
-	hellwm_log(HELLWM_LOG,"wlr_layer_shell_surface called");	
+static void server_new_layer_surface(struct wl_listener *listener, void *data)
+{
+	hellwm_log(HELLWM_LOG,"wlr_layer_shell_surface called");
 }
 
 void hellwm_setup(struct hellwm_server *server)
@@ -1082,13 +1082,13 @@ void hellwm_setup(struct hellwm_server *server)
 	server->backend = wlr_backend_autocreate(wl_display_get_event_loop(
 				server->wl_display), NULL);
 	if (server->backend == NULL) {
-		wlr_log(WLR_ERROR, "failed to create wlr_backend");
+		hellwm_log(HELLWM_ERROR, "Failed to create wlr_backend");
 		exit(EXIT_FAILURE);
 	}
 	
 	server->renderer = wlr_renderer_autocreate(server->backend);
 	if (server->renderer == NULL) {
-		wlr_log(WLR_ERROR, "failed to create wlr_renderer");
+		hellwm_log(HELLWM_ERROR, "Failed to create wlr_renderer");
 		exit(EXIT_FAILURE);
 	}
 
@@ -1098,15 +1098,13 @@ void hellwm_setup(struct hellwm_server *server)
 	server->allocator = wlr_allocator_autocreate(server->backend,
 		server->renderer);
 	if (server->allocator == NULL) {
-		wlr_log(WLR_ERROR, "failed to create wlr_allocator");
+		hellwm_log(HELLWM_ERROR, "Failed to create wlr_allocator");	
 		exit(EXIT_FAILURE);
 	}
 	
 	server->compositor = wlr_compositor_create(server->wl_display,
 		6,server->renderer);
 
-	wlr_compositor_create(server->wl_display, 5, server->renderer);
-	wlr_subcompositor_create(server->wl_display);
 	wlr_data_device_manager_create(server->wl_display);
 
 	server->output_layout = wlr_output_layout_create(
@@ -1127,15 +1125,16 @@ void hellwm_setup(struct hellwm_server *server)
 	server->new_xdg_toplevel.notify = server_new_xdg_toplevel;
 	wl_signal_add(&server->xdg_shell->events.new_toplevel, 
 			&server->new_xdg_toplevel);
+	
 	server->new_xdg_popup.notify = server_new_xdg_popup;
 	wl_signal_add(&server->xdg_shell->events.new_popup,
 			&server->new_xdg_popup);
 
 	server->layer_shell = wlr_layer_shell_v1_create(server->wl_display,
 		4);
+	server->new_layer_surface.notify = server_new_layer_surface;
 	wl_signal_add(&server->layer_shell->events.new_surface,
-		&server->layer_shell_surface);
-	server->layer_shell_surface.notify = handle_layer_shell_surface;
+		&server->new_layer_surface);
 
 	
 	server->cursor = wlr_cursor_create();
@@ -1224,7 +1223,9 @@ void hellwm_print_usage(int *argc, char**argv[])
 }
 
 int main(int argc, char *argv[]) {
-	
+
+	hellwm_log_flush();
+
 	hellwm_print_usage(&argc,&argv);
 	
 	struct hellwm_server server = {0};
