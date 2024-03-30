@@ -162,6 +162,8 @@ struct hellwm_server {
 	struct hellwm_config_file config_file;
 	
 	const char *socket;
+	
+	struct hellwm_toplevel_list *alltoplevels;
 };
 
 struct hellwm_output {
@@ -188,13 +190,15 @@ struct hellwm_toplevel {
 	struct wl_listener request_fullscreen;
 };
 
-struct hellwm_popup {
+struct hellwm_popup
+{
 	struct wlr_xdg_popup *xdg_popup;
 	struct wl_listener commit;
 	struct wl_listener destroy;
 };
 
-struct hellwm_keyboard {
+struct hellwm_keyboard
+{
 	struct wl_list link;
 	struct hellwm_server *server;
 	struct wlr_keyboard *wlr_keyboard;
@@ -203,6 +207,22 @@ struct hellwm_keyboard {
 	struct wl_listener key;
 	struct wl_listener destroy;
 };
+
+struct hellwm_toplevel_list
+{
+	struct hellwm_toplevel **toplevels;
+	int size;
+};
+
+void hellwm_toplevel_add_to_list(struct hellwm_server *server)
+{
+	if (server->alltoplevels)
+	{
+		struct hellwm_toplevel_list *instance = malloc(sizeof(struct hellwm_toplevel_list));
+		server->alltoplevels = instance;
+	}
+	struct hellwm_toplevel **toplevels = (struct hellwm_toplevel**)realloc(server->alltoplevels->toplevels, (server->alltoplevels->size + 1) * sizeof(struct hellwm_toplevel**));	
+}
 
 static void set_toplevel_pos(struct hellwm_server *server, int32_t width, int32_t height) {
 	struct wlr_surface *prev_surface = server->seat->keyboard_state.focused_surface;
@@ -807,11 +827,12 @@ static void server_new_output(struct wl_listener *listener, void *data) {
 	wlr_output_state_set_enabled(&state, true);
 
 	struct wlr_output_mode *mode = wlr_output_preferred_mode(wlr_output);
-	//wlr_output_state_set_custom_mode(&state, 2560, 1440, 60); // just testing and playing with values
 	
 	if (mode != NULL) {
 		wlr_output_state_set_mode(&state, mode);
 	}
+	
+	//wlr_output_state_set_custom_mode(&state, 2560,1440,60);
 	
 	/* Atomically applies the new output state. */
 	wlr_output_commit_state(wlr_output, &state);
@@ -1001,6 +1022,8 @@ static void server_new_xdg_toplevel(struct wl_listener *listener, void *data) {
 		wlr_scene_xdg_surface_create(&toplevel->server->scene->tree, xdg_toplevel->base);
 	toplevel->scene_tree->node.data = toplevel;
 	xdg_toplevel->base->data = toplevel->scene_tree;
+
+	//server->all_toplevels
 
 	/* Listen to the various events it can emit */
 	toplevel->map.notify = xdg_toplevel_map;
