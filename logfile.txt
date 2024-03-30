@@ -1,7 +1,0 @@
-Close HellWM Wayland Session
-INFO: Started HellWM Wayland Session at (null)
-INFO: Close HellWM Wayland Session
-INFO: Started HellWM Wayland Session at (null)
-LOG: wlr_layer_shell_surface called
-INFO: Started HellWM Wayland Session at (null)
-INFO: Started HellWM Wayland Session at (null)

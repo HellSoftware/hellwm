@@ -8,7 +8,7 @@ Currently it's just base from tinywl, because Im trying to realy understand how 
 It's not usable window manager YET.
 
 NOW to do: 
-- [  ]! TILING
+- [ ] ! TILING
 - [ ] ! wlr-layer-shell working
 - [ ] ! xdg-shell working
 - [ ] ! Xwayland working
