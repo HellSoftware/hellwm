@@ -1101,10 +1101,12 @@ void hellwm_setup(struct hellwm_server *server)
 		hellwm_log(HELLWM_ERROR, "Failed to create wlr_allocator");	
 		exit(EXIT_FAILURE);
 	}
-	
+
+	wlr_compositor_create(server->wl_display
+			, 5, server->renderer);
 	server->compositor = wlr_compositor_create(server->wl_display,
 		6,server->renderer);
-
+	wlr_subcompositor_create(server->wl_display);
 	wlr_data_device_manager_create(server->wl_display);
 
 	server->output_layout = wlr_output_layout_create(
