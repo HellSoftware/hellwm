@@ -1032,8 +1032,11 @@ static void xdg_toplevel_request_maximize(
 	}
 }
 
-static void xdg_toplevel_request_fullscreen(
-		struct wl_listener *listener, void *data) {
+static void
+xdg_toplevel_request_fullscreen(
+		struct wl_listener *listener, void *data)
+{
+	hellwm_log(HELLWM_LOG, "xdg_toplevel_request_fullscreen() called");
 	/* Just as with request_maximize, we must send a configure here. */
 	struct hellwm_toplevel *toplevel =
 		wl_container_of(listener, toplevel, request_fullscreen);
