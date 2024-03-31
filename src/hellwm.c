@@ -210,28 +210,40 @@ struct hellwm_keyboard
 
 struct hellwm_toplevel_list
 {
-	struct wlr_xdg_toplevel **toplevels;
-	int size;
+	struct hellwm_toplevel_list_element **list;
+	int32_t size;
+	int32_t current_position;
+	int32_t last_position;
 };
 
-void hellwm_toplevel_add_to_list(struct hellwm_server *server, struct wlr_xdg_toplevel *new_toplevel)
+struct hellwm_toplevel_list_element
+{
+	struct hellwm_toplevel *toplevel;
+	int32_t position;
+};
+
+void hellwm_toplevel_add_to_list(struct hellwm_server *server, struct hellwm_toplevel *new_toplevel)
 {
 	if (server->alltoplevels)
 	{
 		struct hellwm_toplevel_list *instance = malloc(sizeof(struct hellwm_toplevel_list));
+		instance->size = 0;
 		server->alltoplevels = instance;
 	}
-	struct wlr_xdg_toplevel **toplevels = (struct wlr_xdg_toplevel**)realloc(server->alltoplevels->toplevels, (server->alltoplevels->size + 1) * sizeof(struct wlr_xdg_toplevel**));
+	struct hellwm_toplevel_list_element **elements = 
+		(struct hellwm_toplevel_list_element**)realloc(server->alltoplevels->list,
+				(server->alltoplevels->size + 1) * sizeof(struct hellwm_toplevel_list_element**));
 
-	toplevels = server->alltoplevels->toplevels;
-	toplevels[server->alltoplevels->size+1] = new_toplevel;
+	elements = server->alltoplevels->list;
+	elements[server->alltoplevels->size+1]->toplevel = new_toplevel;
 
-	server->alltoplevels->toplevels=toplevels;
+	server->alltoplevels->list = elements;
+	server->alltoplevels->size += 1;
 }
 
 void hellwm_toplevel_remove_from_list(struct wlr_xdg_toplevel *toplevel)
 {
-	free(toplevel);
+	free(toplevel); // idkkk
 }
 
 static void set_toplevel_pos(struct hellwm_server *server, int32_t width, int32_t height) {
@@ -1034,7 +1046,9 @@ static void server_new_xdg_toplevel(struct wl_listener *listener, void *data) {
 	toplevel->scene_tree->node.data = toplevel;
 	xdg_toplevel->base->data = toplevel->scene_tree;
 
-	//server->all_toplevels
+	hellwm_toplevel_add_to_list(server, toplevel);	
+
+	server->alltoplevels->current_position = 0;
 
 	/* Listen to the various events it can emit */
 	toplevel->map.notify = xdg_toplevel_map;
