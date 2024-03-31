@@ -7,6 +7,9 @@
 #include <string.h>
 #include "config.h"
 
+// <type>,<something>, <something>
+//
+
 void hellwm_config_kbind_give()
 {
 	

@@ -212,8 +212,8 @@ struct hellwm_toplevel_list
 {
 	struct hellwm_toplevel_list_element **list;
 	int32_t size;
-	int32_t current_position;
-	int32_t last_position;
+	int32_t current_id;
+	int32_t last_id;
 };
 
 struct hellwm_toplevel_list_element
@@ -228,6 +228,8 @@ void hellwm_toplevel_add_to_list(struct hellwm_server *server, struct hellwm_top
 	{
 		struct hellwm_toplevel_list *instance = malloc(sizeof(struct hellwm_toplevel_list));
 		instance->size = 0;
+		instance->last_id = 0;
+		instance->current_id = 0;
 		server->alltoplevels = instance;
 	}
 	struct hellwm_toplevel_list_element **elements = 
@@ -235,10 +237,12 @@ void hellwm_toplevel_add_to_list(struct hellwm_server *server, struct hellwm_top
 				(server->alltoplevels->size + 1) * sizeof(struct hellwm_toplevel_list_element**));
 
 	elements = server->alltoplevels->list;
-	elements[server->alltoplevels->size+1]->toplevel = new_toplevel;
+	elements[server->alltoplevels->size]->toplevel = new_toplevel;
 
 	server->alltoplevels->list = elements;
 	server->alltoplevels->size += 1;
+	server->alltoplevels->last_id = server->alltoplevels->current_id;
+	server->alltoplevels->current_id = server->alltoplevels->size-1;
 }
 
 void hellwm_toplevel_remove_from_list(struct wlr_xdg_toplevel *toplevel)
@@ -340,7 +344,7 @@ static void destroy_toplevel(struct hellwm_server *server) {
 
 	if (wl_list_length(&server->toplevels) < 1)
 		return;
-
+	
 	struct wlr_seat *seat = server->seat;
 	struct wlr_surface *prev_surface = seat->keyboard_state.focused_surface;
 	struct wlr_xdg_toplevel *prev_toplevel =
@@ -351,6 +355,10 @@ static void destroy_toplevel(struct hellwm_server *server) {
 
 	focus_toplevel(next_toplevel, next_toplevel->xdg_toplevel->base->surface);
 
+	/* focus_toplevel(server->alltoplevels->list[server->alltoplevels->
+			last_id]->toplevel,server->alltoplevels->list[server->
+			alltoplevels->last_id]->toplevel->xdg_toplevel->base->surface);
+	*/
 	wlr_xdg_toplevel_send_close(prev_toplevel);
 }
 
@@ -458,7 +466,7 @@ static void keyboard_handle_key(
 	uint32_t modifiers = wlr_keyboard_get_modifiers(keyboard->wlr_keyboard);
 	if ((modifiers & WLR_MODIFIER_LOGO) &&
 			event->state == WL_KEYBOARD_KEY_STATE_PRESSED) {
-		/* If alt is held down and this button was _pressed_, we attempt to
+		/* If SUPER key is held down and this button was _pressed_, we attempt to
 		 * process it as a compositor keybinding. */
 		for (int i = 0; i < nsyms; i++) {
 			handled = handle_keybinding(server, syms[i]);
@@ -931,6 +939,7 @@ static void xdg_toplevel_commit(struct wl_listener *listener, void *data) {
 static void xdg_toplevel_destroy(struct wl_listener *listener, void *data) {
 	/* Called when the xdg_toplevel is destroyed. */
 	struct hellwm_toplevel *toplevel = wl_container_of(listener, toplevel, destroy);
+	struct hellwm_server *server = toplevel->server;
 
 	wl_list_remove(&toplevel->map.link);
 	wl_list_remove(&toplevel->unmap.link);
@@ -941,6 +950,7 @@ static void xdg_toplevel_destroy(struct wl_listener *listener, void *data) {
 	wl_list_remove(&toplevel->request_maximize.link);
 	wl_list_remove(&toplevel->request_fullscreen.link);
 
+   //focus_toplevel(focus_toplevel(server->alltoplevels->list[server->alltoplevels->current_id]->toplevel),server->alltoplevels->list[server->alltoplevels->current_id]->toplevel));
 	free(toplevel);
 	//TODO free server->alltoplevels	
 }
@@ -1046,9 +1056,9 @@ static void server_new_xdg_toplevel(struct wl_listener *listener, void *data) {
 	toplevel->scene_tree->node.data = toplevel;
 	xdg_toplevel->base->data = toplevel->scene_tree;
 
-	hellwm_toplevel_add_to_list(server, toplevel);	
 
-	server->alltoplevels->current_position = 0;
+	/* TODO fix this failed attempt to create system of focusing last focused window. */
+	//hellwm_toplevel_add_to_list(server, toplevel);
 
 	/* Listen to the various events it can emit */
 	toplevel->map.notify = xdg_toplevel_map;
