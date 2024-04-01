@@ -4,12 +4,14 @@
 #include <stdlib.h>
 #include <string.h>
 #include "../include/server.h"
+#include "../include/config.h"
 
 void hellwm_config_load(const char* filename, hellwm_config* config)
 {
     FILE* file = fopen(filename, "r");
-    if (file == NULL) {
-        printf("Failed to open HellWM config file: %s\n", filename);
+    if (file == NULL)
+    {
+        hellwm_log(HELLWM_ERROR, "Failed to open HellWM configuration file: %s\n", filename);
         return;
     }
     char line[256];
