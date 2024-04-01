@@ -8,6 +8,7 @@
 #include <time.h>
 #include <unistd.h>
 #include <wayland-server-core.h>
+#include <wchar.h>
 #include <wlr/backend.h>
 #include <wlr/render/allocator.h>
 #include <wlr/render/wlr_renderer.h>
@@ -250,49 +251,38 @@ void hellwm_toplevel_remove_from_list(struct wlr_xdg_toplevel *toplevel)
 	free(toplevel); // idkkk
 }
 
-static void set_toplevel_pos(struct hellwm_server *server, int32_t width, int32_t height) {
-	struct wlr_surface *prev_surface = server->seat->keyboard_state.focused_surface;
-
-	wlr_xdg_toplevel_set_size(wlr_xdg_toplevel_try_from_wlr_surface(prev_surface), width, height);
-}
-
-static void hellwm_resize_height_toplevel_by(struct hellwm_server *server, int32_t amount) {
+static void hellwm_resize_toplevel_by(struct hellwm_server *server, int32_t w, int32_t h)
+{
 	struct wlr_surface *focused_surface =
 		server->seat->keyboard_state.focused_surface;
 	
-	amount = amount + wlr_xdg_toplevel_try_from_wlr_surface(focused_surface )->current.height;
-	
-	if (amount<=0)
+	struct wlr_xdg_toplevel *toplevel = wlr_xdg_toplevel_try_from_wlr_surface(focused_surface);
+
+	wlr_xdg_toplevel_set_resizing(toplevel,true);
+
+	w = w + toplevel->current.width;
+	h = h + toplevel->current.height;
+
+	if (w<=0 || h<=0 )
 		return;
 
-	wlr_xdg_toplevel_set_size(wlr_xdg_toplevel_try_from_wlr_surface(focused_surface),
-			wlr_xdg_toplevel_try_from_wlr_surface(focused_surface)->current.width, amount);
+	wlr_xdg_toplevel_set_size(
+			wlr_xdg_toplevel_try_from_wlr_surface(focused_surface),
+			w,
+			h
+	);
+
+	wlr_xdg_toplevel_set_resizing(toplevel, false);
 }
 
-static void hellwm_resize_width_toplevel_by(struct hellwm_server *server, int32_t amount) {
-	struct wlr_surface *focused_surface =
-		server->seat->keyboard_state.focused_surface;
-	
-	amount = amount + wlr_xdg_toplevel_try_from_wlr_surface(focused_surface )->current.width;
+void hellwm_toggle_fullscreen_toplevel(struct hellwm_server *server)
+{
+	struct wlr_xdg_toplevel *toplevel = wlr_xdg_toplevel_try_from_wlr_surface(
+			server->seat->keyboard_state.focused_surface);
 
-	if (amount<=0)
-		return;
-
-	wlr_xdg_toplevel_set_size(wlr_xdg_toplevel_try_from_wlr_surface(focused_surface),
-			amount, wlr_xdg_toplevel_try_from_wlr_surface(focused_surface)->current.height);
-}
-
-static void hellwm_toggle_fullscreen_toplevel(struct hellwm_server *server) {
-	struct wlr_surface *focused_surface =
-		server->seat->keyboard_state.focused_surface;
-/*
-	wlr_xdg_toplevel_set_fullscreen(wlr_xdg_toplevel_try_from_wlr_surface(focused_surface),!wlr_xdg_toplevel_try_from_wlr_surface(focused_surface)->current.fullscreen);
-
-	int32_t max_width = wlr_xdg_toplevel_try_from_wlr_surface(server->seat->keyboard_state.focused_surface)->
-	int32_t max_height = wlr_xdg_toplevel_try_from_wlr_surface(server->seat->keyboard_state.focused_surface)->current.max_height;
-	
-	set_toplevel_pos(server, max_width, max_height);
-	*/
+	wlr_xdg_toplevel_set_fullscreen(
+			toplevel,
+			!toplevel->current.fullscreen);
 }
 
 static void focus_toplevel(struct hellwm_toplevel *toplevel, struct wlr_surface *surface) {
@@ -394,6 +384,10 @@ static bool handle_keybinding(struct hellwm_server *server, xkb_keysym_t sym) {
 		// function to reload keybinding config file;
 	}
 
+	/* 
+	 * hardcoded keybindings that will be loaded from config file
+	 * in the future 
+	*/
 	switch (sym) {
 	case XKB_KEY_Return:
 		exec_cmd("kitty");
@@ -407,9 +401,6 @@ static bool handle_keybinding(struct hellwm_server *server, xkb_keysym_t sym) {
 	case XKB_KEY_b:
 		exec_cmd("firefox");
 		break;
-	case XKB_KEY_r:
-		set_toplevel_pos(server, 100, 100);
-		break;
 	case XKB_KEY_p:
 		exec_cmd("pavucontrol");
 		break;
@@ -417,16 +408,16 @@ static bool handle_keybinding(struct hellwm_server *server, xkb_keysym_t sym) {
 		wl_display_terminate(server->wl_display);
 		break;
 	case XKB_KEY_l:
-		hellwm_resize_width_toplevel_by(server, 50);
+		hellwm_resize_toplevel_by(server, 50, 0);
 		break;
 	case XKB_KEY_h:
-		hellwm_resize_width_toplevel_by(server, -50);
+		hellwm_resize_toplevel_by(server, -50, 0);
 		break;
 	case XKB_KEY_k:
-		hellwm_resize_height_toplevel_by(server, -50);
+		hellwm_resize_toplevel_by(server, 0, -50);
 		break;
 	case XKB_KEY_j:
-		hellwm_resize_height_toplevel_by(server, 50);
+		hellwm_resize_toplevel_by(server, 0, 50);
 		break;
 	case XKB_KEY_f:
 		hellwm_toggle_fullscreen_toplevel(server);	
@@ -1038,11 +1029,16 @@ xdg_toplevel_request_fullscreen(
 {
 	hellwm_log(HELLWM_LOG, "xdg_toplevel_request_fullscreen() called");
 	/* Just as with request_maximize, we must send a configure here. */
+	
 	struct hellwm_toplevel *toplevel =
 		wl_container_of(listener, toplevel, request_fullscreen);
+
 	if (toplevel->xdg_toplevel->base->initialized) {
 		wlr_xdg_surface_schedule_configure(toplevel->xdg_toplevel->base);
 	}
+	wlr_xdg_toplevel_set_fullscreen(
+			toplevel->xdg_toplevel,
+			!toplevel->xdg_toplevel->current.fullscreen);
 }
 
 static void server_new_xdg_toplevel(struct wl_listener *listener, void *data) {
