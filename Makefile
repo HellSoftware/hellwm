@@ -15,7 +15,7 @@ xdg-shell-protocol.h:
 
 hellwm: src/hellwm.c xdg-shell-protocol.h wlr-layer-shell-unstable-v1-protocol.h 
 	$(CC) $(CFLAGS) \
-		-g -Werror -I. \
+		-g -Werror -I. -I./src \
 		-DWLR_USE_UNSTABLE \
 		-o $@ $< \
 		$(LIBS)

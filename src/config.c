@@ -1,48 +1,61 @@
-/* 
- * its part for main code, its created for easier testing and developing
-*/
-
-#include <stdlib.h>
+#include <complex.h>
 #include <stdio.h>
+#include <stdlib.h>
+#include <stdlib.h>
 #include <string.h>
-#include "config.h"
+#include "../include/server.h"
 
-// <type>,<something>, <something>
-//
-
-void hellwm_config_kbind_give()
+void hellwm_config_load(const char* filename, hellwm_config* config)
 {
-	
+    FILE* file = fopen(filename, "r");
+    if (file == NULL) {
+        printf("Failed to open HellWM config file: %s\n", filename);
+        return;
+    }
+    char line[256];
+    while (fgets(line, sizeof(line), file)) {
+        if (line[0] == '#' || line[0] == '\n') continue;
+        char* key = strtok(line, "=");
+        char* value = strtok(NULL, "\n");
+        
+        if (!strcmp(key,"source"))
+        {
+            hellwm_config_load(value, config);
+            continue;
+        }
+        
+        if (key && value)
+        {
+            config->items = realloc(config->items, (config->count + 1) * sizeof(hellwm_config_item));
+            strncpy(config->items[config->count].key, key, sizeof(config->items[config->count].key));
+            strncpy(config->items[config->count].value, value, sizeof(config->items[config->count].value));
+            config->count++;
+        }
+    }
+    fclose(file);
 }
 
-int hellwm_config_parse_line(char *line)
+const char* hellwm_config_get_value(const hellwm_config* config, const char* key)
 {
-	char *type;
-	char *keybind;
-
-	type = strtok(line,",");
-	printf("%s\n",type);
-	
-	memcpy(line + strlen(type), line, strlen(line));		
-
-	keybind = strtok(line,",");
-	printf("%s\n",type);
-
-	return 0;
+    for (int i = 0; i < config->count; i++) {
+        if (strcmp(config->items[i].key, key) == 0) {
+            printf("\n%s - %s",key,config->items[i].value);
+            //return hellwm_config->items[i].value;
+        }
+    }
+    return NULL;
 }
 
-void hellwm_config_load()
+/*int main()
 {
-	FILE* fconfig;
-	fconfig = fopen("config.conf","r");
-	fseek(fconfig,0L,SEEK_END);
-	int buffer_size = ftell(fconfig);
-	fseek(fconfig, 0, SEEK_SET);
-	
-	char line[256];
-	while (fgets(line, sizeof(line), fconfig)) 
-	{
-       hellwm_config_parse_line(line);
-   }
-   fclose(fconfig);
-}
+    hellwm_config hellwm_config = {NULL, 0};
+    hellwm_config_load("config.conf", &hellwm_config);
+
+    for (int i=0;i<hellwm_config.count;i++)
+    {
+        printf("%s: %s\n",hellwm_config.items[i].key,hellwm_config.items[i].value);
+    }
+
+    free(hellwm_config.items);
+    return 0;
+}*/
