@@ -34,8 +34,10 @@
 #include <xcb/xcb.h>
 #include <xcb/xcb_icccm.h>
 #endif
+
 #include "../include/config.h"
 #include "../include/server.h"
+#include "../include/layer_shell.h"
 
 #define HELLWM_INFO  "INFO"
 #define HELLWM_ERROR "ERROR"
@@ -1002,15 +1004,6 @@ static void server_new_xdg_popup(struct wl_listener *listener, void *data) {
 	wl_signal_add(&xdg_popup->events.destroy, &popup->destroy);
 }
 
-static void server_new_layer_surface(struct wl_listener *listener, void *data)
-{
-	hellwm_log(HELLWM_LOG,"wlr_layer_shell_surface called");
-
-	//struct hellwm_server *server = wl_container_of(listener, server, new_layer_surface);
-	
-   //struct wlr_layer_surface_v1 *layer_surface = data;
-}
-
 void hellwm_setup(struct hellwm_server *server)
 {
 	//	FUTURE SETUP OF EVERYTING
@@ -1131,7 +1124,8 @@ void hellwm_setup(struct hellwm_server *server)
 	setenv("WAYLAND_DISPLAY", server->socket, true);
 	setenv("XDG_CURRENT_DESKTOP", "HellWM", true);	
 
-	char **cmds_autostart = {};// load from config
+	exec_cmd("hyprpaper");
+	char **cmds_autostart; // load from config
 	if (0==1) { //YES
 		for (int i=0;i<sizeof(cmds_autostart);i++)
 		{

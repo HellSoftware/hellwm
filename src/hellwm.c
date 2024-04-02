@@ -37,10 +37,12 @@
 
 #include "../include/server.h"
 #include "../include/config.h"
+#include "../include/layer_shell.h"
 
-#include "./server.c" // }
-					//				 - problem with linking :/
-#include "./config.c" // }
+// problem with linking :/
+#include "./server.c"
+#include "./layer_shell.c"
+#include "./config.c"
 
 void hellwm_print_usage(int *argc, char**argv[])
 {
