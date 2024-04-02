@@ -29,6 +29,7 @@
 #include <wlr/util/log.h>
 #include <xkbcommon/xkbcommon-keysyms.h>
 #include <xkbcommon/xkbcommon.h>
+
 #ifdef XWAYLAND
 #include <wlr/xwayland.h>
 #include <xcb/xcb.h>
@@ -76,7 +77,6 @@ void hellwm_log_flush()
 	}
 	hellwm_log(HELLWM_ERROR, "unable to delete logfile");
 }
-
 
 void hellwm_toplevel_add_to_list(struct hellwm_server *server, struct hellwm_toplevel *new_toplevel)
 {
@@ -1124,7 +1124,6 @@ void hellwm_setup(struct hellwm_server *server)
 	setenv("WAYLAND_DISPLAY", server->socket, true);
 	setenv("XDG_CURRENT_DESKTOP", "HellWM", true);	
 
-	exec_cmd("hyprpaper");
 	char **cmds_autostart; // load from config
 	if (0==1) { //YES
 		for (int i=0;i<sizeof(cmds_autostart);i++)

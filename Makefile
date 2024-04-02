@@ -13,7 +13,7 @@ xdg-shell-protocol.h:
 	$(WAYLAND_SCANNER) server-header \
 		$(WAYLAND_PROTOCOLS)/stable/xdg-shell/xdg-shell.xml $@
 
-hellwm: src/hellwm.c src/server.c src/config.c include/config.h include/server.h xdg-shell-protocol.h wlr-layer-shell-unstable-v1-protocol.h 
+hellwm: src/hellwm.c src/server.c src/config.c src/layer_shell.c include/config.h include/server.h xdg-shell-protocol.h wlr-layer-shell-unstable-v1-protocol.h 
 	$(CC) $(CFLAGS) \
 		-g -Werror -I. -I./src \
 		-DWLR_USE_UNSTABLE \

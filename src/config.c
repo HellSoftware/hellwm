@@ -48,7 +48,9 @@ const char* hellwm_config_get_value(const hellwm_config* config, const char* key
     return NULL;
 }
 
-/*int main()
+/* for easier tests of loading config */
+/*
+int main()
 {
     hellwm_config hellwm_config = {NULL, 0};
     hellwm_config_load("config.conf", &hellwm_config);
@@ -60,4 +62,5 @@ const char* hellwm_config_get_value(const hellwm_config* config, const char* key
 
     free(hellwm_config.items);
     return 0;
-}*/
+}
+*/

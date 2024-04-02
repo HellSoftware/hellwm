@@ -32,18 +32,20 @@
 #include <wlr/util/log.h>
 #include <xkbcommon/xkbcommon-keysyms.h>
 #include <xkbcommon/xkbcommon.h>
+#include "config.h"
+
 #ifdef XWAYLAND
 #include <wlr/xwayland.h>
 #include <xcb/xcb.h>
 #include <xcb/xcb_icccm.h>
 #endif
-#include "config.h"
 
 #define HELLWM_INFO  "INFO"
 #define HELLWM_ERROR "ERROR"
 #define HELLWM_LOG   "LOG"
 
-enum hellwm_cursor_mode {
+enum hellwm_cursor_mode
+{
 	HELLWM_CURSOR_PASSTHROUGH,
 	HELLWM_CURSOR_MOVE,
 	HELLWM_CURSOR_RESIZE,
@@ -220,7 +222,6 @@ static void server_new_xdg_toplevel(struct wl_listener *listener, void *data) ;
 static void xdg_popup_commit(struct wl_listener *listener, void *data);
 static void xdg_popup_destroy(struct wl_listener *listener, void *data);
 static void server_new_xdg_popup(struct wl_listener *listener, void *data);
-static void server_new_layer_surface(struct wl_listener *listener, void *data);
 static struct hellwm_toplevel *desktop_toplevel_at(struct hellwm_server *server, double lx, double ly,struct wlr_surface **surface, double *sx, double *sy);
 
 #endif
