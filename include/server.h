@@ -101,8 +101,9 @@ struct hellwm_server
 	uint32_t resize_edges;
 
 	struct wlr_output_layout *output_layout;
-	struct wl_list outputs;
+	//struct hellwm_outputs_list *outputs_list;
 	struct wl_listener new_output;
+	struct wl_list outputs;
 	
 	const char *socket;
 	
@@ -117,6 +118,12 @@ struct hellwm_output
 	struct wl_listener frame;
 	struct wl_listener request_state;
 	struct wl_listener destroy;
+};
+
+struct hellwm_outputs_list 
+{
+	struct hellwm_output **outputs;
+	int count;
 };
 
 struct hellwm_toplevel

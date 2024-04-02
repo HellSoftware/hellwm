@@ -34,8 +34,8 @@
 #include <xcb/xcb.h>
 #include <xcb/xcb_icccm.h>
 #endif
-#include "include/config.h"
-#include "include/server.h"
+#include "../include/config.h"
+#include "../include/server.h"
 
 #define HELLWM_INFO  "INFO"
 #define HELLWM_ERROR "ERROR"
@@ -679,6 +679,16 @@ static void output_request_state(struct wl_listener *listener, void *data) {
 
 static void output_destroy(struct wl_listener *listener, void *data) {
 	struct hellwm_output *output = wl_container_of(listener, output, destroy);
+	struct hellwm_server *server = output->server;
+	
+	/*for (int i=0;i<server->outputs_list->count;i++)
+	{
+		if (server->outputs_list->outputs[i]->wlr_output->name == output->wlr_output->name)
+		{
+			free(server->outputs_list->outputs[i]);
+			server->outputs_list->count--;
+		}
+	}*/
 
 	wl_list_remove(&output->frame.link);
 	wl_list_remove(&output->request_state.link);
@@ -717,6 +727,19 @@ static void server_new_output(struct wl_listener *listener, void *data) {
 	output->wlr_output = wlr_output;
 	output->server = server;
 
+	
+	/*  if outputs list is not allocated, do it and add output to the list  
+	if (server->outputs_list==NULL)
+	{
+		struct hellwm_outputs_list *list = malloc(sizeof(struct hellwm_outputs_list));
+		list->count=0;
+		server->outputs_list=list;
+	}
+	server->outputs_list->outputs = realloc(server->outputs_list->outputs, (server->outputs_list->count + 1) * sizeof(struct hellwm_output));
+   server->outputs_list->outputs[server->outputs_list->count] = output;
+	server->outputs_list->count++;
+	*/
+
 	/* Sets up a listener for the frame event. */
 	output->frame.notify = output_frame;
 	wl_signal_add(&wlr_output->events.frame, &output->frame);
@@ -730,6 +753,8 @@ static void server_new_output(struct wl_listener *listener, void *data) {
 	wl_signal_add(&wlr_output->events.destroy, &output->destroy);
 
 	wl_list_insert(&server->outputs, &output->link);
+	
+	hellwm_log("New output: ",wlr_output->name, wlr_output->description);
 
 	/* Adds this to the output layout. The add_auto function arranges outputs
 	 * from left-to-right in the order they appear. A more sophisticated
@@ -980,6 +1005,10 @@ static void server_new_xdg_popup(struct wl_listener *listener, void *data) {
 static void server_new_layer_surface(struct wl_listener *listener, void *data)
 {
 	hellwm_log(HELLWM_LOG,"wlr_layer_shell_surface called");
+
+	//struct hellwm_server *server = wl_container_of(listener, server, new_layer_surface);
+	
+   //struct wlr_layer_surface_v1 *layer_surface = data;
 }
 
 void hellwm_setup(struct hellwm_server *server)
