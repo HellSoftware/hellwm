@@ -383,6 +383,18 @@ static void server_new_pointer(struct hellwm_server *server,
 	wlr_cursor_attach_input_device(server->cursor, device);
 }
 
+static void
+server_new_touch(struct hellwm_server *server, struct wlr_input_device *device)
+{
+	wlr_cursor_attach_input_device(server->cursor, device);
+}
+
+static void
+server_new_tablet(struct hellwm_server *server, struct wlr_input_device *device)
+{
+	wlr_cursor_attach_input_device(server->cursor, device);
+}
+
 static void server_new_input(struct wl_listener *listener, void *data) {
 	/* This event is raised by the backend when a new input device becomes
 	 * available. */
@@ -395,6 +407,12 @@ static void server_new_input(struct wl_listener *listener, void *data) {
 		break;
 	case WLR_INPUT_DEVICE_POINTER:
 		server_new_pointer(server, device);
+		break;
+	case WLR_INPUT_DEVICE_TABLET:
+		server_new_tablet(server,device);
+		break;
+	case WLR_INPUT_DEVICE_TOUCH:
+		server_new_touch(server, device);
 		break;
 	default:
 		break;
