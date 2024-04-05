@@ -55,11 +55,11 @@ int main(int argc, char *argv[])
 
 	hellwm_log_flush();
 
-	struct hellwm_server server = {0};
+	struct hellwm_server server = {};
 
 	hellwm_setup(&server);
 
-	hellwm_log(HELLWM_INFO,"Started HellWM Wayland Session at ", server.socket);
+	hellwm_log(HELLWM_INFO,"Started HellWM Wayland Session at %s", server.socket);
 	wl_display_run(server.wl_display);
 	hellwm_log(HELLWM_INFO, "Close HellWM Wayland Session");
 

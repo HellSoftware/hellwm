@@ -13,8 +13,9 @@ typedef struct {
     char value[256];
 } hellwm_config_item;
 
-typedef struct {
+typedef struct{
     hellwm_config_item *items;
+    char *name;
     int count;
 } hellwm_config_group;
 
@@ -32,8 +33,9 @@ typedef struct {
     int count;
 } hellwm_config;
 
+void hellwm_config_setup(hellwm_config *config);
 void hellwm_config_load(const char* filename, hellwm_config* config);
-
 const char* hellwm_config_get_value(const hellwm_config* config, const char* key);
+hellwm_config_group *hellwm_config_search_in_group_by_name(hellwm_config *config, char*query);
 
 #endif

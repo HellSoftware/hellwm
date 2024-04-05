@@ -5,9 +5,11 @@
 #include <stdint.h>
 #include <stdlib.h>
 #include <stdio.h>
+#include <string.h>
 #include <time.h>
 #include <unistd.h>
 #include <wayland-server-core.h>
+#include <wayland-server-protocol.h>
 #include <wchar.h>
 #include <wlr/backend.h>
 #include <wlr/render/allocator.h>
@@ -56,13 +58,22 @@ static void exec_cmd(char *command)
 // LOG
 void hellwm_log(char *log_type ,const char *format, ...)
 {
+
+
 	char *helwm_log_filename = "logfile.txt";
 	va_list args;
    va_start(args, format);
    vprintf(format, args);
    va_end(args);
+	printf("\n");
 
 	FILE *logfile = fopen(helwm_log_filename,"a");
+
+	fseek(logfile, 0L, SEEK_END);
+	if (ftell(logfile) == 0)
+	{
+		fprintf(logfile, "******** HELLWM LOGFILE ********\n");
+ 	}
 	fprintf(logfile, "\n%s: ", log_type);
 	vfprintf(logfile, format, args);
 	fclose(logfile);
@@ -75,7 +86,10 @@ void hellwm_log_flush()
 	{
 		hellwm_log(HELLWM_LOG, "logfile deleted"); 
 	}
-	hellwm_log(HELLWM_ERROR, "unable to delete logfile");
+	else
+	{
+		hellwm_log(HELLWM_ERROR, "unable to delete logfile");
+	}
 }
 
 void hellwm_toplevel_add_to_list(struct hellwm_server *server, struct hellwm_toplevel *new_toplevel)
@@ -731,13 +745,16 @@ static void server_new_output(struct wl_listener *listener, void *data) {
 	wlr_output_state_set_enabled(&state, true);
 
 	struct wlr_output_mode *mode = wlr_output_preferred_mode(wlr_output);
-	
+
 	if (mode != NULL) {
 		wlr_output_state_set_mode(&state, mode);
 	}
-	
-	//wlr_output_state_set_custom_mode(&state, 2560,1440,60);
-	
+
+	/* this should be read by config, im working on it... -_- */
+	if (!strcmp(wlr_output->name,"DP-2")) {
+		wlr_output_state_set_transform(&state, WL_OUTPUT_TRANSFORM_90);
+	}
+
 	/* Atomically applies the new output state. */
 	wlr_output_commit_state(wlr_output, &state);
 	wlr_output_state_finish(&state);
@@ -747,7 +764,6 @@ static void server_new_output(struct wl_listener *listener, void *data) {
 	output->wlr_output = wlr_output;
 	output->server = server;
 
-	
 	/*  if outputs list is not allocated, do it and add output to the list  
 	if (server->outputs_list==NULL)
 	{
@@ -1024,6 +1040,21 @@ static void server_new_xdg_popup(struct wl_listener *listener, void *data) {
 
 void hellwm_setup(struct hellwm_server *server)
 {
+    /* testing config */
+	if (false)
+	{
+		hellwm_config config={NULL,NULL,0};
+		hellwm_config_load("config/config.conf", &config);
+		
+		for (int i=0;i<config.count;i++)
+		{
+		    printf("| %s | = | %s |\n",config.items[i].key,config.items[i].value);
+		}
+		free(config.items);
+		
+		pause();
+	}
+	 
 	//	FUTURE SETUP OF EVERYTING
 	
 	wlr_log_init(WLR_DEBUG, NULL);
