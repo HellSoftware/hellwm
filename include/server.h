@@ -40,9 +40,10 @@
 #include <xcb/xcb_icccm.h>
 #endif
 
-#define HELLWM_INFO  "INFO"
-#define HELLWM_ERROR "ERROR"
-#define HELLWM_LOG   "LOG"
+#define HELLWM_INFO  "INFO: "
+#define HELLWM_ERROR "ERROR: "
+#define HELLWM_LOG   "LOG: "
+
 
 enum hellwm_cursor_mode
 {
@@ -176,7 +177,7 @@ struct hellwm_toplevel_list_element
 	int32_t position;
 };
 void hellwm_toplevel_add_to_list(struct hellwm_server *server, struct hellwm_toplevel *new_toplevel);
-void hellwm_log(char *log_type ,const char *format, ...);
+void hellwm_log(char *logtype, char *format, ...);
 void hellwm_log_flush();
 void hellwm_toplevel_remove_from_list(struct wlr_xdg_toplevel *toplevel);
 void hellwm_toggle_fullscreen_toplevel(struct hellwm_server *server);

@@ -32,7 +32,7 @@ typedef struct {
     int count;
 } hellwm_config;
 
-void hellwm_config_setup(hellwm_config *config);
+void hellwm_config_print(hellwm_config *config);
 void hellwm_config_load(const char* filename, hellwm_config* config);
 int hellwm_config_check_character_in_line(char *line, char character);
 const char* hellwm_config_get_value(const hellwm_config* config, const char* key);

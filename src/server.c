@@ -42,10 +42,6 @@
 #include "../include/server.h"
 #include "../include/layer_shell.h"
 
-#define HELLWM_INFO  "INFO"
-#define HELLWM_ERROR "ERROR"
-#define HELLWM_LOG   "LOG"
-
 // Execute command in new thread
 static void exec_cmd(char *command)
 {
@@ -56,15 +52,13 @@ static void exec_cmd(char *command)
 }
 
 // LOG
-void hellwm_log(char *log_type ,const char *format, ...)
+void hellwm_log(char *logtype, char *format, ...)
 {
-
-
 	char *helwm_log_filename = "logfile.txt";
 	va_list args;
    va_start(args, format);
-   vprintf(format, args);
-   va_end(args);
+
+   //vprintf(format, args);
 	printf("\n");
 
 	FILE *logfile = fopen(helwm_log_filename,"a");
@@ -74,9 +68,12 @@ void hellwm_log(char *log_type ,const char *format, ...)
 	{
 		fprintf(logfile, "******** HELLWM LOGFILE ********\n");
  	}
-	fprintf(logfile, "\n%s: ", log_type);
-	vfprintf(logfile, format, args);
-	fclose(logfile);
+
+	fprintf(logfile, "\n%s: ", logtype);
+
+   va_end(args);
+	//vfprintf(logfile, format, args);
+	fclose(logfile);	
 }
 
 void hellwm_log_flush()
@@ -1041,14 +1038,13 @@ static void server_new_xdg_popup(struct wl_listener *listener, void *data) {
 void hellwm_setup(struct hellwm_server *server)
 {
     /* testing config */
-	if (true)
+	if (false)
 	{
 		hellwm_config config={NULL,0};
 		hellwm_config_load("config/config.conf", &config);
-		
-		pause();
+		hellwm_config_print(&config);
 	}
-	 
+
 	//	FUTURE SETUP OF EVERYTING
 	
 	wlr_log_init(WLR_DEBUG, NULL);
