@@ -21,9 +21,12 @@ void hellwm_config_load(const char* filename, hellwm_config* config)
     {
         linePosition++;
         if (line[0] == '#' || line[0] == '\n') continue;
+        
         char* group = strtok(line, "=");
         char* item = strtok(NULL, "\n");
-        
+
+        hellwm_log(HELLWM_LOG, "LINE: %d \t group: %s \t item: %s", linePosition, group, item);
+
         if (!strcmp(group,"source"))
         {
             hellwm_config_load(item, config);
@@ -36,7 +39,8 @@ void hellwm_config_load(const char* filename, hellwm_config* config)
             if (temp_group==NULL)
             {
                 config->groups = realloc(config->groups, (config->count + 1) * sizeof(hellwm_config_group));
-                config->groups[config->count].name=group;
+                config->count++;
+                config->groups[config->count-1].name=group;
             }
             temp_group = hellwm_config_search_in_group_by_name(config, group);
            
@@ -47,26 +51,23 @@ void hellwm_config_load(const char* filename, hellwm_config* config)
             }
             
             char* key = strtok(item, ",");
-            char* value = strtok(item, "\n");
+            char* value;// = strtok(item, "\n");
+            memcpy(value,line+strlen(key),strlen(line)-strlen(key));
+            
+            hellwm_log("HELLWM_LOG", "LINE: %d \t key: %s \t value:%s", linePosition,key,value);
 
-            temp_group->items = realloc(temp_group->items, (temp_group->count + 1) * sizeof(hellwm_config_item));
-            strncpy(temp_group->items[temp_group->count].key, key, sizeof(temp_group->items[temp_group->count].key));
-            strncpy(temp_group->items[temp_group->count].value, value, sizeof(temp_group->items[temp_group->count].value));
-                        
-            /*
-            config->items = realloc(config->items, (config->count + 1) * sizeof(hellwm_config_item));
-            strncpy(config->items[config->count].value, item, sizeof(config->items[config->count].value));
-            strncpy(config->items[config->count].value, item, sizeof(config->items[config->count].value));
-            */
-            config->count++;
-        }
+            if (key && value)
+            {
+                temp_group->items = realloc(temp_group->items, (temp_group->count + 1) * sizeof(hellwm_config_item));
+
+                strncpy(temp_group->items[temp_group->count].key, key, sizeof(temp_group->items[temp_group->count].key));
+
+                strncpy(temp_group->items[temp_group->count].value, value, sizeof(temp_group->items[temp_group->count].value));
+                temp_group->count++;
+            }
+         }
     }
     fclose(file);
-}
-
-void hellwm_config_setup(hellwm_config *config)
-{
-    config->groups = malloc(sizeof(hellwm_config_group));
 }
 
 hellwm_config_group *hellwm_config_search_in_group_by_name(hellwm_config *config, char*query)
@@ -79,6 +80,18 @@ hellwm_config_group *hellwm_config_search_in_group_by_name(hellwm_config *config
         }
     }
     return NULL;
+}
+
+int hellwm_config_check_character_in_line(char *line, char character)
+{
+    for (int i=0;i<strlen(line);i++)
+    {
+        if (line[i]==character)
+        {
+            return i;
+        }
+    }
+    return -1;
 }
 
 void hellwm_config_apply(hellwm_config *config, struct hellwm_server *server)
