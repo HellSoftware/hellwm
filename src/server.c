@@ -1041,7 +1041,7 @@ static void server_new_xdg_popup(struct wl_listener *listener, void *data) {
 void hellwm_setup(struct hellwm_server *server)
 {
     /* testing config */
-	if (false)
+	if (true)
 	{
 		hellwm_config config={NULL,NULL,0};
 		hellwm_config_load("config/config.conf", &config);

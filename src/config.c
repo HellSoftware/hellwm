@@ -1,4 +1,5 @@
 #include <complex.h>
+#include <stddef.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <stdlib.h>
@@ -19,13 +20,14 @@ void hellwm_config_load(const char* filename, hellwm_config* config)
     int linePosition=0;
     while (fgets(line, sizeof(line), file)) 
     {
+        char linecopy[strlen(line)];
+        strcpy(linecopy, line);
+
         linePosition++;
         if (line[0] == '#' || line[0] == '\n') continue;
         
         char* group = strtok(line, "=");
         char* item = strtok(NULL, "\n");
-
-        hellwm_log(HELLWM_LOG, "LINE: %d \t group: %s \t item: %s", linePosition, group, item);
 
         if (!strcmp(group,"source"))
         {
@@ -51,12 +53,18 @@ void hellwm_config_load(const char* filename, hellwm_config* config)
             }
             
             char* key = strtok(item, ",");
-            char* value;// = strtok(item, "\n");
-            memcpy(value,line+strlen(key),strlen(line)-strlen(key));
+            int idx = hellwm_config_check_character_in_line(linecopy,',');
+            if (idx==-1)
+            {
+                hellwm_log(HELLWM_ERROR, "config parse error in file: %s, at line %d", filename,linePosition);
+                continue;
+            }
             
-            hellwm_log("HELLWM_LOG", "LINE: %d \t key: %s \t value:%s", linePosition,key,value);
+            char value[strlen(linecopy)-idx+1];
 
-            if (key && value)
+            memcpy(value,linecopy+idx+1,strlen(linecopy)-idx);
+
+            if (key)
             {
                 temp_group->items = realloc(temp_group->items, (temp_group->count + 1) * sizeof(hellwm_config_item));
 
@@ -65,6 +73,8 @@ void hellwm_config_load(const char* filename, hellwm_config* config)
                 strncpy(temp_group->items[temp_group->count].value, value, sizeof(temp_group->items[temp_group->count].value));
                 temp_group->count++;
             }
+            printf("NAME: %s\nKEY: %s\nVALUE: %s\n",temp_group->name,
+                    temp_group->items[temp_group->count-1].key,temp_group->items[temp_group->count-1].value);
          }
     }
     fclose(file);
