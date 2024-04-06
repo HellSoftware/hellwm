@@ -53,6 +53,7 @@ void hellwm_config_load(const char* filename, hellwm_config* config)
             hellwm_config_group* temp_group = hellwm_config_search_in_group_by_name(config, group);
             if (temp_group==NULL)
             {
+                //error here probably TODO
                 config->groups = realloc(config->groups, (config->count + 1) * sizeof(hellwm_config_group));
                 config->groups[config->count].name=group;
                 config->count=config->count+1;
@@ -60,7 +61,7 @@ void hellwm_config_load(const char* filename, hellwm_config* config)
                         config->groups[config->count-1].name, config->count);
             }
             temp_group = hellwm_config_search_in_group_by_name(config, group);
-           
+
             if (temp_group==NULL)
             {
                 hellwm_log(HELLWM_ERROR, "Cannot find group. Line %d, File%s",linePosition,filename);
@@ -91,7 +92,6 @@ void hellwm_config_load(const char* filename, hellwm_config* config)
             }
             printf("NAME: %s\nKEY: %s\nVALUE: %s\n\n",temp_group->name,
                     temp_group->items[temp_group->count-1].key,temp_group->items[temp_group->count-1].value);
-            
          }
     }
     fclose(file);

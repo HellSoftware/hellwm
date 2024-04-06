@@ -58,7 +58,7 @@ void hellwm_log(char *logtype, char *format, ...)
 	va_list args;
    va_start(args, format);
 
-   //vprintf(format, args);
+   vprintf(format, args);
 	printf("\n");
 
 	FILE *logfile = fopen(helwm_log_filename,"a");
@@ -70,9 +70,8 @@ void hellwm_log(char *logtype, char *format, ...)
  	}
 
 	fprintf(logfile, "\n%s: ", logtype);
-
    va_end(args);
-	//vfprintf(logfile, format, args);
+	vfprintf(logfile, format, args);
 	fclose(logfile);	
 }
 
@@ -1042,7 +1041,8 @@ void hellwm_setup(struct hellwm_server *server)
 	{
 		hellwm_config config={NULL,0};
 		hellwm_config_load("config/config.conf", &config);
-		hellwm_config_print(&config);
+		//hellwm_config_print(&config);
+		pause();
 	}
 
 	//	FUTURE SETUP OF EVERYTING
