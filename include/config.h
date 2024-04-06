@@ -28,7 +28,6 @@ typedef struct{
  * bind = SUPER+Return, exec kitty
 */
 typedef struct {
-    hellwm_config_item* items;
     hellwm_config_group* groups; 
     int count;
 } hellwm_config;

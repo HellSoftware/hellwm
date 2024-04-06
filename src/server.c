@@ -1043,14 +1043,8 @@ void hellwm_setup(struct hellwm_server *server)
     /* testing config */
 	if (true)
 	{
-		hellwm_config config={NULL,NULL,0};
+		hellwm_config config={NULL,0};
 		hellwm_config_load("config/config.conf", &config);
-		
-		for (int i=0;i<config.count;i++)
-		{
-		    printf("| %s | = | %s |\n",config.items[i].key,config.items[i].value);
-		}
-		free(config.items);
 		
 		pause();
 	}

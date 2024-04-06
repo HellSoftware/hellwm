@@ -108,14 +108,3 @@ void hellwm_config_apply(hellwm_config *config, struct hellwm_server *server)
 {
     
 }
-
-const char* hellwm_config_get_value(const hellwm_config* config, const char* key)
-{
-    for (int i = 0; i < config->count; i++) {
-        if (strcmp(config->items[i].key, key) == 0) {
-            printf("\n%s - %s",key,config->items[i].value);
-            //return hellwm_config->items[i].value;
-        }
-    }
-    return NULL;
-}
