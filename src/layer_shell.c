@@ -21,8 +21,8 @@ server_new_layer_surface(struct wl_listener *listener, void *data)
 {
 	struct hellwm_server *server = wl_container_of(listener, server, new_layer_surface);
    struct wlr_layer_surface_v1 *layer_surface = data;
-	hellwm_log("New layer surface with namespace ", layer_surface->namespace);
-	
+	hellwm_log(HELLWM_LOG, "New layer surface with namespace: %s", layer_surface->namespace);
+;	
 	hellwm_log(
 			HELLWM_LOG,
 			"Current Awidth = %u, Aheight = %u, Dwidth = %u, Dheight = %u",

@@ -55,11 +55,18 @@ static void exec_cmd(char *command)
 void hellwm_log(char *logtype, char *format, ...)
 {
 	char *helwm_log_filename = "logfile.txt";
+	char content[128];
+
+	strcpy(content, logtype);
+	strcat(content, ": ");
+	strcat(content, format);
+	strcat(content, "\n");
+
 	va_list args;
    va_start(args, format);
 
-   vprintf(format, args);
-	printf("\n");
+   //vprintf(format, args);
+	//printf("\n");
 
 	FILE *logfile = fopen(helwm_log_filename,"a");
 
@@ -69,9 +76,9 @@ void hellwm_log(char *logtype, char *format, ...)
 		fprintf(logfile, "******** HELLWM LOGFILE ********\n");
  	}
 
-	fprintf(logfile, "\n%s: ", logtype);
+	//fprintf(logfile, "\n%s: ", logtype);
    va_end(args);
-	vfprintf(logfile, format, args);
+	vfprintf(logfile, content, args);
 	fclose(logfile);	
 }
 
@@ -786,7 +793,7 @@ static void server_new_output(struct wl_listener *listener, void *data) {
 
 	wl_list_insert(&server->outputs, &output->link);
 	
-	hellwm_log(HELLWM_LOG,"New output: %s",wlr_output->name, wlr_output->description);
+	hellwm_log(HELLWM_LOG,"New output: %s | %s",wlr_output->name, wlr_output->description);
 
 	/* Adds this to the output layout. The add_auto function arranges outputs
 	 * from left-to-right in the order they appear. A more sophisticated
