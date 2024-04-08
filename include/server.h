@@ -40,9 +40,9 @@
 #include <xcb/xcb_icccm.h>
 #endif
 
-#define HELLWM_INFO  "INFO: "
-#define HELLWM_ERROR "ERROR: "
-#define HELLWM_LOG   "LOG: "
+#define HELLWM_INFO  "INFO"
+#define HELLWM_ERROR "ERROR"
+#define HELLWM_LOG   "LOG"
 
 
 enum hellwm_cursor_mode

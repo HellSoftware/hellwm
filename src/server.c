@@ -786,7 +786,7 @@ static void server_new_output(struct wl_listener *listener, void *data) {
 
 	wl_list_insert(&server->outputs, &output->link);
 	
-	hellwm_log("New output: ",wlr_output->name, wlr_output->description);
+	hellwm_log(HELLWM_LOG,"New output: %s",wlr_output->name, wlr_output->description);
 
 	/* Adds this to the output layout. The add_auto function arranges outputs
 	 * from left-to-right in the order they appear. A more sophisticated
