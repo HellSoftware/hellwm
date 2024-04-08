@@ -1107,8 +1107,7 @@ void hellwm_setup(struct hellwm_server *server)
 		4);
 	server->new_layer_surface.notify = server_new_layer_surface;
 	wl_signal_add(&server->layer_shell->events.new_surface,
-		&server->new_layer_surface);
-
+		&server->new_layer_surface);	
 	
 	server->cursor = wlr_cursor_create();
 	wlr_cursor_attach_output_layout(server->cursor, server->output_layout);
