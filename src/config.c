@@ -5,6 +5,7 @@
 #include <stdlib.h>
 #include <stdlib.h>
 #include <string.h>
+#include <strings.h>
 #include <unistd.h>
 #include "../include/server.h"
 #include "../include/config.h"
@@ -37,12 +38,11 @@ void hellwm_config_load(const char* filename, hellwm_config* config)
         char* group = strtok(line, "=");
         char* item = strtok(NULL, "\n");
 
-        if (!strcmp(group,"source"))
+        if (!strcmp(group, HELLWM_CONFIG_SOURCE))
         {
             if (addElement(&sourceFilesToLoad,&sourceFilesCount,item)==1)
             {
-                perror("malloc() failed, skipping loading from sourcefile: \n");
-                //hellwm_log(HELLWM_ERROR,"malloc() failed, skipping loading from sourcefile: %s\n",item);
+                hellwm_log(HELLWM_ERROR,"malloc() failed, skipping loading from sourcefile: %s\n",item);
                 continue;
             }
             continue;
@@ -50,14 +50,20 @@ void hellwm_config_load(const char* filename, hellwm_config* config)
  
         if (group && item)
         {
-            hellwm_config_group* temp_group = hellwm_config_search_in_group_by_name(config, group);
+            hellwm_config_group *temp_group  = hellwm_config_search_in_group_by_name(config, group);
+
             if (temp_group==NULL)
             {
-                //error here probably TODO
+                /*error here probably TODO */
+                
                 config->groups = realloc(config->groups, (config->count + 1) * sizeof(hellwm_config_group));
                 config->groups[config->count].name=group;
                 config->count=config->count+1;
-                hellwm_log(HELLWM_LOG,"hellwm_config_search_in_group_by_name == NULL, created new group: %s. TOTAL SIZE: %d", 
+                
+                //add_config_group(&config->groups, &config->count, NULL);
+                //config->groups[config->count-1].name=group;
+
+                hellwm_log(HELLWM_LOG,"hellwm_config_search_in_group_by_name == -1 , created new group: %s. TOTAL SIZE: %d", 
                         config->groups[config->count-1].name, config->count);
             }
             temp_group = hellwm_config_search_in_group_by_name(config, group);
@@ -83,15 +89,12 @@ void hellwm_config_load(const char* filename, hellwm_config* config)
             if (key)
             {
                 temp_group->items = realloc(temp_group->items, (temp_group->count + 1) * sizeof(hellwm_config_item));
-
                 strncpy(temp_group->items[temp_group->count].key, key, sizeof(temp_group->items[temp_group->count].key));
-
                 strncpy(temp_group->items[temp_group->count].value, value, sizeof(temp_group->items[temp_group->count].value));
-
                 temp_group->count++;
             }
-            printf("NAME: %s\nKEY: %s\nVALUE: %s\n\n",temp_group->name,
-                    temp_group->items[temp_group->count-1].key,temp_group->items[temp_group->count-1].value);
+            //printf("NAME: %s\nKEY: %s\nVALUE: %s\n\n",temp_group->name,
+                    //temp_group->items[temp_group->count-1].key,temp_group->items[temp_group->count-1].value);
          }
     }
     fclose(file);
@@ -116,10 +119,12 @@ void hellwm_config_print(hellwm_config *config)
     }
 }
 
+/* this return index of group found under query */
 hellwm_config_group *hellwm_config_search_in_group_by_name(hellwm_config *config, char*query)
 {
     for (int i=0;i<config->count;i++)
     {
+        //printf("search in group: %s\n", config->groups[i].name); 
         if (strcmp(config->groups[i].name,query)==0)
         {
             return &config->groups[i];

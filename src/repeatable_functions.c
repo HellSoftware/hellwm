@@ -30,3 +30,8 @@ int addElement(char*** arr, int* size, const char* newElement)
 
     return 0;
 }
+
+int add_config_group(hellwm_config_group** arr, int* size, const hellwm_config_group* newElement)
+{
+    return 0;
+}

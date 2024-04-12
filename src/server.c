@@ -397,6 +397,8 @@ static void server_new_keyboard(struct hellwm_server *server,
 
 	/* And add the keyboard to our list of keyboards */
 	wl_list_insert(&server->keyboards, &keyboard->link);
+
+	hellwm_log(HELLWM_LOG, "new keyboard device: %s with layout: %s",device->name, rule_names.layout);
 }
 
 static void server_new_pointer(struct hellwm_server *server,
@@ -406,6 +408,7 @@ static void server_new_pointer(struct hellwm_server *server,
 	 * opportunity to do libinput configuration on the device to set
 	 * acceleration, etc. */
 	wlr_cursor_attach_input_device(server->cursor, device);
+	hellwm_log(HELLWM_LOG, "new pointer device: %s",device->name);
 }
 
 static void
@@ -743,8 +746,6 @@ static void output_destroy(struct wl_listener *listener, void *data) {
 }
 
 static void server_new_output(struct wl_listener *listener, void *data) {
-	hellwm_log(HELLWM_LOG, "server_new_output() got called");
-
 	struct hellwm_server *server =
 		wl_container_of(listener, server, new_output);
 	struct wlr_output *wlr_output = data;
@@ -1052,7 +1053,7 @@ static void server_new_xdg_popup(struct wl_listener *listener, void *data) {
 void hellwm_setup(struct hellwm_server *server)
 {
     /* testing config */
-	if (false)
+	if (true)
 	{
 		hellwm_config config={NULL,0};
 		hellwm_config_load("config/config.conf", &config);

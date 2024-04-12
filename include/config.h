@@ -8,6 +8,11 @@
 #include <string.h>
 #include "server.h"
 
+#define HELLWM_CONFIG_MONITOR "monitor"
+#define HELLWM_CONFIG_KEYBOARD "keyboard" 
+#define HELLWM_CONFIG_BIND "bind"
+#define HELLWM_CONFIG_SOURCE "source"
+
 typedef struct {
     char key[256];
     char value[256];
