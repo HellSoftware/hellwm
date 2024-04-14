@@ -22,11 +22,14 @@ void hellwm_config_load(const char* filename, hellwm_config* config)
     FILE* file = fopen(filename, "r");
     if (file == NULL)
     {
-        hellwm_log(HELLWM_ERROR, "Failed to open HellWM configuration file: %s\n", filename);
+        hellwm_log(HELLWM_ERROR,
+                "Failed to open HellWM configuration file: %s\n",
+                filename);
         return;
     }
     char line[256];
     int linePosition=0;
+
     while (fgets(line, sizeof(line), file)) 
     {
         char linecopy[strlen(line)];
@@ -38,7 +41,7 @@ void hellwm_config_load(const char* filename, hellwm_config* config)
         char* group = strtok(line, "=");
         char* item = strtok(NULL, "\n");
 
-        if (!strcmp(group, HELLWM_CONFIG_SOURCE))
+        if (!strcmp(group,hellwm_config_groups_arr[HELLWM_CONFIG_SOURCE]))
         {
             if (addElement(&sourceFilesToLoad,&sourceFilesCount,item)==1)
             {
@@ -54,23 +57,33 @@ void hellwm_config_load(const char* filename, hellwm_config* config)
 
             if (temp_group==NULL)
             {
-                /*error here probably TODO */
+                // error here probably TODO
                 
                 config->groups = realloc(config->groups, (config->count + 1) * sizeof(hellwm_config_group));
-                config->groups[config->count].name=group;
                 config->count=config->count+1;
+                config->groups[config->count-1].name=group;
+                config->groups[config->count-1].count=0;
+                config->groups[config->count-1].items=NULL;
                 
                 //add_config_group(&config->groups, &config->count, NULL);
                 //config->groups[config->count-1].name=group;
 
-                hellwm_log(HELLWM_LOG,"hellwm_config_search_in_group_by_name == -1 , created new group: %s. TOTAL SIZE: %d", 
-                        config->groups[config->count-1].name, config->count);
+                hellwm_log(HELLWM_LOG,
+                        "group %s does not exists, creating new one. TOTAL SIZE: %d", 
+                        config->groups[config->count-1].name,
+                        config->count);
             }
+        
             temp_group = hellwm_config_search_in_group_by_name(config, group);
 
             if (temp_group==NULL)
             {
-                hellwm_log(HELLWM_ERROR, "Cannot find group. Line %d, File%s",linePosition,filename);
+                hellwm_log(
+                        HELLWM_ERROR, 
+                        "Cannot find group named: %s. Line: %d, File: %s",
+                        group,
+                        linePosition,
+                        filename);
                 continue;
             }
             
@@ -78,7 +91,10 @@ void hellwm_config_load(const char* filename, hellwm_config* config)
             int idx = hellwm_config_check_character_in_line(linecopy,',');
             if (idx==-1)
             {
-                hellwm_log(HELLWM_ERROR, "config parse error in file: %s, at line %d", filename,linePosition);
+                hellwm_log(HELLWM_ERROR,
+                        "config parse error. File: %s, Line %d", 
+                        filename,
+                        linePosition);
                 continue;
             }
             
@@ -88,13 +104,14 @@ void hellwm_config_load(const char* filename, hellwm_config* config)
 
             if (key)
             {
+                printf("\n\n%s, %d\n",temp_group->name,temp_group->count);
                 temp_group->items = realloc(temp_group->items, (temp_group->count + 1) * sizeof(hellwm_config_item));
-                strncpy(temp_group->items[temp_group->count].key, key, sizeof(temp_group->items[temp_group->count].key));
-                strncpy(temp_group->items[temp_group->count].value, value, sizeof(temp_group->items[temp_group->count].value));
                 temp_group->count++;
+                strncpy(temp_group->items[temp_group->count-1].key, key, sizeof(temp_group->items[temp_group->count-1].key));
+                strncpy(temp_group->items[temp_group->count-1].value, value, sizeof(temp_group->items[temp_group->count-1].value));
             }
-            //printf("NAME: %s\nKEY: %s\nVALUE: %s\n\n",temp_group->name,
-                    //temp_group->items[temp_group->count-1].key,temp_group->items[temp_group->count-1].value);
+            printf("NAME: %s\nKEY: %s\nVALUE: %s\n\n",temp_group->name,
+                    temp_group->items[temp_group->count-1].key,temp_group->items[temp_group->count-1].value);
          }
     }
     fclose(file);
@@ -117,6 +134,27 @@ void hellwm_config_print(hellwm_config *config)
            printf("\t%s: %s\n",config->groups[i].items[j].key, config->groups[i].items[j].value); 
         }
     }
+}
+
+void hellwm_config_setup(hellwm_config *config)
+{
+    for (int i=0;i<sizeof(hellwm_config_groups_arr)/sizeof(hellwm_config_groups_arr[0]);i++)
+    {
+        config->groups = realloc(
+                config->groups,
+                (config->count+1) * sizeof(hellwm_config_group)
+            );
+        if (config->groups==NULL)
+        {
+            hellwm_log(HELLWM_ERROR,"realloc() failed");
+            continue;
+        }
+        config->count++;
+        config->groups[config->count-1].name=(char*)hellwm_config_groups_arr[i];
+        config->groups[config->count-1].count=0;
+        config->groups[config->count-1].items=NULL;
+    }
+    hellwm_config_print(config);
 }
 
 /* this return index of group found under query */
