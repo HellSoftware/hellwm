@@ -250,17 +250,9 @@ static bool handle_keybinding(struct hellwm_server *server, xkb_keysym_t sym) {
 	 *
 	 * This function assumes Meta key is held down.
 	 */
-		
-	//if (config_status == 1)
-	//{
-		// function to reload keybinding config file;
-	//}
-
-	/* 
-	 * hardcoded keybindings that will be loaded from config file
-	 * in the future 
-	*/
-	switch (sym) {
+	
+	switch (sym)
+	{
 	case XKB_KEY_Return:
 		exec_cmd("kitty");
 		break;
@@ -1052,13 +1044,14 @@ static void server_new_xdg_popup(struct wl_listener *listener, void *data) {
 
 void hellwm_setup(struct hellwm_server *server)
 {
-    /* testing config */
+   /* testing config */
 	if (true)
 	{
 		hellwm_config config={NULL,0};
-		hellwm_config_setup(&config);
+		hellwm_config_setup(&config, server->config_storage);
 		hellwm_config_load("config/config.conf", &config);
 		hellwm_config_print(&config);
+		hellwm_config_apply_to_server(&config,server->config_storage);
 	}
 
 	//	FUTURE SETUP OF EVERYTING
@@ -1178,11 +1171,16 @@ void hellwm_setup(struct hellwm_server *server)
 	setenv("WAYLAND_DISPLAY", server->socket, true);
 	setenv("XDG_CURRENT_DESKTOP", "HellWM", true);	
 
-	char **cmds_autostart; // load from config
-	if (0==1) { //YES
-		for (int i=0;i<sizeof(cmds_autostart);i++)
+	const char *cmds_autostart[] = 
+	{
+		"kitty",
+		"nemo"
+	}; // in future load from config
+	
+	if (1==1) { //YES
+		for (int i=0;i<sizeof(cmds_autostart)/sizeof(cmds_autostart[0]);i++)
 		{
-			exec_cmd(cmds_autostart[i]);
+			exec_cmd((char*)cmds_autostart[i]);
 		}
 	}
 

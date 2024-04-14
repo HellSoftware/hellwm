@@ -7,6 +7,7 @@
 #include <string.h>
 #include <strings.h>
 #include <unistd.h>
+#include <xkbcommon/xkbcommon.h>
 #include "../include/server.h"
 #include "../include/config.h"
 #include "../include/repeatable_functions.h"
@@ -136,7 +137,8 @@ void hellwm_config_print(hellwm_config *config)
     }
 }
 
-void hellwm_config_setup(hellwm_config *config)
+/* allocating memory for all types of groups, setting up name, count and items */
+void hellwm_config_setup(hellwm_config *config, struct hellwm_config_storage *storage)
 {
     for (int i=0;i<sizeof(hellwm_config_groups_arr)/sizeof(hellwm_config_groups_arr[0]);i++)
     {
@@ -171,6 +173,7 @@ hellwm_config_group *hellwm_config_search_in_group_by_name(hellwm_config *config
     return NULL;
 }
 
+/* returns positon on specific charcater, this helps parsing config */
 int hellwm_config_check_character_in_line(char *line, char character)
 {
     for (int i=0;i<strlen(line);i++)
@@ -183,7 +186,25 @@ int hellwm_config_check_character_in_line(char *line, char character)
     return -1;
 }
 
-void hellwm_config_apply(hellwm_config *config, struct hellwm_server *server)
+/* apply config settings to specific server parts */
+void hellwm_config_apply_to_server(hellwm_config *config, struct hellwm_config_storage *storage)
 {
-    
+    storage = malloc(sizeof(struct hellwm_config_storage));
+    storage->keyboard_binds_count   = 0;
+    storage->keyboard_binds_key     = NULL;
+    storage->keyboards              = NULL;
+    storage->monitors               = NULL;
+
+    hellwm_config_group *binds_group = hellwm_config_search_in_group_by_name(config, "bind");
+
+    storage->keyboard_binds_count   = binds_group->count;
+    storage->keyboard_binds_content = (char**)malloc(binds_group->count * sizeof(char*));
+    storage->keyboard_binds_key     = (xkb_keysym_t*)malloc(binds_group->count * sizeof(xkb_keysym_t));
+
+    for (int i = 0; i<binds_group->count;i++)
+    {
+        /* add support for more than only MOD + key TODO */
+        storage->keyboard_binds_key[i]=xkb_keysym_from_name(binds_group->items[i].key,XKB_KEYSYM_NO_FLAGS);
+        storage->keyboard_binds_content[i]=binds_group->items[i].value;
+    }
 }

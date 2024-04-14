@@ -107,10 +107,10 @@ struct hellwm_server
 	//struct hellwm_outputs_list *outputs_list;
 	struct wl_listener new_output;
 	struct wl_list outputs;
-	
 	const char *socket;
-	
 	struct hellwm_toplevel_list *alltoplevels;
+
+	struct hellwm_config_storage *config_storage;
 };
 
 struct hellwm_output

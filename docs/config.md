@@ -16,7 +16,8 @@ Groups {
         Value = shell command
         
         Example:
-            bind=SUPER+Return,kitty
+            /* assuming that you are holding MOD key (AKA Super, Windows key) /*
+            bind=Return,kitty
     }
     monitor {
         Keyword = DISPLAY NAME (example DP-1)
