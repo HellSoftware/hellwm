@@ -20,8 +20,12 @@ hellwm: src/hellwm.c src/server.c src/config.c src/layer_shell.c src/repeatable_
 		-o $@ $< \
 		$(LIBS)
 
-clean:
-	rm -f hellwm xdg-shell-protocol.h xdg-shell-protocol.c wlr-layer-shell-unstable-v1-protocol.h logfile.txt
+hellcli: src/hellcli/hellcli.c
+	$(CC) \
+	-o $@ $<
 
-.DEFAULT_GOAL=hellwm
+clean:
+	rm -f hellwm hellcli xdg-shell-protocol.h xdg-shell-protocol.c wlr-layer-shell-unstable-v1-protocol.h logfile.txt
+
+.DEFAULT_GOAL=hellwm 
 .PHONY: clean
