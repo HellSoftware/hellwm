@@ -1048,7 +1048,7 @@ void hellwm_setup(struct hellwm_server *server)
 	if (true)
 	{
 		hellwm_config config={NULL,0};
-		hellwm_config_setup(&config, server->config_storage);
+		hellwm_config_setup(&config);
 		hellwm_config_load("config/config.conf", &config);
 		hellwm_config_print(&config);
 		hellwm_config_apply_to_server(&config,server->config_storage);

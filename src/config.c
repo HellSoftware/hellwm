@@ -138,7 +138,7 @@ void hellwm_config_print(hellwm_config *config)
 }
 
 /* allocating memory for all types of groups, setting up name, count and items */
-void hellwm_config_setup(hellwm_config *config, struct hellwm_config_storage *storage)
+void hellwm_config_setup(hellwm_config *config)
 {
     for (int i=0;i<sizeof(hellwm_config_groups_arr)/sizeof(hellwm_config_groups_arr[0]);i++)
     {
