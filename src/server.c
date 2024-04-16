@@ -249,8 +249,18 @@ static bool handle_keybinding(struct hellwm_server *server, xkb_keysym_t sym) {
 	 * processing.
 	 *
 	 * This function assumes Meta key is held down.
-	 */
+	*/
 	
+	for (int i = 0; i < server->config_storage.keyboard_binds_count; i++ )
+	{
+		if (sym==server->config_storage.keyboard_binds_key[i])
+		{
+			exec_cmd(server->config_storage.keyboard_binds_content[i]);
+			return true;
+		}
+	}
+	return false;
+
 	switch (sym)
 	{
 	case XKB_KEY_Return:
@@ -1045,15 +1055,17 @@ static void server_new_xdg_popup(struct wl_listener *listener, void *data) {
 void hellwm_setup(struct hellwm_server *server)
 {
    /* testing config */
+
+	struct hellwm_config_storage global_config_storage;
 	if (true)
 	{
 		hellwm_config config={NULL,0};
 		hellwm_config_setup(&config);
 		hellwm_config_load("config/config.conf", &config);
 		hellwm_config_print(&config);
-		hellwm_config_apply_to_server(&config,server->config_storage);
+		hellwm_config_apply_to_server(&config,&global_config_storage);
+		server->config_storage = global_config_storage;
 	}
-
 	//	FUTURE SETUP OF EVERYTING
 	
 	wlr_log_init(WLR_DEBUG, NULL);

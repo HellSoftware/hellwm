@@ -55,7 +55,7 @@ int main(int argc, char *argv[])
 
 	hellwm_log_flush();
 
-	struct hellwm_server server = {};
+	struct hellwm_server server = {NULL};
 
 	hellwm_setup(&server);
 

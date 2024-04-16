@@ -189,7 +189,7 @@ int hellwm_config_check_character_in_line(char *line, char character)
 /* apply config settings to specific server parts */
 void hellwm_config_apply_to_server(hellwm_config *config, struct hellwm_config_storage *storage)
 {
-    storage = malloc(sizeof(struct hellwm_config_storage));
+    //storage = malloc(sizeof(struct hellwm_config_storage));
     storage->keyboard_binds_count   = 0;
     storage->keyboard_binds_key     = NULL;
     storage->keyboards              = NULL;

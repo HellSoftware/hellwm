@@ -110,7 +110,7 @@ struct hellwm_server
 	const char *socket;
 	struct hellwm_toplevel_list *alltoplevels;
 
-	struct hellwm_config_storage *config_storage;
+	struct hellwm_config_storage config_storage;
 };
 
 struct hellwm_output
