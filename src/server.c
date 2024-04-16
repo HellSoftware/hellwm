@@ -251,7 +251,7 @@ static bool handle_keybinding(struct hellwm_server *server, xkb_keysym_t sym) {
 	 * This function assumes Meta key is held down.
 	*/
 	
-	for (int i = 0; i < server->config_storage.keyboard_binds_count; i++ )
+	for (int i = 0; i < server->config_storage.keyboard_binds_count; i++)
 	{
 		if (sym==server->config_storage.keyboard_binds_key[i])
 		{
