@@ -259,7 +259,7 @@ static bool handle_keybinding(struct hellwm_server *server, xkb_keysym_t sym) {
 			return true;
 		}
 	}
-	return false;
+	return true;
 
 	switch (sym)
 	{
@@ -1066,6 +1066,7 @@ void hellwm_setup(struct hellwm_server *server)
 		hellwm_config_apply_to_server(&config,&global_config_storage);
 		server->config_storage = global_config_storage;
 	}
+	pause();
 	//	FUTURE SETUP OF EVERYTING
 	
 	wlr_log_init(WLR_DEBUG, NULL);

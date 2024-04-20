@@ -18,21 +18,29 @@
  * we will assign destroy_toplevel() to the assignedCommand
  * and put 'active' toplevel provided from server
  */
-typedef void (*assignedCommand);
+
+void test_func()
+{
+    printf("Testing\n");
+}
+
+typedef void(*assignedCommand)(void);
 
 typedef struct {
     char *group_keyword;
-    assignedCommand cmd;
-}hellcli_cmd;
-
-typedef struct {
     char *name;
     void *variable;
-} hellcli_cmd_filler;
+    assignedCommand cmd;
+} hellcli_cmd;
 
 // temp. main function for testing purpose
 int main(int argc, char *argv[])
 {
+    hellcli_cmd cmd;
+    cmd.cmd = test_func; 
+    
+    cmd.cmd();
+
     int buffer_size = 32;
     int c_sockfd;
     int s_sockfd;
@@ -62,6 +70,8 @@ int main(int argc, char *argv[])
 
         read(c_sockfd, &buffer, buffer_size);
         printf("Server: %s\n", buffer);
+
+        /* if errors, send info back to buffer */
 
         close(c_sockfd);
     }
