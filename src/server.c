@@ -1184,17 +1184,9 @@ void hellwm_setup(struct hellwm_server *server)
 	setenv("WAYLAND_DISPLAY", server->socket, true);
 	setenv("XDG_CURRENT_DESKTOP", "HellWM", true);	
 
-	const char *cmds_autostart[] = 
+	for (int i=0;i<server->config_storage.autostart_cmds->count;i++)
 	{
-		"kitty",
-		"nemo"
-	}; // in future load from config
-	
-	if (1==1) { //YES
-		for (int i=0;i<sizeof(cmds_autostart)/sizeof(cmds_autostart[0]);i++)
-		{
-			exec_cmd((char*)cmds_autostart[i]);
-		}
+		exec_cmd(server->config_storage.autostart_cmds->cmds[i]);
 	}
 
 /* Run the Wayland event loop. This does not return until you exit the

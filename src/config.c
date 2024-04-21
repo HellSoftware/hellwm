@@ -33,6 +33,8 @@ void hellwm_config_load(const char* filename, hellwm_config* config)
 
     while (fgets(line, sizeof(line), file)) 
     {
+        bool singleARG = false;
+
         char linecopy[strlen(line)];
         strcpy(linecopy, line);
 
@@ -88,7 +90,17 @@ void hellwm_config_load(const char* filename, hellwm_config* config)
                 continue;
             }
             
-            char* key = strtok(item, ",");
+            char *key = strtok(item, ",");
+            
+            if (key)
+            {
+                printf("\n\n%s, %d\n",temp_group->name,temp_group->count);
+                temp_group->items = realloc(temp_group->items, (temp_group->count + 1) * sizeof(hellwm_config_item));
+                temp_group->count++;
+                strncpy(temp_group->items[temp_group->count-1].key, key, sizeof(temp_group->items[temp_group->count-1].key));
+                
+            }
+            
             int idx = hellwm_config_check_character_in_line(linecopy,',');
             if (idx==-1)
             {
@@ -98,21 +110,12 @@ void hellwm_config_load(const char* filename, hellwm_config* config)
                         linePosition);
                 continue;
             }
-            
             char value[strlen(linecopy)-idx+1];
-
             memcpy(value,linecopy+idx+1,strlen(linecopy)-idx);
+            strncpy(temp_group->items[temp_group->count-1].value, value, sizeof(temp_group->items[temp_group->count-1].value));
 
-            if (key)
-            {
-                printf("\n\n%s, %d\n",temp_group->name,temp_group->count);
-                temp_group->items = realloc(temp_group->items, (temp_group->count + 1) * sizeof(hellwm_config_item));
-                temp_group->count++;
-                strncpy(temp_group->items[temp_group->count-1].key, key, sizeof(temp_group->items[temp_group->count-1].key));
-                strncpy(temp_group->items[temp_group->count-1].value, value, sizeof(temp_group->items[temp_group->count-1].value));
-            }
-            printf("NAME: %s\nKEY: %s\nVALUE: %s\n\n",temp_group->name,
-                    temp_group->items[temp_group->count-1].key,temp_group->items[temp_group->count-1].value);
+            //printf("NAME: %s\nKEY: %s\nVALUE: %s\n\n",temp_group->name,
+                    //temp_group->items[temp_group->count-1].key,temp_group->items[temp_group->count-1].value);
          }
     }
     fclose(file);
@@ -189,13 +192,14 @@ int hellwm_config_check_character_in_line(char *line, char character)
 /* apply config settings to specific server parts */
 void hellwm_config_apply_to_server(hellwm_config *config, struct hellwm_config_storage *storage)
 {
+    hellwm_config_group *binds_group = hellwm_config_search_in_group_by_name(config, "bind");
+    hellwm_config_group *autostart_group = hellwm_config_search_in_group_by_name(config, "autostart");
+
     //storage = malloc(sizeof(struct hellwm_config_storage));
     storage->keyboard_binds_count   = 0;
     storage->keyboard_binds_key     = NULL;
     storage->keyboards              = NULL;
     storage->monitors               = NULL;
-
-    hellwm_config_group *binds_group = hellwm_config_search_in_group_by_name(config, "bind");
 
     storage->keyboard_binds_count   = binds_group->count;
     storage->keyboard_binds_content = (char**)malloc(binds_group->count * sizeof(char*));
@@ -206,5 +210,13 @@ void hellwm_config_apply_to_server(hellwm_config *config, struct hellwm_config_s
         /* add support for more than only MOD + key TODO */
         storage->keyboard_binds_key[i]=xkb_keysym_from_name(binds_group->items[i].key,XKB_KEYSYM_NO_FLAGS);
         storage->keyboard_binds_content[i]=binds_group->items[i].value;
+    }
+
+    storage->autostart_cmds = malloc(sizeof(hellwm_config_storage_autostart));
+    storage->autostart_cmds->count = autostart_group->count;
+    storage->autostart_cmds->cmds = (char**)malloc(sizeof(char*)*autostart_group->count);
+    for (int i = 0; i<autostart_group->count;i++)
+    {
+        storage->autostart_cmds->cmds[i] = autostart_group->items[i].key;
     }
 }

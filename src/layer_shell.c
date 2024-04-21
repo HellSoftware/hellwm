@@ -10,6 +10,7 @@
 #include <wayland-client.h>
 #include <wayland-cursor.h>
 #include <wayland-egl.h>
+#include <wayland-util.h>
 #include <wlr/util/log.h>
 #include "../wlr-layer-shell-unstable-v1-protocol.h"
 
@@ -35,7 +36,7 @@ server_new_layer_surface(struct wl_listener *listener, void *data)
 	if (!layer_surface->output)
 	{
 		hellwm_log(HELLWM_LOG,"Layer surface not specified output, choosing by deafult");
-		return;
+		layer_surface->output = wlr_output_layout_get_center_output(server->output_layout);
 	}
 	//wlr_layer_surface_v1_configure(layer_surface, 500,500);
 }

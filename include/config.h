@@ -50,14 +50,16 @@ const char *hellwm_config_groups_arr[] ={
  "source",
  "bind",
  "monitor",
- "keyboard"
+ "keyboard",
+ "autostart"
 };
 
 enum hellwm_config_groups_types{
     HELLWM_CONFIG_SOURCE=0,
     HELLWM_CONFIG_BIND=1,
     HELLWM_CONFIG_MONITOR=2,
-    HELLWM_CONFIG_KEYBOARD=3
+    HELLWM_CONFIG_KEYBOARD=3,
+    HELLWM_CONFIG_AUTOSTART=4
 };
 
 /* monitor releated section */
@@ -80,6 +82,11 @@ typedef struct {
 	struct xkb_rule_names keyboard_rule_names;
 } hellwm_config_storage_keyboard;
 
+typedef struct {
+    char **cmds;
+    int count;
+} hellwm_config_storage_autostart;
+
 struct hellwm_config_storage
 {
     /* 
@@ -96,6 +103,9 @@ struct hellwm_config_storage
      * if not specified it's set to preferred
     */
     hellwm_config_storage_monitor *monitors;
+
+    /* autostart - just char array with commands to execute automaticlly with HellWM*/ 
+    hellwm_config_storage_autostart *autostart_cmds; 
 };
 
 typedef struct {
@@ -114,12 +124,12 @@ typedef struct {
     int count;
 } hellwm_config;
 
-void hellwm_config_apply_to_server(hellwm_config *config, struct hellwm_config_storage *storage);
 void hellwm_config_print(hellwm_config *config);
 void hellwm_config_setup(hellwm_config *config);
 void hellwm_config_load(const char* filename, hellwm_config* config);
 int hellwm_config_check_character_in_line(char *line, char character);
 const char* hellwm_config_get_value(const hellwm_config* config, const char* key);
 hellwm_config_group *hellwm_config_search_in_group_by_name(hellwm_config *config, char*query);
+void hellwm_config_apply_to_server(hellwm_config *config, struct hellwm_config_storage *storage);
 
 #endif
