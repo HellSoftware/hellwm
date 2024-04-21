@@ -1,5 +1,6 @@
 
 /* Server side of communication tool with the HellWM Wayland Compositor */
+#include <pthread.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -7,6 +8,7 @@
 #include <sys/types.h>
 #include <sys/socket.h>
 #include <sys/un.h>
+#include "../../include/hellcli/serv_hellcli.h"
 
 #define HELLWM_SOCK "/tmp/hellwm"
 
@@ -24,18 +26,12 @@ void test_func()
     printf("Testing\n");
 }
 
-typedef void(*assignedCommand)(void);
-
-typedef struct {
-    char *group_keyword;
-    char *name;
-    void *variable;
-    assignedCommand cmd;
-} hellcli_cmd;
-
 // temp. main function for testing purpose
-int main(int argc, char *argv[])
+void hellcli_serv()
 {
+    /* remove later by improving unix socket system */
+    unlink(HELLWM_SOCK);
+
     hellcli_cmd cmd;
     cmd.cmd = test_func; 
     
@@ -58,7 +54,8 @@ int main(int argc, char *argv[])
     if (bind(s_sockfd, (struct sockaddr *) &server_addr,s_size)==-1)
     {
         perror("Failed to bind socket");
-        return 1;
+        pthread_exit(NULL);
+        return;
     }
 
     listen(s_sockfd, 10);
@@ -72,10 +69,14 @@ int main(int argc, char *argv[])
         printf("Server: %s\n", buffer);
 
         /* if errors, send info back to buffer */
+        if (0)
+        {
+            write(s_sockfd, buffer, buffer_size);
+        }
 
         close(c_sockfd);
     }
-        
     close(s_sockfd);
-    return 0;
+    pthread_exit(NULL);
+    return;
 }

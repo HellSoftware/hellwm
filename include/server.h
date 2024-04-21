@@ -32,6 +32,7 @@
 #include <wlr/util/log.h>
 #include <xkbcommon/xkbcommon-keysyms.h>
 #include <xkbcommon/xkbcommon.h>
+
 #include "config.h"
 
 #ifdef XWAYLAND

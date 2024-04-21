@@ -7,16 +7,25 @@
 #include <sys/socket.h>
 #include <sys/un.h>
 
+#include "../../include/hellcli/hellcli.h"
+
 #define HELLWM_SOCK "/tmp/hellwm" 
 
-void hellcli_print_usage(int *argc, char**argv[])
+void hellcli_print_usage()
 {
 	// TODO add usage options under -h
 }
 
 int main(int argc, char *argv[])
 {
-    hellcli_print_usage(&argc, &argv);
+    if (argc < 2)
+    {
+        hellcli_print_usage();
+        exit(1);
+    }
+    char *buffer = argv[1];
+
+    hellcli_print_usage();
 
     struct sockaddr_un server_addr;
 
@@ -27,11 +36,9 @@ int main(int argc, char *argv[])
 
     if (connect(sockfd, (struct sockaddr *)&server_addr, sizeof(server_addr))==-1)
     {
-        perror("Cannot connect to hellwm socket: ");
+        perror("Cannot connect to hellwm socket");
         return 1;
     }
-
-    char buffer[32] = "Hello";
 
     write(sockfd, buffer, sizeof(buffer));
     printf("Sent: %s", buffer);

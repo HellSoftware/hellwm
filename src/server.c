@@ -8,6 +8,7 @@
 #include <string.h>
 #include <time.h>
 #include <unistd.h>
+#include <pthread.h>
 #include <wayland-server-core.h>
 #include <wayland-server-protocol.h>
 #include <wchar.h>
@@ -1066,7 +1067,6 @@ void hellwm_setup(struct hellwm_server *server)
 		hellwm_config_apply_to_server(&config,&global_config_storage);
 		server->config_storage = global_config_storage;
 	}
-	pause();
 	//	FUTURE SETUP OF EVERYTING
 	
 	wlr_log_init(WLR_DEBUG, NULL);
@@ -1203,6 +1203,13 @@ void hellwm_setup(struct hellwm_server *server)
 	 * frame events at the refresh rate, and so on. */
 	wlr_log(WLR_INFO,
 		"Running Wayland compositor on WAYLAND_DISPLAY=%s",server->socket);
+
+/*	pthread_t tid;
+	pthread_create(&tid,
+			NULL,
+			(void *)hellcli_serv,
+			NULL);
+*/
 }
 
 void hellwm_destroy_everything(struct hellwm_server *server)

@@ -7,6 +7,7 @@
 #include <stdio.h>
 #include <time.h>
 #include <unistd.h>
+#include <pthread.h>
 #include <wayland-server-core.h>
 #include <wchar.h>
 #include <wlr/backend.h>
