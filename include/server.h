@@ -116,18 +116,27 @@ struct hellwm_server
 
 struct hellwm_output
 {
+	struct {
+		struct wlr_scene_tree *shell_background;
+		struct wlr_scene_tree *shell_overlay;
+		struct wlr_scene_tree *shell_bottom;
+		struct wlr_scene_tree *fullscreen;
+		struct wlr_scene_tree *shell_top;
+		struct wlr_scene_tree *tiling;
+	} layers;
+
 	struct wl_list link;
+	struct wl_listener frame;
+	struct wl_listener destroy;
 	struct hellwm_server *server;
 	struct wlr_output *wlr_output;
-	struct wl_listener frame;
 	struct wl_listener request_state;
-	struct wl_listener destroy;
 };
 
 struct hellwm_outputs_list 
 {
-	struct hellwm_output **outputs;
 	int count;
+	struct hellwm_output **outputs;
 };
 
 struct hellwm_toplevel
@@ -144,11 +153,19 @@ struct hellwm_toplevel
 	struct wl_listener request_resize;
 	struct wl_listener request_maximize;
 	struct wl_listener request_fullscreen;
+
+	struct hellwm_output *output;
+	struct wlr_scene_layer_surface_v1 *scene;
+	struct wlr_layer_surface_v1 *layer_surface;
 };
 
 struct hellwm_popup
 {
 	struct wlr_xdg_popup *xdg_popup;
+	struct wlr_scene_tree *scene;
+	struct hellwm_toplevel *toplevel;
+
+	struct wl_listener new_popup;
 	struct wl_listener commit;
 	struct wl_listener destroy;
 };

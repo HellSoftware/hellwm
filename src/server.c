@@ -1125,12 +1125,13 @@ void hellwm_setup(struct hellwm_server *server)
 	wl_signal_add(&server->xdg_shell->events.new_popup,
 			&server->new_xdg_popup);
 
-	server->layer_shell = wlr_layer_shell_v1_create(server->wl_display,
-		4);
-	server->new_layer_surface.notify = server_new_layer_surface;
+	server->layer_shell = wlr_layer_shell_v1_create(
+			server->wl_display,
+			4);
 	wl_signal_add(&server->layer_shell->events.new_surface,
 		&server->new_layer_surface);	
-	
+	server->new_layer_surface.notify = server_new_layer_surface;
+
 	server->cursor = wlr_cursor_create();
 	wlr_cursor_attach_output_layout(server->cursor, server->output_layout);
 
