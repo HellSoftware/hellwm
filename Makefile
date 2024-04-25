@@ -26,6 +26,7 @@ SRC=\
 	 ./src/server.c 					\
 	 ./src/config.c 					\
 	 ./src/layer_shell.c 			\
+	 ./src/lua/luaUtil.c				\
 	 ./src/hellcli/serv_hellcli.c
 
 hellwm: $(HELLWM) $(SRC) xdg-shell-protocol.h wlr-layer-shell-unstable-v1-protocol.h 
