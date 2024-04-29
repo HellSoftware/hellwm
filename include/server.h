@@ -34,6 +34,7 @@
 #include <xkbcommon/xkbcommon.h>
 
 #include "config.h"
+#include "lua/luaUtil.h"
 
 #ifdef XWAYLAND
 #include <wlr/xwayland.h>

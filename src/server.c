@@ -42,6 +42,7 @@
 #include "../include/config.h"
 #include "../include/server.h"
 #include "../include/layer_shell.h"
+#include "lua/luaUtil.c"
 
 // Execute command in new thread
 static void exec_cmd(char *command)
@@ -252,6 +253,14 @@ static bool handle_keybinding(struct hellwm_server *server, xkb_keysym_t sym) {
 	 * This function assumes Meta key is held down.
 	*/
 	
+	if (XKB_KEY_c==sym)
+	{
+		struct hellwm_toplevel *next_toplevel =
+			wl_container_of(server->toplevels.prev, next_toplevel, link);
+		focus_toplevel(next_toplevel, next_toplevel->xdg_toplevel->base->surface);
+		return true;
+	}
+
 	for (int i = 0; i < server->config_storage.keyboard_binds_count; i++)
 	{
 		if (sym==server->config_storage.keyboard_binds_key[i])
@@ -1055,8 +1064,6 @@ static void server_new_xdg_popup(struct wl_listener *listener, void *data) {
 
 void hellwm_setup(struct hellwm_server *server)
 {
-   /* testing config */
-
 	struct hellwm_config_storage global_config_storage;
 	if (true)
 	{
