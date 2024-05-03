@@ -28,11 +28,15 @@ int hellwm_luaLoadFile(lua_State *L, char *filename)
   return 0;
 }
 
-void hellwm_luaGetTable(lua_State *L, char *tableName)
+int hellwm_luaGetTable(lua_State *L, char *tableName)
 {
   lua_getglobal(L, tableName);
-  if (lua_istable(L, -1))
+  if (!lua_istable(L, -1))
+  {
     hellwm_log(HELLWM_ERROR, "%s is not a table");
+    return 1;
+  }
+  return 0;
 }
 
 void *hellwm_luaGetField(lua_State *L, char *fieldName, int lua_type)

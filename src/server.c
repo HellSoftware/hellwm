@@ -404,7 +404,6 @@ static void server_new_keyboard(struct hellwm_server *server,
 	wlr_keyboard_set_keymap(wlr_keyboard, keymap);
 	xkb_keymap_unref(keymap);
 	xkb_context_unref(context);
-	//wlr_keyboard_set_repeat_info(wlr_keyboard, 50, 250);
 
 	/* Here we set up listeners for keyboard events. */
 	keyboard->modifiers.notify = keyboard_handle_modifiers;
@@ -419,7 +418,7 @@ static void server_new_keyboard(struct hellwm_server *server,
 	/* And add the keyboard to our list of keyboards */
 	wl_list_insert(&server->keyboards, &keyboard->link);
 
-	hellwm_log(HELLWM_LOG, "new keyboard device: %s with layout: %s",device->name, rule_names.layout);
+	hellwm_log(HELLWM_LOG, "new keyboard device: %s",device->name);
 
 	/*  
 	 *  Allocate keyboard list if it's not allocated
@@ -799,7 +798,8 @@ static void server_new_output(struct wl_listener *listener, void *data) {
 	}
 
 	/* this should be read by config, im working on it... -_- */
-	if (!strcmp(wlr_output->name,"DP-2")) {
+	if (!strcmp(wlr_output->name,"DP-2"))
+	{
 		wlr_output_state_set_transform(&state, WL_OUTPUT_TRANSFORM_90);
 	}
 
@@ -832,17 +832,17 @@ static void server_new_output(struct wl_listener *listener, void *data) {
 	 *  Allocate outputs list if it's not allocated
 	 *  and add output to the list 
 	*/
-	if (server->output_list->outputs == NULL)
+	if (server->output_list->count != 0)
 	{
 		server->output_list->outputs = realloc(server->output_list->outputs, (server->output_list->count + 1) * sizeof(struct hellwm_output));
 	}
 	else
 	{
-		server->output_list->outputs = malloc((server->output_list->count + 1) * sizeof(struct hellwm_output));
+		server->output_list->outputs = malloc(sizeof(struct hellwm_output));
 	}
-   server->output_list->outputs[server->output_list->count] = output;
+	server->output_list->outputs[server->output_list->count] = output;
 	server->output_list->count++;	
-
+	
 	/* Adds this to the output layout. The add_auto function arranges outputs
 	 * from left-to-right in the order they appear. A more sophisticated
 	 * compositor would let the user configure the arrangement of outputs in the

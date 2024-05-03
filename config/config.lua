@@ -4,10 +4,10 @@ keyboard = {
   layout = "pl"
 }
 
-monitor = {
-  width = 2560,
-  height = 1440,
-  hz = 165
+monitor_WL_1 = {
+  width = 1280,
+  height = 720,
+  hz = 60 
 }
 
-print("from lua")
+print("Welcome to HellWM")

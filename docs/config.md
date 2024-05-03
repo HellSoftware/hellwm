@@ -21,9 +21,9 @@ Keywords:
 - scale [int]
 - transfrom [int]
 
-Example:
+Example for DP-1:
 ```
-monitor-DP-1 = {
+monitor_DP_1 = {
    width = 2560,
    height = 1440,
    refresh_rate = 165

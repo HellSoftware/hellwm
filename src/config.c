@@ -32,12 +32,55 @@ void hellwm_config_setup(lua_State *L, char *configPath)
 
 void hellwm_config_apply_to_server(lua_State *L, struct hellwm_config_pointers *config_pointer)
 {
-    hellwm_config_keyboard_set(L,config_pointer);
+    hellwm_config_set_keyboard(L,config_pointer);
+
+    hellwm_config_set_monitor(L, config_pointer);
 }
 
-void hellwm_config_keyboard_set(lua_State *L, struct hellwm_config_pointers *config_pointer)
+void hellwm_config_set_monitor(lua_State *L, struct hellwm_config_pointers *config_pointer)
+{
+    for (int i=0;i<config_pointer->server->output_list->count;i++)
+    {
+        char name[32]="";
+        struct hellwm_output *output = config_pointer->server->output_list->outputs[i];
+        char *output_name = output->wlr_output->name;
+        strcat(name,hellwm_config_groups_arr[HELLWM_CONFIG_MONITOR]);
+        strcat(name,"_");
+        for(i=0;output_name[i]!='\0';i++)
+        {
+                if(output_name[i]=='-')
+                {
+                    output_name[i] = '_';
+                }
+                else
+                {
+                    continue;
+                }
+        } 
+        strcat(name,output_name);
+        
+        if (!hellwm_luaGetTable(L, name))
+        {
+            int width        =  tINT hellwm_luaGetField(L, "width", LUA_TNUMBER));
+            int height       =  tINT hellwm_luaGetField(L, "height", LUA_TNUMBER));
+            int refresh_rate =  tINT hellwm_luaGetField(L, "refresh_rate", LUA_TNUMBER));
+            int scale        =  tINT hellwm_luaGetField(L, "scale", LUA_TNUMBER));
+            int transfrom    =  tINT hellwm_luaGetField(L, "transfrom", LUA_TNUMBER));
+
+            // TODO wlr_output_state_set_custom_mode(output->wlr_output->, int32_t width, int32_t height, int32_t refresh);
+        }
+        else
+        {
+            hellwm_log(HELLWM_LOG, "Could not get table: %s", name); 
+        }
+        lua_pop(L, 1);
+    }
+}
+
+void hellwm_config_set_keyboard(lua_State *L, struct hellwm_config_pointers *config_pointer)
 {
     hellwm_luaGetTable(L, (char*)hellwm_config_groups_arr[HELLWM_CONFIG_KEYBOARD]);
+
     char * rules   = hellwm_luaGetField(L, "rules", LUA_TSTRING);
     char * model   = hellwm_luaGetField(L, "model", LUA_TSTRING);
     char * layout  = hellwm_luaGetField(L, "layout", LUA_TSTRING);
