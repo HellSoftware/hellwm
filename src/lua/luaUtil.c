@@ -50,12 +50,22 @@ void *hellwm_luaGetField(lua_State *L, char *fieldName, int lua_type)
         int val = lua_tonumber(L,-1); 
         temp = (void *)&val;
       }
+      else
+      {
+        int *val = NULL; 
+        temp = (void*)&val;
+      }
       break;
 
     case LUA_TSTRING:
       if (lua_isstring(L, -1))
       {
         const char *val = lua_tostring(L, -1);
+        temp = (void*)val;
+      }
+      else
+      {
+        const char *val = NULL; 
         temp = (void*)val;
       }
       break;

@@ -1,7 +1,7 @@
 keyboard = {
   delay = 50,
   rate = 200,
-  layout = "us"
+  layout = "pl"
 }
 
 monitor = {
