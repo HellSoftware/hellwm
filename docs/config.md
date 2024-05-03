@@ -1,44 +1,53 @@
-# Config Usage 
+# Config Guide 
 
-```GROUP = KEYWORD, VALUE, ...```
-
-Groups {
-    
-    source {
-        Value=config path
-        
-        Example:
-            source=~/.config/hellwm/keyboard.conf
-    }
-
-    bind {
-        Keyword = KEY
-        Value = shell command
-        
-        Example:
-            /* assuming that you are holding MOD key (AKA Super, Windows key) /*
-            bind=Return,kitty
-    }
-    monitor {
-        Keyword = DISPLAY NAME (example DP-1)
-        Value = width, height, refresh_rate, scale, transfrom 
-        
-        Example:
-            monitor=1920,1080,165,1,0
-    }
-    keyboard {
-        Keyword:
-            - rules [char*]
-            - model [char*]
-            - layout [char*]
-            - variant [char*]
-            - options [char*]
-            - repeat [int]
-            - delay [int]
-        Value = Datatype value 
-        
-        Example:
-            keyboard=layout,us
-    }
-
+To make your own config edit config/config.lua for your needs.
+You don't have to manually set every value provided bellow,
+for example you can just set only layout:
+```
+keyboard = {
+    layout = "us"
 }
+```
+
+
+# monitor 
+
+Name: monitor_OUTPUT
+
+Keywords:
+- width [int]
+- height [int]
+- refresh_rate [int]
+- scale [int]
+- transfrom [int]
+
+Example:
+```
+monitor-DP-1 = {
+   width = 2560,
+   height = 1440,
+   refresh_rate = 165
+}
+```
+
+# keyboard
+
+Name: keyboard
+
+Keywords:
+- rules [char*]
+- model [char*]
+- layout [char*]
+- variant [char*]
+- options [char*]
+- repeat [int]
+- delay [int]
+
+Example:
+```
+keyboard = {
+   repeat = 200,
+   delay = 50,
+   layout = "us"
+}
+```

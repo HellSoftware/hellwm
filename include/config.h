@@ -36,6 +36,7 @@
 #include <xkbcommon/xkbcommon.h>
 
 #include "server.h"
+#include "lua/luaUtil.h"
 
 /* 
  * in future hellwm_config_items will be swapped with
@@ -124,12 +125,6 @@ typedef struct {
     int count;
 } hellwm_config;
 
-void hellwm_config_print(hellwm_config *config);
-void hellwm_config_setup(hellwm_config *config);
-void hellwm_config_load(const char* filename, hellwm_config* config);
-int hellwm_config_check_character_in_line(char *line, char character);
-const char* hellwm_config_get_value(const hellwm_config* config, const char* key);
-hellwm_config_group *hellwm_config_search_in_group_by_name(hellwm_config *config, char*query);
-void hellwm_config_apply_to_server(hellwm_config *config, struct hellwm_config_storage *storage);
-
+void hellwm_config_setup(lua_State *L, char *configPath);
+void hellwm_config_apply_to_server(hellwm_config *config, struct hellwm_config_storage *storage, lua_State *L);
 #endif

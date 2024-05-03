@@ -1,6 +1,7 @@
 #include <assert.h>
 #include <complex.h>
 #include <getopt.h>
+#include <lua.h>
 #include <stdbool.h>
 #include <stdint.h>
 #include <stdlib.h>
@@ -251,7 +252,6 @@ static bool handle_keybinding(struct hellwm_server *server, xkb_keysym_t sym) {
 	 * processing.
 	 *
 	 * This function assumes Meta key is held down.
-	*/
 	
 	if (XKB_KEY_c==sym)
 	{
@@ -270,6 +270,7 @@ static bool handle_keybinding(struct hellwm_server *server, xkb_keysym_t sym) {
 		}
 	}
 	return true;
+	*/
 
 	switch (sym)
 	{
@@ -1067,11 +1068,13 @@ void hellwm_setup(struct hellwm_server *server)
 	struct hellwm_config_storage global_config_storage;
 	if (true)
 	{
+		lua_State *L = hellwm_luaInit();
+		server->L=L;
+		server->configPath = "config/config.lua";
+
 		hellwm_config config={NULL,0};
-		hellwm_config_setup(&config);
-		hellwm_config_load("config/config.conf", &config);
-		hellwm_config_print(&config);
-		hellwm_config_apply_to_server(&config,&global_config_storage);
+		hellwm_luaLoadFile(server->L, server->configPath);
+		hellwm_config_apply_to_server(&config,&global_config_storage,server->L);
 		server->config_storage = global_config_storage;
 	}
 	//	FUTURE SETUP OF EVERYTING
@@ -1192,10 +1195,10 @@ void hellwm_setup(struct hellwm_server *server)
 	setenv("WAYLAND_DISPLAY", server->socket, true);
 	setenv("XDG_CURRENT_DESKTOP", "HellWM", true);	
 
-	for (int i=0;i<server->config_storage.autostart_cmds->count;i++)
+	/*for (int i=0;i<server->config_storage.autostart_cmds->count;i++)
 	{
 		exec_cmd(server->config_storage.autostart_cmds->cmds[i]);
-	}
+	}*/
 
 /* Run the Wayland event loop. This does not return until you exit the
 	 * compositor. Starting the backend rigged up all of the necessary event

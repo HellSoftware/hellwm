@@ -1,6 +1,9 @@
 #include <assert.h>
 #include <complex.h>
 #include <getopt.h>
+#include <lauxlib.h>
+#include <lua.h>
+#include <lualib.h>
 #include <stdbool.h>
 #include <stdint.h>
 #include <stdlib.h>
@@ -62,7 +65,7 @@ int main(int argc, char *argv[])
 
 	hellwm_log(HELLWM_INFO,"Started HellWM Wayland Session at %s", server.socket);
 	wl_display_run(server.wl_display);
-	hellwm_log(HELLWM_INFO, "Close HellWM Wayland Session");
+	hellwm_log(HELLWM_INFO, "Closed HellWM Wayland Session");
 
 	hellwm_destroy_everything(&server);
 

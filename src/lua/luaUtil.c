@@ -7,79 +7,73 @@
 #include "../../include/server.h"
 #include "../../include/lua/luaUtil.h"
 
-lua_State *initLua()
+lua_State *hellwm_luaInit()
 {
     lua_State *L = luaL_newstate();
     luaL_openlibs(L);
     return L;
 }
 
-int luaRunCode(lua_State *L, char *code)
+int hellwm_luaLoadFile(lua_State *L, char *filename)
 {
-  if (luaL_loadstring(L, code) == LUA_OK)
+  if (luaL_loadfile(L, filename) || lua_pcall(L, 0, 0, 0))
   {
-    if (lua_pcall(L, 0, 0, 0) == LUA_OK)
-    {
-      lua_pop(L, lua_gettop(L));
-      return 0;
-    }
-    else
-    {
+      hellwm_log(HELLWM_ERROR,
+          "%s: %s",
+          filename,
+          lua_tostring(L, -1)
+      );
       return 1;
-    }
   }
-  return 1;
+  return 0;
 }
 
-int luaFromFile(lua_State *L, char *filename)
+void hellwm_luaGetTable(lua_State *L, char *tableName)
 {
-    if (luaL_dofile(L, filename) == LUA_OK)
-    {
-        lua_pop(L, lua_gettop(L));
-        return 0;
-    }
-    return 1;
-}
-
-void luaReadTable(lua_State *L, char *name)
-{
-  lua_getglobal(L,name); 
+  lua_getglobal(L, tableName);
   if (lua_istable(L, -1))
-  {
-    while (lua_next(L, -1) != 0)
-    {
-      const char *key = lua_tostring(L, -2);
-      const char *valueType = lua_typename(L, lua_type(L, -1));
-      printf("Key: %s, Value Type: %s\n", key, valueType);
-      lua_pop(L, 1);
-    }
-  }
-  else
-  {
-    printf("Not a table");
-  }
+    hellwm_log(HELLWM_ERROR, "%s is not a table");
 }
 
-void luaSetKeyboard(lua_State *L, struct xkb_context *context, struct xkb_keymap *keymap)
+void *hellwm_luaGetField(lua_State *L, char *fieldName, int lua_type)
 {
-  context = xkb_context_new(XKB_CONTEXT_NO_FLAGS);
+  void *temp;
 
-	struct xkb_rule_names rule_names = {
-		.rules = NULL,
-		.model = NULL,
-		.layout = "pl",
-		.variant = NULL,
-		.options = NULL
-	};
+  lua_pushstring(L, fieldName);
+  lua_gettable(L, -2);
 
-	keymap = xkb_keymap_new_from_names(context, &rule_names,
-		XKB_KEYMAP_COMPILE_NO_FLAGS);
+  switch (lua_type)
+  {
+    case LUA_TNUMBER:
+      if (lua_isnumber(L, -1))
+      {
+        int val = lua_tonumber(L,-1); 
+        temp = (void *)&val;
+      }
+      break;
+
+    case LUA_TSTRING:
+      if (lua_isstring(L, -1))
+      {
+        const char *val = lua_tostring(L, -1);
+        temp = (void*)val;
+      }
+      break;
+    default:
+      temp = NULL;
+  } 
+  lua_pop(L,1);
+  return temp;
 }
 
-void test()
+void hellwm_luaGetTableField(lua_State *L, char *tableName, char *fieldName)
 {
-    lua_State *L = initLua();
-    luaRunCode(L,"print('Hello, World')");
-    luaRunCode(L, "test_config.lua");
-    lua_close(L);
+  lua_getglobal(L, tableName);
+  lua_pushstring(L, fieldName);
+  lua_gettable(L, -2);
+
+  printf("%s - %s: %f",tableName, fieldName, lua_tonumber(L, -1));
+
+  lua_pop(L,1);
+  lua_pop(L,1);
 }

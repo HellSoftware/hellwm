@@ -4,6 +4,7 @@
 #include <assert.h>
 #include <complex.h>
 #include <getopt.h>
+#include <lua.h>
 #include <stdbool.h>
 #include <stdint.h>
 #include <stdlib.h>
@@ -45,7 +46,6 @@
 #define HELLWM_INFO  "INFO"
 #define HELLWM_ERROR "ERROR"
 #define HELLWM_LOG   "LOG"
-
 
 enum hellwm_cursor_mode
 {
@@ -113,6 +113,9 @@ struct hellwm_server
 	struct hellwm_toplevel_list *alltoplevels;
 
 	struct hellwm_config_storage config_storage;
+
+	lua_State *L;
+	char *configPath;
 };
 
 struct hellwm_output

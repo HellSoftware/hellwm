@@ -42,6 +42,26 @@ int main(int argc, char *argv[])
 
     write(sockfd, buffer, sizeof(buffer));
     printf("Sent: %s", buffer);
+    
+    if (0)
+    {
+        listen(sockfd, 2);
+        read(sockfd, buffer, sizeof(buffer));
+
+        /* if server returns 0 on first byte, then print error,
+         * any other data will be just printed out.
+         * Error info is stored in other rest of bytes normally.
+         */
+        if (buffer[0]==1)
+        {
+            printf("[HellWM]: \n%s",buffer);
+        }
+        else
+        {
+            strcpy(buffer, buffer+1); // TODO (haven't tested yet)
+            printf("[ERROR]: %s",buffer);
+        }
+    }
 
     close(sockfd);
     return 0;
