@@ -1,6 +1,6 @@
 keyboard = {
-  delay = 50,
-  rate = 200,
+  delay = 200,
+  rate = 50,
   layout = "pl"
 }
 

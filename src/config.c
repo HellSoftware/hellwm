@@ -42,18 +42,6 @@ void hellwm_config_apply_to_server(lua_State *L, struct hellwm_config_pointers *
     int delay =  tINT hellwm_luaGetField(L, "delay", LUA_TNUMBER));
     int rate = tINT hellwm_luaGetField(L, "rate", LUA_TNUMBER));
 
-    hellwm_log(
-            HELLWM_LOG,
-            "Keyboard Config: delay: %d, rate: %d, rules: %s, model: %s, layout: %s, variant: %s, options: %s ",
-            delay, 
-            rate, 
-            rules, 
-            model, 
-            layout, 
-            variant, 
-            options
-        );
-
     struct xkb_context *context = xkb_context_new(XKB_CONTEXT_NO_FLAGS);
 
     struct xkb_rule_names rule_names = 
@@ -70,11 +58,33 @@ void hellwm_config_apply_to_server(lua_State *L, struct hellwm_config_pointers *
            &rule_names,
            XKB_KEYMAP_COMPILE_NO_FLAGS);
 	
-    wlr_keyboard_set_keymap(config_pointer->server->seat->keyboard_state.keyboard, keymap);
-
-	 xkb_keymap_unref(keymap);
-    xkb_context_unref(context);
+    //wlr_keyboard_set_keymap(config_pointer->server->seat->keyboard_state.keyboard, keymap);
 
     wlr_keyboard_set_repeat_info(config_pointer->server->seat->keyboard_state.keyboard,delay,rate);
+
+    for (int i = 0; i < config_pointer->server->keyboard_list->count-1; ++i)
+    {
+        wlr_keyboard_set_keymap(config_pointer->server->keyboard_list->keyboards[i]->wlr_keyboard,keymap);
+        wlr_keyboard_set_repeat_info(config_pointer->server->keyboard_list->keyboards[i]->wlr_keyboard,rate,delay);
+    }
+	 
+    xkb_keymap_unref(keymap);
+    xkb_context_unref(context);
+
+    hellwm_log(
+            HELLWM_LOG,
+            "Keyboard Config: name: %s, delay: %d, rate: %d, rules: %s, model: %s, layout: %s, variant: %s, options: %s ",
+            config_pointer->server->keyboard_list->keyboards[0]->wlr_keyboard->base.name,
+            delay, 
+            rate, 
+            rules, 
+            model, 
+            layout, 
+            variant, 
+            options
+    );
+
+
+
     lua_pop(L,1); 
 }

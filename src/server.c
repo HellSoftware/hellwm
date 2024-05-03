@@ -425,7 +425,7 @@ static void server_new_keyboard(struct hellwm_server *server,
 	 *  Allocate keyboard list if it's not allocated
 	 *  and add keyboard to the list 
 	*/
-	if (server->keyboard_list->keyboards == NULL)
+	if (server->keyboard_list->keyboards != NULL)
 	{
 		server->keyboard_list->keyboards = realloc(server->keyboard_list->keyboards, (server->keyboard_list->count + 1) * sizeof(struct hellwm_keyboard));
 	}
