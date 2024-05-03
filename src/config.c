@@ -32,6 +32,11 @@ void hellwm_config_setup(lua_State *L, char *configPath)
 
 void hellwm_config_apply_to_server(lua_State *L, struct hellwm_config_pointers *config_pointer)
 {
+    hellwm_config_keyboard_set(L,config_pointer);
+}
+
+void hellwm_config_keyboard_set(lua_State *L, struct hellwm_config_pointers *config_pointer)
+{
     hellwm_luaGetTable(L, (char*)hellwm_config_groups_arr[HELLWM_CONFIG_KEYBOARD]);
     char * rules   = hellwm_luaGetField(L, "rules", LUA_TSTRING);
     char * model   = hellwm_luaGetField(L, "model", LUA_TSTRING);
@@ -58,10 +63,6 @@ void hellwm_config_apply_to_server(lua_State *L, struct hellwm_config_pointers *
            &rule_names,
            XKB_KEYMAP_COMPILE_NO_FLAGS);
 	
-    //wlr_keyboard_set_keymap(config_pointer->server->seat->keyboard_state.keyboard, keymap);
-
-    wlr_keyboard_set_repeat_info(config_pointer->server->seat->keyboard_state.keyboard,delay,rate);
-
     for (int i = 0; i < config_pointer->server->keyboard_list->count-1; ++i)
     {
         wlr_keyboard_set_keymap(config_pointer->server->keyboard_list->keyboards[i]->wlr_keyboard,keymap);
@@ -83,8 +84,5 @@ void hellwm_config_apply_to_server(lua_State *L, struct hellwm_config_pointers *
             variant, 
             options
     );
-
-
-
     lua_pop(L,1); 
 }

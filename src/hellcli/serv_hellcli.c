@@ -1,13 +1,14 @@
 
 /* Server side of communication tool with the HellWM Wayland Compositor */
-#include <pthread.h>
 #include <stdio.h>
+#include <sys/un.h>
 #include <stdlib.h>
 #include <string.h>
 #include <unistd.h>
+#include <pthread.h>
 #include <sys/types.h>
 #include <sys/socket.h>
-#include <sys/un.h>
+
 #include "../../include/hellcli/serv_hellcli.h"
 
 #define HELLWM_SOCK "/tmp/hellwm"

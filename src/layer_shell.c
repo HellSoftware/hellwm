@@ -13,10 +13,10 @@
 #include <wayland-server-core.h>
 #include <wayland-util.h>
 #include <wlr/util/log.h>
-#include "../wlr-layer-shell-unstable-v1-protocol.h"
 
-#include "../include/layer_shell.h"
 #include "../include/server.h"
+#include "../include/layer_shell.h"
+#include "../wlr-layer-shell-unstable-v1-protocol.h"
 
 static void
 server_new_layer_surface(struct wl_listener *listener, void *data)
