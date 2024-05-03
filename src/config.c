@@ -63,7 +63,7 @@ void hellwm_config_keyboard_set(lua_State *L, struct hellwm_config_pointers *con
            &rule_names,
            XKB_KEYMAP_COMPILE_NO_FLAGS);
 	
-    for (int i = 0; i < config_pointer->server->keyboard_list->count-1; ++i)
+    for (int i = 0; i < config_pointer->server->keyboard_list->count; ++i)
     {
         wlr_keyboard_set_keymap(config_pointer->server->keyboard_list->keyboards[i]->wlr_keyboard,keymap);
         wlr_keyboard_set_repeat_info(config_pointer->server->keyboard_list->keyboards[i]->wlr_keyboard,rate,delay);
