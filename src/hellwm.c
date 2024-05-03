@@ -44,8 +44,8 @@
 #include "../include/layer_shell.h"
 
 // problem with linking :/
-#include "./server.c"
 #include "./layer_shell.c"
+#include "./server.c"
 #include "./config.c"
 
 void hellwm_print_usage(int *argc, char**argv[])
@@ -62,6 +62,9 @@ int main(int argc, char *argv[])
 	struct hellwm_server server = {NULL};
 
 	hellwm_setup(&server);
+
+	server.configPath = "config/config.lua";
+	hellwm_config_reload(server.config_pointer);
 
 	hellwm_log(HELLWM_INFO,"Started HellWM Wayland Session at %s", server.socket);
 	wl_display_run(server.wl_display);

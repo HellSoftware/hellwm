@@ -11,8 +11,8 @@
 #include <strings.h>
 #include <xkbcommon/xkbcommon.h>
 
-#include "../include/server.h"
 #include "../include/config.h"
+#include "../include/server.h"
 #include "../include/lua/luaUtil.h"
 
 /* purpose of this define is just because this thing down there looks cool */
@@ -30,16 +30,14 @@ void hellwm_config_setup(lua_State *L, char *configPath)
     hellwm_luaLoadFile(L, configPath);
 }
 
-void hellwm_config_apply_to_server(hellwm_config *config, struct hellwm_config_storage *storage, lua_State *L)
+void hellwm_config_apply_to_server(lua_State *L, struct hellwm_config_pointers *config_pointer)
 {
-    char *tableName = "keyboard";
-
-    hellwm_luaGetTable(L, tableName);
+    hellwm_luaGetTable(L, (char*)hellwm_config_groups_arr[HELLWM_CONFIG_KEYBOARD]);
     char * layout = hellwm_luaGetField(L, "layout", LUA_TSTRING);
     int delay =  tINT hellwm_luaGetField(L, "delay", LUA_TNUMBER));
-    int rate = *((int *)hellwm_luaGetField(L, "rate", LUA_TNUMBER));
+    int rate = tINT hellwm_luaGetField(L, "rate", LUA_TNUMBER));
 
-    hellwm_log(HELLWM_LOG, "Lua config: %d %d", delay, rate);
+    hellwm_log(HELLWM_LOG, "Lua Config: delay: %d, rate: %d, layout: %s", delay, rate, layout);
     
     lua_pop(L,1); 
 }

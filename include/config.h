@@ -35,19 +35,10 @@
 #include <xkbcommon/xkbcommon-keysyms.h>
 #include <xkbcommon/xkbcommon.h>
 
-#include "server.h"
 #include "lua/luaUtil.h"
 
-/* 
- * in future hellwm_config_items will be swapped with
- * hellwm_config_group that will contain items for every group,
- * because it will be easier to use with many configuration keywords
- *
- * GROUP=KEYWORD,VALUE
- * bind=SUPER+Return,kitty
-*/
-
-const char *hellwm_config_groups_arr[] ={
+const char *hellwm_config_groups_arr[] = 
+{
  "source",
  "bind",
  "monitor",
@@ -55,7 +46,8 @@ const char *hellwm_config_groups_arr[] ={
  "autostart"
 };
 
-enum hellwm_config_groups_types{
+enum hellwm_config_groups_types
+{
     HELLWM_CONFIG_SOURCE=0,
     HELLWM_CONFIG_BIND=1,
     HELLWM_CONFIG_MONITOR=2,
@@ -63,68 +55,11 @@ enum hellwm_config_groups_types{
     HELLWM_CONFIG_AUTOSTART=4
 };
 
-/* monitor releated section */
-typedef struct {
-   char *name;
-	bool monitor_as;
-	float monitor_scale;
-	int32_t monitor_transform;
-	int32_t monitor_aspect_ratio;
-   struct wlr_output_mode *monitor_mode;
-} hellwm_config_storage_monitor;
-
-/* keyboard releated section */
-typedef struct {
-   char *name;
-	char **keyboard_binds;
-	int keyboard_binds_count;
-   int keyboard_repeat_rate;
-   int keyboard_repeat_delay;
-	struct xkb_rule_names keyboard_rule_names;
-} hellwm_config_storage_keyboard;
-
-typedef struct {
-    char **cmds;
-    int count;
-} hellwm_config_storage_autostart;
-
-struct hellwm_config_storage
+struct hellwm_config_pointers
 {
-    /* 
-     * binds can be same for all keyboards, 
-     * but you can specify diffrent binds for specific one //TODO
-    */
-    hellwm_config_storage_keyboard *keyboards;
-    xkb_keysym_t *keyboard_binds_key;
-    char **keyboard_binds_content;
-    uint32_t keyboard_binds_count;
-
-    /* 
-     * for monitor name (e.g: DP-1) set options
-     * if not specified it's set to preferred
-    */
-    hellwm_config_storage_monitor *monitors;
-
-    /* autostart - just char array with commands to execute automaticlly with HellWM*/ 
-    hellwm_config_storage_autostart *autostart_cmds; 
+	struct hellwm_server *server;
 };
 
-typedef struct {
-    char key[256];
-    char value[256];
-} hellwm_config_item;
-
-typedef struct{
-    hellwm_config_item *items;
-    char *name;
-    int count;
-} hellwm_config_group;
-
-typedef struct {
-    hellwm_config_group *groups;
-    int count;
-} hellwm_config;
-
 void hellwm_config_setup(lua_State *L, char *configPath);
-void hellwm_config_apply_to_server(hellwm_config *config, struct hellwm_config_storage *storage, lua_State *L);
+void hellwm_config_apply_to_server(lua_State *L, struct hellwm_config_pointers *config_pointer);
 #endif
