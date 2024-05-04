@@ -33,12 +33,16 @@ int hellwm_luaGetTable(lua_State *L, char *tableName)
   lua_getglobal(L, tableName);
   if (!lua_istable(L, -1))
   {
-    hellwm_log(HELLWM_ERROR, "%s is not a table");
-    return 1;
+    hellwm_log(HELLWM_ERROR, "%s is not a table", tableName);
+    return false;
   }
-  return 0;
+  return true;
 }
 
+/* 
+ * Assuming table is at top of stack,
+ * we just use lua_getglobal() before calling this function
+ */ 
 void *hellwm_luaGetField(lua_State *L, char *fieldName, int lua_type)
 {
   void *temp;
@@ -51,12 +55,12 @@ void *hellwm_luaGetField(lua_State *L, char *fieldName, int lua_type)
     case LUA_TNUMBER:
       if (lua_isnumber(L, -1))
       {
-        int val = lua_tonumber(L,-1); 
+        float val = lua_tonumber(L,-1); 
         temp = (void *)&val;
       }
       else
       {
-        int *val = NULL; 
+        float *val = NULL; 
         temp = (void*)&val;
       }
       break;

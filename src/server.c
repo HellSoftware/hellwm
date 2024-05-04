@@ -1,3 +1,4 @@
+#include <lua.h>
 #include <time.h>
 #include <stdio.h>
 #include <wchar.h>
@@ -780,13 +781,21 @@ static void output_destroy(struct wl_listener *listener, void *data) {
 	free(output);
 }
 
-static void server_new_output(struct wl_listener *listener, void *data) {
-	struct hellwm_server *server =
-		wl_container_of(listener, server, new_output);
+static void server_new_output(struct wl_listener *listener, void *data)
+{
+	struct hellwm_server *server = wl_container_of(listener, server, new_output);
 	struct wlr_output *wlr_output = data;
+
+	hellwm_log(HELLWM_INFO, "New output: name: %s | %s, make: %s, model: %s, serial: %s",
+      wlr_output->name,
+		wlr_output->description,
+      wlr_output->make,
+      wlr_output->model,
+      wlr_output->serial);
 
 	wlr_output_init_render(wlr_output, server->allocator, server->renderer);
 
+	/*
 	struct wlr_output_state state;
 	wlr_output_state_init(&state);
 	wlr_output_state_set_enabled(&state, true);
@@ -798,15 +807,11 @@ static void server_new_output(struct wl_listener *listener, void *data) {
 		wlr_output_state_set_mode(&state, mode);
 	}
 
-	/* this should be read by config, im working on it... -_- */
-	if (!strcmp(wlr_output->name,"DP-2"))
-	{
-		wlr_output_state_set_transform(&state, WL_OUTPUT_TRANSFORM_90);
-	}
-
-	/* Atomically applies the new output state. */
 	wlr_output_commit_state(wlr_output, &state);
 	wlr_output_state_finish(&state);
+	*/
+
+	hellwm_config_set_monitor(server->L, wlr_output);
 
 	/* Allocates and configures our state for this output */
 	struct hellwm_output *output = calloc(1, sizeof(*output));
@@ -826,23 +831,6 @@ static void server_new_output(struct wl_listener *listener, void *data) {
 	wl_signal_add(&wlr_output->events.destroy, &output->destroy);
 
 	wl_list_insert(&server->outputs, &output->link);
-	
-	hellwm_log(HELLWM_LOG,"New output: %s | %s",wlr_output->name, wlr_output->description);
-
-	/*  
-	 *  Allocate outputs list if it's not allocated
-	 *  and add output to the list 
-	*/
-	if (server->output_list->count != 0)
-	{
-		server->output_list->outputs = realloc(server->output_list->outputs, (server->output_list->count + 1) * sizeof(struct hellwm_output));
-	}
-	else
-	{
-		server->output_list->outputs = malloc(sizeof(struct hellwm_output));
-	}
-	server->output_list->outputs[server->output_list->count] = output;
-	server->output_list->count++;	
 	
 	/* Adds this to the output layout. The add_auto function arranges outputs
 	 * from left-to-right in the order they appear. A more sophisticated
@@ -1090,26 +1078,21 @@ static void server_new_xdg_popup(struct wl_listener *listener, void *data) {
 	wl_signal_add(&xdg_popup->events.destroy, &popup->destroy);
 }
 
-void hellwm_config_reload(struct hellwm_config_pointers *config_pointers)
+void hellwm_config_reload(lua_State *L, char *configPath)
 {
-	lua_State *L = hellwm_luaInit();
-	config_pointers->server->L=L;
-
-	hellwm_luaLoadFile(config_pointers->server->L, config_pointers->server->configPath);
-
-	hellwm_config_apply_to_server(config_pointers->server->L,config_pointers);
+	hellwm_luaLoadFile(L, configPath);
 }
 
 void hellwm_setup(struct hellwm_server *server)
 { 
+
 	server->config_pointer = malloc(sizeof(struct hellwm_config_pointers));
 	server->config_pointer->server = server;
 
-	server->output_list = malloc(sizeof(struct hellwm_outputs_list));
-	server->output_list->count=0;
-
 	server->keyboard_list = malloc(sizeof(struct hellwm_keyboard_list));
 	server->keyboard_list->count=0;
+
+	hellwm_luaLoadFile(server->L, server->configPath);
 
 	wlr_log_init(WLR_DEBUG, NULL);
 	server->wl_display = wl_display_create();
@@ -1249,6 +1232,7 @@ void hellwm_setup(struct hellwm_server *server)
 
 void hellwm_destroy_everything(struct hellwm_server *server)
 {
+	lua_close(server->L);
 	wl_display_destroy_clients(server->wl_display);
 	wlr_scene_node_destroy(&server->scene->tree.node);
 	wlr_xcursor_manager_destroy(server->cursor_mgr);

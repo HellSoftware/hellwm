@@ -34,95 +34,106 @@ void hellwm_config_setup(lua_State *L, char *configPath)
 void hellwm_config_apply_to_server(lua_State *L, struct hellwm_config_pointers *config_pointer)
 {
     hellwm_config_set_keyboard(L,config_pointer);
-    // TODO not working yet - hellwm_config_set_monitor(L, config_pointer);
 }
 
-void hellwm_config_set_monitor(lua_State *L, struct hellwm_config_pointers *config_pointer)
+void hellwm_config_set_monitor(lua_State *L, struct wlr_output *output)
 {
-    for (int i=0;i<config_pointer->server->output_list->count;i++)
+    //hellwm_luaLoadFile(L, "config/config.lua"); 
+
+    char name[32]="";
+    char *output_name = output->name;
+    strcat(name,hellwm_config_groups_arr[HELLWM_CONFIG_MONITOR]);
+    strcat(name,"_");
+
+    for(int i=0;output_name[i]!='\0';i++)
     {
-        char name[32]="";
-        struct hellwm_output *output = config_pointer->server->output_list->outputs[i];
-        char *output_name = output->wlr_output->name;
-        strcat(name,hellwm_config_groups_arr[HELLWM_CONFIG_MONITOR]);
-        strcat(name,"_");
-        for(i=0;output_name[i]!='\0';i++)
-        {
-                if(output_name[i]=='-')
-                {
-                    output_name[i] = '_';
-                }
-                else
-                {
-                    continue;
-                }
-        } 
-        strcat(name,output_name);
+            if(output_name[i]=='-')
+            {
+                output_name[i] = '_';
+            }
+            else
+            {
+                continue;
+            }
+    } 
+    strcat(name,output_name);
+    
+    struct wlr_output_state state;
+    wlr_output_state_init(&state);
+    wlr_output_state_set_enabled(&state, true);
+    struct wlr_output_mode *mode = wlr_output_preferred_mode(output);
+    if (mode != NULL)
+    {
+      wlr_output_state_set_mode(&state, mode);
+    }
+
+
+    if (hellwm_luaGetTable(L, name))
+    {
+        int   width      =  tFLOAT hellwm_luaGetField(L, "width", LUA_TNUMBER));
+        int   height     =  tFLOAT hellwm_luaGetField(L, "height", LUA_TNUMBER));
+        int   hz         =  tFLOAT hellwm_luaGetField(L, "hz", LUA_TNUMBER));
+        int   transfrom  =  tFLOAT hellwm_luaGetField(L, "transfrom", LUA_TNUMBER));
+        float scale      =  tFLOAT hellwm_luaGetField(L, "scale", LUA_TNUMBER));
         
-        if (!hellwm_luaGetTable(L, name))
+        switch (transfrom)
         {
-            int width      =  tINT   hellwm_luaGetField(L, "width", LUA_TNUMBER));
-            int height     =  tINT   hellwm_luaGetField(L, "height", LUA_TNUMBER));
-            int hz         =  tINT   hellwm_luaGetField(L, "hz", LUA_TNUMBER));
-            int transfrom  =  tINT   hellwm_luaGetField(L, "transfrom", LUA_TNUMBER));
-            int scale      =  tFLOAT hellwm_luaGetField(L, "scale", LUA_TNUMBER));
+          case 0:
+            wlr_output_state_set_transform(&state, WL_OUTPUT_TRANSFORM_NORMAL);
+            break;
+         
+          case 1:
+            wlr_output_state_set_transform(&state, WL_OUTPUT_TRANSFORM_90);
+            break;
+         
+          case 2:
+            wlr_output_state_set_transform(&state, WL_OUTPUT_TRANSFORM_180);
+            break;
+         
+          case 3:
+            wlr_output_state_set_transform(&state, WL_OUTPUT_TRANSFORM_270);
+            break;
+        
+          default:
+            wlr_output_state_set_transform(&state, WL_OUTPUT_TRANSFORM_NORMAL);
+            break;
+        }
 
-            struct wlr_output_state state;
-            wlr_output_state_init(&state);
-           	wlr_output_state_set_enabled(&state, true);
-            struct wlr_output_mode *mode = wlr_output_preferred_mode(output->wlr_output);
-
-            if (width!=0)
-            {
-                width=mode->width;
-            }
-            if (height!=0)
-            {
-                height=mode->height;
-            }
-            if (hz!=0)
-            {
-                hz=mode->refresh;
-            }
-            if (scale==0)
-            {
-                scale=1;
-            }
-            
+        if (width != 0 && height != 0) 
+        {
             wlr_output_state_set_custom_mode(&state, width, height, hz);
-            wlr_output_state_set_scale(&state, scale);
-           
-            switch (transfrom)
-            {
-                 case 0:
-           		     wlr_output_state_set_transform(&state, WL_OUTPUT_TRANSFORM_NORMAL);
-                    break;
-            
-                case 1:
-           		     wlr_output_state_set_transform(&state, WL_OUTPUT_TRANSFORM_90);
-                    break;
-            
-                case 2:
-                    wlr_output_state_set_transform(&state, WL_OUTPUT_TRANSFORM_180);
-                    break;
-            
-                case 3:
-           		     wlr_output_state_set_transform(&state, WL_OUTPUT_TRANSFORM_270);
-                    break;
-
-                default:
-           		     wlr_output_state_set_transform(&state, WL_OUTPUT_TRANSFORM_NORMAL);
-                    break;
-           }
-            wlr_output_commit_state(output->wlr_output, &state);
-           	wlr_output_state_finish(&state);
         }
         else
         {
-            hellwm_log(HELLWM_LOG, "Could not get table: %s", name); 
+            hellwm_log(HELLWM_INFO, "width or height of %s output is not provided, set to preffered",name);
         }
-        lua_pop(L, 1);
+        if (scale != 0)
+        {
+            wlr_output_state_set_scale(&state, scale);
+        }
     }
+    else
+    {
+        hellwm_log(HELLWM_LOG, "Could not access table: %s", name); 
+    }
+   
+    if (wlr_output_commit_state(output, &state)==false)
+    {
+       hellwm_log(HELLWM_ERROR, "cannot commit changes to output: %s",name);
+    }
+    else
+    { 
+       hellwm_log(HELLWM_LOG, 
+               "commited changes to output: %s, %d, %d, %d, %f",
+               name,
+               output->width, 
+               output->height, 
+               output->refresh, 
+               output->scale);
+    }
+    wlr_output_state_finish(&state);
+
+    lua_pop(L, 1);
 }
 
 void hellwm_config_set_keyboard(lua_State *L, struct hellwm_config_pointers *config_pointer)
@@ -135,8 +146,8 @@ void hellwm_config_set_keyboard(lua_State *L, struct hellwm_config_pointers *con
     char * variant = hellwm_luaGetField(L, "variant", LUA_TSTRING);
     char * options = hellwm_luaGetField(L, "options", LUA_TSTRING);
 
-    int delay =  tINT hellwm_luaGetField(L, "delay", LUA_TNUMBER));
-    int rate = tINT hellwm_luaGetField(L, "rate", LUA_TNUMBER));
+    int delay =  tFLOAT hellwm_luaGetField(L, "delay", LUA_TNUMBER));
+    int rate = tFLOAT hellwm_luaGetField(L, "rate", LUA_TNUMBER));
 
     struct xkb_context *context = xkb_context_new(XKB_CONTEXT_NO_FLAGS);
 
@@ -177,3 +188,4 @@ void hellwm_config_set_keyboard(lua_State *L, struct hellwm_config_pointers *con
     );
     lua_pop(L,1); 
 }
+

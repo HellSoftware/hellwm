@@ -57,17 +57,32 @@ int main(int argc, char *argv[])
 {
 	hellwm_print_usage(&argc, &argv);
 
+	/*	Delete old log file
+	 * TODO it will be improved later: more details, system info, etc.
+	 */
 	hellwm_log_flush();
 
 	struct hellwm_server server = {NULL};
 
+	/* Init lua */
+	server.L=hellwm_luaInit();
+	
+	/* 
+	 *	Hardcoded config path - it will be changed soon,
+	 * it's just easier to debug everything
+	 */
+	server.configPath = "config/config.lua";
+
+	/* Setup all necessary stuff for running server */
 	hellwm_setup(&server);
 
-	server.configPath = "config/config.lua";
-	hellwm_config_reload(server.config_pointer);
+	/* Apply config to compontents of the server */
+	hellwm_config_apply_to_server(server.L, server.config_pointer);
 
+	/* Start Wayland Compositor */
 	hellwm_log(HELLWM_INFO,"Started HellWM Wayland Session at %s", server.socket);
 	wl_display_run(server.wl_display);
+
 	hellwm_log(HELLWM_INFO, "Closed HellWM Wayland Session");
 
 	hellwm_destroy_everything(&server);

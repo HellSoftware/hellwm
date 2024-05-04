@@ -1,16 +1,15 @@
 keyboard = {
-  delay = 150,
+  delay = 200,
   rate = 50,
   layout = "pl"
 }
 
 monitor_WL_1 = {
-  hz = 30,
-  transform = 2
-}
-
-moitor_LVDS_1 = {
-  hz = 30 
+  width = 500,
+  height = 500,
+  hz = 0,
+  transfrom = 1,
+  scale = 2
 }
 
 print("Welcome to HellWM")

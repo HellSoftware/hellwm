@@ -100,7 +100,6 @@ struct hellwm_server
 	struct wl_listener new_layer_surface;
 	struct wlr_layer_shell_v1 *layer_shell;
 	struct wlr_xcursor_manager *cursor_mgr;
-	struct hellwm_outputs_list *output_list; /* store hellwm_output pointers for easy access */
 	struct hellwm_keyboard_list *keyboard_list; /* store wlr_keyboard pointers for easy access */
 	struct wlr_output_layout *output_layout;
 	struct hellwm_toplevel *grabbed_toplevel;
@@ -135,12 +134,6 @@ struct hellwm_output
 	struct hellwm_server *server;
 	struct wlr_output *wlr_output;
 	struct wl_listener request_state;
-};
-
-struct hellwm_outputs_list 
-{
-	int count;
-	struct hellwm_output **outputs;
 };
 
 struct hellwm_keyboard_list
@@ -208,10 +201,10 @@ struct hellwm_toplevel_list_element
 void hellwm_log_flush();
 void hellwm_setup(struct hellwm_server *server);
 void hellwm_log(char *logtype, char *format, ...);
+void hellwm_config_reload(lua_State *L, char *configPath);
 void hellwm_destroy_everything(struct hellwm_server *server);
 void hellwm_toggle_fullscreen_toplevel(struct hellwm_server *server);
 void hellwm_toplevel_remove_from_list(struct wlr_xdg_toplevel *toplevel);
-void hellwm_config_reload(struct hellwm_config_pointers *config_pointers);
 void hellwm_toplevel_add_to_list(struct hellwm_server *server, struct hellwm_toplevel *new_toplevel);
 
 static void exec_cmd(char *command);
