@@ -10,6 +10,7 @@
 #include <complex.h>
 #include <strings.h>
 #include <wayland-server-protocol.h>
+#include <wayland-util.h>
 #include <xkbcommon/xkbcommon.h>
 
 #include "../include/config.h"
@@ -62,12 +63,7 @@ void hellwm_config_set_monitor(lua_State *L, struct wlr_output *output)
     wlr_output_state_init(&state);
     wlr_output_state_set_enabled(&state, true);
     struct wlr_output_mode *mode = wlr_output_preferred_mode(output);
-    if (mode != NULL)
-    {
-      wlr_output_state_set_mode(&state, mode);
-    }
-
-
+    
     if (hellwm_luaGetTable(L, name))
     {
         int   width      =  tFLOAT hellwm_luaGetField(L, "width", LUA_TNUMBER));
@@ -116,6 +112,11 @@ void hellwm_config_set_monitor(lua_State *L, struct wlr_output *output)
     {
         hellwm_log(HELLWM_LOG, "Could not access table: %s", name); 
     }
+
+    if (mode != NULL)
+    {
+      wlr_output_state_set_mode(&state, mode);
+    }
    
     if (wlr_output_commit_state(output, &state)==false)
     {
@@ -124,7 +125,7 @@ void hellwm_config_set_monitor(lua_State *L, struct wlr_output *output)
     else
     { 
        hellwm_log(HELLWM_LOG, 
-               "commited changes to output: %s, %d, %d, %d, %f",
+               "commited changes to output: %s, %"PRId32", %"PRId32", %"PRId32",%f",
                name,
                output->width, 
                output->height, 
