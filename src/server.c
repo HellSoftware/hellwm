@@ -793,7 +793,8 @@ static void server_new_output(struct wl_listener *listener, void *data) {
 
 	struct wlr_output_mode *mode = wlr_output_preferred_mode(wlr_output);
 
-	if (mode != NULL) {
+	if (mode != NULL)
+	{
 		wlr_output_state_set_mode(&state, mode);
 	}
 

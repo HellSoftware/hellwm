@@ -5,9 +5,12 @@ keyboard = {
 }
 
 monitor_WL_1 = {
-  width = 1280,
-  height = 720,
-  hz = 60 
+  hz = 30,
+  transform = 2
+}
+
+moitor_LVDS_1 = {
+  hz = 30 
 }
 
 print("Welcome to HellWM")

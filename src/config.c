@@ -9,6 +9,7 @@
 #include <unistd.h>
 #include <complex.h>
 #include <strings.h>
+#include <wayland-server-protocol.h>
 #include <xkbcommon/xkbcommon.h>
 
 #include "../include/config.h"
@@ -33,8 +34,7 @@ void hellwm_config_setup(lua_State *L, char *configPath)
 void hellwm_config_apply_to_server(lua_State *L, struct hellwm_config_pointers *config_pointer)
 {
     hellwm_config_set_keyboard(L,config_pointer);
-
-    hellwm_config_set_monitor(L, config_pointer);
+    // TODO not working yet - hellwm_config_set_monitor(L, config_pointer);
 }
 
 void hellwm_config_set_monitor(lua_State *L, struct hellwm_config_pointers *config_pointer)
@@ -61,13 +61,61 @@ void hellwm_config_set_monitor(lua_State *L, struct hellwm_config_pointers *conf
         
         if (!hellwm_luaGetTable(L, name))
         {
-            int width        =  tINT hellwm_luaGetField(L, "width", LUA_TNUMBER));
-            int height       =  tINT hellwm_luaGetField(L, "height", LUA_TNUMBER));
-            int refresh_rate =  tINT hellwm_luaGetField(L, "refresh_rate", LUA_TNUMBER));
-            int scale        =  tINT hellwm_luaGetField(L, "scale", LUA_TNUMBER));
-            int transfrom    =  tINT hellwm_luaGetField(L, "transfrom", LUA_TNUMBER));
+            int width      =  tINT   hellwm_luaGetField(L, "width", LUA_TNUMBER));
+            int height     =  tINT   hellwm_luaGetField(L, "height", LUA_TNUMBER));
+            int hz         =  tINT   hellwm_luaGetField(L, "hz", LUA_TNUMBER));
+            int transfrom  =  tINT   hellwm_luaGetField(L, "transfrom", LUA_TNUMBER));
+            int scale      =  tFLOAT hellwm_luaGetField(L, "scale", LUA_TNUMBER));
 
-            // TODO wlr_output_state_set_custom_mode(output->wlr_output->, int32_t width, int32_t height, int32_t refresh);
+            struct wlr_output_state state;
+            wlr_output_state_init(&state);
+           	wlr_output_state_set_enabled(&state, true);
+            struct wlr_output_mode *mode = wlr_output_preferred_mode(output->wlr_output);
+
+            if (width!=0)
+            {
+                width=mode->width;
+            }
+            if (height!=0)
+            {
+                height=mode->height;
+            }
+            if (hz!=0)
+            {
+                hz=mode->refresh;
+            }
+            if (scale==0)
+            {
+                scale=1;
+            }
+            
+            wlr_output_state_set_custom_mode(&state, width, height, hz);
+            wlr_output_state_set_scale(&state, scale);
+           
+            switch (transfrom)
+            {
+                 case 0:
+           		     wlr_output_state_set_transform(&state, WL_OUTPUT_TRANSFORM_NORMAL);
+                    break;
+            
+                case 1:
+           		     wlr_output_state_set_transform(&state, WL_OUTPUT_TRANSFORM_90);
+                    break;
+            
+                case 2:
+                    wlr_output_state_set_transform(&state, WL_OUTPUT_TRANSFORM_180);
+                    break;
+            
+                case 3:
+           		     wlr_output_state_set_transform(&state, WL_OUTPUT_TRANSFORM_270);
+                    break;
+
+                default:
+           		     wlr_output_state_set_transform(&state, WL_OUTPUT_TRANSFORM_NORMAL);
+                    break;
+           }
+            wlr_output_commit_state(output->wlr_output, &state);
+           	wlr_output_state_finish(&state);
         }
         else
         {

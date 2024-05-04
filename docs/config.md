@@ -9,7 +9,6 @@ keyboard = {
 }
 ```
 
-
 # monitor 
 
 Name: monitor_OUTPUT
@@ -17,7 +16,7 @@ Name: monitor_OUTPUT
 Keywords:
 - width [int]
 - height [int]
-- refresh_rate [int]
+- hz [int]
 - scale [int]
 - transfrom [int]
 
@@ -26,7 +25,7 @@ Example for DP-1:
 monitor_DP_1 = {
    width = 2560,
    height = 1440,
-   refresh_rate = 165
+   hz = 165
 }
 ```
 
