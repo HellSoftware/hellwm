@@ -4,7 +4,14 @@ keyboard = {
   layout = "pl"
 }
 monitor_DP_1 = {
-  scale = 2
+  width = 2560,
+  height = 1440,
+  hz = 0,
+  scale = 1
+}
+
+monitor_DP_2 = {
+  transfrom = 1
 }
 
 monitor_WL_1 = {

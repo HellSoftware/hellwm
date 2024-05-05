@@ -110,6 +110,7 @@ void hellwm_config_set_monitor(lua_State *L, struct wlr_output *output)
         hellwm_log(HELLWM_LOG, "Could not access table: %s", name); 
     }
 
+    wlr_output_state_set_adaptive_sync_enabled(&state, true);
     wlr_output_state_set_enabled(&state, true);
     if (wlr_output_commit_state(output, &state)==false)
     {
@@ -118,11 +119,11 @@ void hellwm_config_set_monitor(lua_State *L, struct wlr_output *output)
     else
     { 
        hellwm_log(HELLWM_LOG, 
-               "commited changes to output: %s, %"PRId32", %"PRId32", %"PRId32",%f",
+               "commited changes to output: %s, %"PRId32", %"PRId32", %f, %f",
                name,
                output->width, 
                output->height, 
-               output->refresh, 
+               (float)(output->refresh)/(1000.f), 
                output->scale);
     }
     wlr_output_state_finish(&state);
