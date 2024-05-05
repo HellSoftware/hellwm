@@ -95,6 +95,7 @@ struct hellwm_server
 	struct wl_listener cursor_motion;
 	struct wl_listener new_xdg_popup;
 	struct wl_listener request_cursor;
+	struct hellwm_config_binds *keybinds;
 	struct wlr_compositor *compositor;
 	struct wl_listener new_xdg_toplevel;
 	struct wl_listener new_layer_surface;

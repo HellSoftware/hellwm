@@ -60,9 +60,25 @@ struct hellwm_config_pointers
 	struct hellwm_server *server;
 };
 
-void hellwm_config_setup(lua_State *L, char *configPath);
-void hellwm_config_set_keyboard(lua_State *L, struct wlr_keyboard *keyboard);
-void hellwm_config_reload_keyboards(lua_State *L, struct hellwm_server *server);
+struct hellwm_config_binds
+{
+    struct hellwm_config_one_bind **binds;
+    int32_t count;
+};
+
+struct hellwm_config_one_bind
+{
+    const char *key;
+    const char *val;
+};
+
+static int hellwm_c_bind(lua_State *L);
+void hellwm_config_setup(struct hellwm_server *server);
+void hellwm_config_bind_free_array(struct hellwm_config_binds *binds);
 void hellwm_config_set_monitor(lua_State *L, struct wlr_output *output);
+void hellwm_config_set_keyboard(lua_State *L, struct wlr_keyboard *keyboard);
+void hellwm_config_binds_load(lua_State *L, struct hellwm_config_binds *binds);
+void hellwm_config_reload_keyboards(lua_State *L, struct hellwm_server *server);
+void hellwm_config_bind_add(struct hellwm_config_binds *binds, const char *key, const char *val);
 
 #endif

@@ -64,8 +64,8 @@ int main(int argc, char *argv[])
 
 	struct hellwm_server server = {NULL};
 
-	/* Init lua */
-	server.L=hellwm_luaInit();
+	/* Lua setup */
+	hellwm_config_setup(&server);
 	
 	/* 
 	 *	Hardcoded config path - it will be changed soon,

@@ -1058,6 +1058,7 @@ void hellwm_config_reload(struct hellwm_server *server)
 
 void hellwm_setup(struct hellwm_server *server)
 { 
+	hellwm_config_binds_load(server->L, server->keybinds);
 	hellwm_luaLoadFile(server->L, server->configPath);
 
 	wlr_log_init(WLR_DEBUG, NULL);

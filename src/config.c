@@ -1,3 +1,4 @@
+#include <lauxlib.h>
 #include <linux/limits.h>
 #include <lua.h>
 #include <stdio.h>
@@ -26,10 +27,68 @@
 #define tDOUBLE *((double *) 
 #define tBOOLEAN *((boolean *)
 
-void hellwm_config_setup(lua_State *L, char *configPath)
+void hellwm_config_setup(struct hellwm_server *server)
 {
-    L = hellwm_luaInit();
-    hellwm_luaLoadFile(L, configPath);
+    server->L = hellwm_luaInit();
+}
+
+void hellwm_config_binds_load(lua_State *L, struct hellwm_config_binds *binds)
+{
+    lua_pushlightuserdata(L, binds);
+    lua_setglobal(L, "binds");
+
+    lua_pushcfunction(L, hellwm_c_bind);
+    lua_setglobal(L, "bind"); 
+
+    /* TODO FIX ERROR ON ACCESSING server->keybinds values */
+}
+
+void hellwm_config_bind_add(struct hellwm_config_binds *binds, const char *key, const char *val)
+{
+    struct hellwm_config_one_bind *new_bind = malloc(sizeof(struct hellwm_config_one_bind));
+    if (new_bind==NULL)
+    {
+        hellwm_log(HELLWM_ERROR, "Failed to allocate memory for new_bind inside hellwm_config_bind_add().");
+        return;
+    }
+    new_bind->key = strdup(key);
+    new_bind->val = strdup(val);
+
+    if (binds == NULL)
+    {
+        binds = malloc(sizeof(struct hellwm_config_binds *));
+        binds->binds = NULL;
+        binds->count=0;    
+    }
+
+    
+    binds->binds = realloc(binds, (binds->count + 1) * sizeof(struct hellwm_config_one_bind*));    
+    binds->binds[binds->count] = new_bind;
+    binds->count++;
+}
+
+static int hellwm_c_bind(lua_State *L)
+{
+    struct hellwm_config_binds *binds = (struct hellwm_config_binds *)lua_touserdata(L, lua_upvalueindex(1));
+
+    const char *key = luaL_checkstring(L, 1);
+    const char *val = luaL_checkstring(L, 2);
+
+    hellwm_config_bind_add(binds, key, val);
+
+    return 0;
+}
+
+void hellwm_config_bind_free_array(struct hellwm_config_binds *binds)
+{
+    for (size_t i = 0; i < binds->count; ++i)
+    {
+        free((char *)binds->binds[i]->key);
+        free((char *)binds->binds[i]->val);
+        free(binds->binds[i]);
+    }
+    free(binds->binds);
+    free(binds);
 }
 
 void hellwm_config_set_monitor(lua_State *L, struct wlr_output *output)
