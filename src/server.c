@@ -415,7 +415,7 @@ static void server_new_pointer(struct hellwm_server *server,
 	 * opportunity to do libinput configuration on the device to set
 	 * acceleration, etc. */
 	wlr_cursor_attach_input_device(server->cursor, device);
-	hellwm_log(HELLWM_LOG, "new pointer device: %s",device->name);
+	hellwm_log(HELLWM_LOG, "New Pointer: %s",device->name);
 }
 
 static void
@@ -757,12 +757,10 @@ static void server_new_output(struct wl_listener *listener, void *data)
 	struct hellwm_server *server = wl_container_of(listener, server, new_output);
 	struct wlr_output *wlr_output = data;
 
-	hellwm_log(HELLWM_INFO, "New output: name: %s | %s, make: %s, model: %s, serial: %s",
+	hellwm_log(HELLWM_INFO, "New output: %s | %s",
       wlr_output->name,
-		wlr_output->description,
-      wlr_output->make,
-      wlr_output->model,
-      wlr_output->serial);
+		wlr_output->description
+      );
 
 	wlr_output_init_render(wlr_output, server->allocator, server->renderer);
 

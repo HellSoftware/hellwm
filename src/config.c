@@ -17,7 +17,7 @@
 #include "../include/server.h"
 #include "../include/lua/luaUtil.h"
 
-/* purpose of this define is just because this thing down there looks cool */
+/* purpose of this boolean define is just because this thing down there looks with it cool :) */
 #define boolean bool
 
 #define tINT *((int *) 
@@ -95,7 +95,7 @@ void hellwm_config_set_monitor(lua_State *L, struct wlr_output *output)
         }
         else
         {
-            hellwm_log(HELLWM_INFO, "width or height of %s output is not provided, set to preffered",name);
+            hellwm_log(HELLWM_INFO, "Width or Height of %s output is not provided, set to preffered",name);
         }
         if (scale != 0)
         {
@@ -115,12 +115,11 @@ void hellwm_config_set_monitor(lua_State *L, struct wlr_output *output)
 
     if (wlr_output_commit_state(output, &state)==false)
     {
-       hellwm_log(HELLWM_ERROR, "cannot commit changes to output: %s",name);
+       hellwm_log(HELLWM_ERROR, "Cannot commit changes to output %s, compositor may not work properly",name);
     }
-    else
-    { 
-       hellwm_log(HELLWM_LOG, 
-               "commited changes to output: %s - %"PRId32"x%"PRId32"@%f, scale: %f, VRR: %d",
+
+    hellwm_log(HELLWM_LOG, 
+               "Output %s - set to: %"PRId32"x%"PRId32"@%f, scale: %f, VRR: %d",
                name,
                output->width, 
                output->height, 
@@ -128,7 +127,6 @@ void hellwm_config_set_monitor(lua_State *L, struct wlr_output *output)
                output->scale,
                output->adaptive_sync_status
                );
-    }
     wlr_output_state_finish(&state);
 
     lua_pop(L, 1);
@@ -173,15 +171,9 @@ void hellwm_config_set_keyboard(lua_State *L, struct wlr_keyboard *keyboard)
 
         hellwm_log(
                 HELLWM_LOG,
-                "Keyboard Config: name: %s, delay: %d, rate: %d, rules: %s, model: %s, layout: %s, variant: %s, options: %s ",
+                "New Keyboard: %s, layout: %s",
                 keyboard->base.name,
-                delay, 
-                rate, 
-                rules, 
-                model, 
-                layout, 
-                variant, 
-                options
+                layout 
         );
     }
     else
