@@ -39,8 +39,6 @@ void hellwm_config_apply_to_server(lua_State *L, struct hellwm_config_pointers *
 
 void hellwm_config_set_monitor(lua_State *L, struct wlr_output *output)
 {
-    //hellwm_luaLoadFile(L, "config/config.lua"); 
-
     char name[32]="";
     char *output_name = output->name;
     strcat(name,hellwm_config_groups_arr[HELLWM_CONFIG_MONITOR]);
@@ -61,7 +59,6 @@ void hellwm_config_set_monitor(lua_State *L, struct wlr_output *output)
     
     struct wlr_output_state state;
     wlr_output_state_init(&state);
-    wlr_output_state_set_enabled(&state, true);
     struct wlr_output_mode *mode = wlr_output_preferred_mode(output);
     
     if (hellwm_luaGetTable(L, name))
@@ -113,11 +110,7 @@ void hellwm_config_set_monitor(lua_State *L, struct wlr_output *output)
         hellwm_log(HELLWM_LOG, "Could not access table: %s", name); 
     }
 
-    if (mode != NULL)
-    {
-      wlr_output_state_set_mode(&state, mode);
-    }
-   
+    wlr_output_state_set_enabled(&state, true);
     if (wlr_output_commit_state(output, &state)==false)
     {
        hellwm_log(HELLWM_ERROR, "cannot commit changes to output: %s",name);

@@ -3,6 +3,9 @@ keyboard = {
   rate = 50,
   layout = "pl"
 }
+monitor_DP_1 = {
+  scale = 2
+}
 
 monitor_WL_1 = {
   width = 500,
@@ -11,5 +14,6 @@ monitor_WL_1 = {
   transfrom = 1,
   scale = 2
 }
+
 
 print("Welcome to HellWM")
