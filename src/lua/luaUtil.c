@@ -43,14 +43,14 @@ int hellwm_luaGetTable(lua_State *L, char *tableName)
  * Assuming table is at top of stack,
  * we just use lua_getglobal() before calling this function
  */ 
-void *hellwm_luaGetField(lua_State *L, char *fieldName, int lua_type)
+void *hellwm_luaGetField(lua_State *L, char *fieldName, int lua_variableType)
 {
   void *temp;
 
   lua_pushstring(L, fieldName);
   lua_gettable(L, -2);
 
-  switch (lua_type)
+  switch (lua_variableType)
   {
     case LUA_TNUMBER:
       if (lua_isnumber(L, -1))
@@ -64,7 +64,20 @@ void *hellwm_luaGetField(lua_State *L, char *fieldName, int lua_type)
         temp = (void*)&val;
       }
       break;
-
+    
+    case LUA_TBOOLEAN:
+      if (lua_isboolean(L, -1))
+      {
+        bool val = lua_toboolean(L,-1); 
+        temp = (void *)&val;
+      }
+      else
+      {
+        bool *val = false; 
+        temp = (void*)&val;
+      }
+      break;
+    
     case LUA_TSTRING:
       if (lua_isstring(L, -1))
       {

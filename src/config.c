@@ -63,11 +63,12 @@ void hellwm_config_set_monitor(lua_State *L, struct wlr_output *output)
     
     if (hellwm_luaGetTable(L, name))
     {
-        int32_t   width      =  tFLOAT hellwm_luaGetField(L, "width", LUA_TNUMBER));
-        int32_t   height     =  tFLOAT hellwm_luaGetField(L, "height", LUA_TNUMBER));
-        int32_t   hz         =  tFLOAT hellwm_luaGetField(L, "hz", LUA_TNUMBER));
-        int32_t   transfrom  =  tFLOAT hellwm_luaGetField(L, "transfrom", LUA_TNUMBER));
-        float scale      =  tFLOAT hellwm_luaGetField(L, "scale", LUA_TNUMBER));
+        int32_t  width      =  tFLOAT    hellwm_luaGetField(L, "width", LUA_TNUMBER));
+        int32_t  height     =  tFLOAT    hellwm_luaGetField(L, "height", LUA_TNUMBER));
+        int32_t  hz         =  tFLOAT    hellwm_luaGetField(L, "hz", LUA_TNUMBER));
+        int32_t  transfrom  =  tFLOAT    hellwm_luaGetField(L, "transfrom", LUA_TNUMBER));
+        float    scale      =  tFLOAT    hellwm_luaGetField(L, "scale", LUA_TNUMBER));
+        bool     vrr        =  tBOOLEAN  hellwm_luaGetField(L, "vrr", LUA_TBOOLEAN));
         
         switch (transfrom)
         {
@@ -94,7 +95,8 @@ void hellwm_config_set_monitor(lua_State *L, struct wlr_output *output)
 
         if (width != 0 && height != 0) 
         {
-            wlr_output_state_set_custom_mode(&state, width, height, ((float)hz)*1000.f);
+            /* This function expect refresh rate as mhz, so we have to multiply it by 1000000 */
+            wlr_output_state_set_custom_mode(&state, width, height, hz*1000000 );
         }
         else
         {
@@ -104,14 +106,18 @@ void hellwm_config_set_monitor(lua_State *L, struct wlr_output *output)
         {
             wlr_output_state_set_scale(&state, scale);
         }
+
+        /* Set variable refresh rate, if it's not set vrr = false */
+        wlr_output_state_set_adaptive_sync_enabled(&state, vrr);
     }
     else
     {
         hellwm_log(HELLWM_LOG, "Could not access table: %s", name); 
     }
 
-    wlr_output_state_set_adaptive_sync_enabled(&state, true);
+    /* Enable output */
     wlr_output_state_set_enabled(&state, true);
+
     if (wlr_output_commit_state(output, &state)==false)
     {
        hellwm_log(HELLWM_ERROR, "cannot commit changes to output: %s",name);
@@ -119,12 +125,14 @@ void hellwm_config_set_monitor(lua_State *L, struct wlr_output *output)
     else
     { 
        hellwm_log(HELLWM_LOG, 
-               "commited changes to output: %s, %"PRId32", %"PRId32", %f, %f",
+               "commited changes to output: %s - %"PRId32"x%"PRId32"@%f, scale: %f, VRR: %d",
                name,
                output->width, 
                output->height, 
-               (float)(output->refresh)/(1000.f), 
-               output->scale);
+               (float)(output->refresh)/(1000.f), // it's easier to read logfiles, just it 
+               output->scale,
+               output->adaptive_sync_status
+               );
     }
     wlr_output_state_finish(&state);
 

@@ -9,6 +9,6 @@ lua_State *hellwm_luaInit();
 int hellwm_luaLoadFile(lua_State *L, char *filename);
 int hellwm_luaGetTable(lua_State *L, char *tableName);
 void *hellwm_luaGetField(lua_State *L, char *fieldName, int lua_type);
-void hellwm_luaGetTableField(lua_State *L, char *tableName, char *fieldName);
+void *hellwm_luaGetField(lua_State *L, char *fieldName, int lua_variableType);
 
 #endif

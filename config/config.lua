@@ -6,12 +6,14 @@ keyboard = {
 monitor_DP_1 = {
   width = 2560,
   height = 1440,
-  hz = 0,
-  scale = 1
+  hz = 164,
+  scale = 1,
+  vrr = true 
 }
 
 monitor_DP_2 = {
-  transfrom = 1
+  transfrom = 1,
+  vrr = true
 }
 
 monitor_WL_1 = {
@@ -19,7 +21,8 @@ monitor_WL_1 = {
   height = 500,
   hz = 0,
   transfrom = 1,
-  scale = 2
+  scale = 2,
+  vrr = true 
 }
 
 
