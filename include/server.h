@@ -201,7 +201,7 @@ struct hellwm_toplevel_list_element
 void hellwm_log_flush();
 void hellwm_setup(struct hellwm_server *server);
 void hellwm_log(char *logtype, char *format, ...);
-void hellwm_config_reload(lua_State *L, char *configPath);
+void hellwm_config_reload(struct hellwm_server *server);
 void hellwm_destroy_everything(struct hellwm_server *server);
 void hellwm_toggle_fullscreen_toplevel(struct hellwm_server *server);
 void hellwm_toplevel_remove_from_list(struct wlr_xdg_toplevel *toplevel);

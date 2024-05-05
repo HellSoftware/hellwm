@@ -76,9 +76,6 @@ int main(int argc, char *argv[])
 	/* Setup all necessary stuff for running server */
 	hellwm_setup(&server);
 
-	/* Apply config to compontents of the server */
-	hellwm_config_apply_to_server(server.L, server.config_pointer);
-
 	/* Start Wayland Compositor */
 	hellwm_log(HELLWM_INFO,"Started HellWM Wayland Session at %s", server.socket);
 	wl_display_run(server.wl_display);

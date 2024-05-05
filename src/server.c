@@ -1,6 +1,7 @@
 #include <lua.h>
 #include <time.h>
 #include <stdio.h>
+#include <wayland-util.h>
 #include <wchar.h>
 #include <assert.h>
 #include <getopt.h>
@@ -365,13 +366,15 @@ static void keyboard_handle_key(
 	}
 }
 
-static void keyboard_handle_destroy(struct wl_listener *listener, void *data) {
+static void keyboard_handle_destroy(struct wl_listener *listener, void *data)
+{
 	/* This event is raised by the keyboard base wlr_input_device to signal
 	 * the destruction of the wlr_keyboard. It will no longer receive events
 	 * and should be destroyed.
 	 */
 	struct hellwm_keyboard *keyboard =
-		wl_container_of(listener, keyboard, destroy);
+	wl_container_of(listener, keyboard, destroy);
+
 	wl_list_remove(&keyboard->modifiers.link);
 	wl_list_remove(&keyboard->key.link);
 	wl_list_remove(&keyboard->destroy.link);
@@ -379,7 +382,8 @@ static void keyboard_handle_destroy(struct wl_listener *listener, void *data) {
 	free(keyboard);
 }
 
-static void server_new_keyboard(struct hellwm_server *server,
+static void server_new_keyboard(
+		struct hellwm_server *server,
 		struct wlr_input_device *device)
 {
 	struct wlr_keyboard *wlr_keyboard = wlr_keyboard_from_input_device(device);
@@ -388,23 +392,7 @@ static void server_new_keyboard(struct hellwm_server *server,
 	keyboard->server = server;
 	keyboard->wlr_keyboard = wlr_keyboard;
 
-	struct xkb_context *context = xkb_context_new(XKB_CONTEXT_NO_FLAGS);
-
-	/* will be loaded from config in the future */
-	struct xkb_rule_names rule_names = {
-		.rules = NULL,
-		.model = NULL,
-		.layout = "us",
-		.variant = NULL,
-		.options = NULL
-	};
-
-	struct xkb_keymap *keymap = xkb_keymap_new_from_names(context, &rule_names,
-		XKB_KEYMAP_COMPILE_NO_FLAGS);
-	
-	wlr_keyboard_set_keymap(wlr_keyboard, keymap);
-	xkb_keymap_unref(keymap);
-	xkb_context_unref(context);
+	hellwm_config_set_keyboard(server->L, wlr_keyboard);
 
 	/* Here we set up listeners for keyboard events. */
 	keyboard->modifiers.notify = keyboard_handle_modifiers;
@@ -418,23 +406,6 @@ static void server_new_keyboard(struct hellwm_server *server,
 
 	/* And add the keyboard to our list of keyboards */
 	wl_list_insert(&server->keyboards, &keyboard->link);
-
-	hellwm_log(HELLWM_LOG, "new keyboard device: %s",device->name);
-
-	/*  
-	 *  Allocate keyboard list if it's not allocated
-	 *  and add keyboard to the list 
-	*/
-	if (server->keyboard_list->keyboards != NULL)
-	{
-		server->keyboard_list->keyboards = realloc(server->keyboard_list->keyboards, (server->keyboard_list->count + 1) * sizeof(struct hellwm_keyboard));
-	}
-	else
-	{
-		server->keyboard_list->keyboards = malloc((server->keyboard_list->count + 1) * sizeof(struct hellwm_output));
-	}
-	server->keyboard_list->keyboards[server->keyboard_list->count] = keyboard;
-	server->keyboard_list->count++;
 }
 
 static void server_new_pointer(struct hellwm_server *server,
@@ -1078,20 +1049,17 @@ static void server_new_xdg_popup(struct wl_listener *listener, void *data) {
 	wl_signal_add(&xdg_popup->events.destroy, &popup->destroy);
 }
 
-void hellwm_config_reload(lua_State *L, char *configPath)
+void hellwm_config_reload(struct hellwm_server *server)
 {
-	hellwm_luaLoadFile(L, configPath);
+	lua_close(server->L);
+	server->L = hellwm_luaInit();
+	hellwm_luaLoadFile(server->L, server->configPath);
+
+	// hellwm_config_reload_keyboards(server->L,server); TODO - reload it's not working 
 }
 
 void hellwm_setup(struct hellwm_server *server)
 { 
-
-	server->config_pointer = malloc(sizeof(struct hellwm_config_pointers));
-	server->config_pointer->server = server;
-
-	server->keyboard_list = malloc(sizeof(struct hellwm_keyboard_list));
-	server->keyboard_list->count=0;
-
 	hellwm_luaLoadFile(server->L, server->configPath);
 
 	wlr_log_init(WLR_DEBUG, NULL);

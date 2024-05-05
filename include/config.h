@@ -61,8 +61,8 @@ struct hellwm_config_pointers
 };
 
 void hellwm_config_setup(lua_State *L, char *configPath);
-void hellwm_config_set_keyboard(lua_State *L, struct hellwm_config_pointers *config_pointer);
-void hellwm_config_apply_to_server(lua_State *L, struct hellwm_config_pointers *config_pointer);
+void hellwm_config_set_keyboard(lua_State *L, struct wlr_keyboard *keyboard);
+void hellwm_config_reload_keyboards(lua_State *L, struct hellwm_server *server);
 void hellwm_config_set_monitor(lua_State *L, struct wlr_output *output);
 
 #endif

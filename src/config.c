@@ -32,11 +32,6 @@ void hellwm_config_setup(lua_State *L, char *configPath)
     hellwm_luaLoadFile(L, configPath);
 }
 
-void hellwm_config_apply_to_server(lua_State *L, struct hellwm_config_pointers *config_pointer)
-{
-    hellwm_config_set_keyboard(L,config_pointer);
-}
-
 void hellwm_config_set_monitor(lua_State *L, struct wlr_output *output)
 {
     char name[32]="";
@@ -139,56 +134,77 @@ void hellwm_config_set_monitor(lua_State *L, struct wlr_output *output)
     lua_pop(L, 1);
 }
 
-void hellwm_config_set_keyboard(lua_State *L, struct hellwm_config_pointers *config_pointer)
+void hellwm_config_set_keyboard(lua_State *L, struct wlr_keyboard *keyboard)
 {
-    hellwm_luaGetTable(L, (char*)hellwm_config_groups_arr[HELLWM_CONFIG_KEYBOARD]);
-
-    char * rules   = hellwm_luaGetField(L, "rules", LUA_TSTRING);
-    char * model   = hellwm_luaGetField(L, "model", LUA_TSTRING);
-    char * layout  = hellwm_luaGetField(L, "layout", LUA_TSTRING);
-    char * variant = hellwm_luaGetField(L, "variant", LUA_TSTRING);
-    char * options = hellwm_luaGetField(L, "options", LUA_TSTRING);
-
-    int delay =  tFLOAT hellwm_luaGetField(L, "delay", LUA_TNUMBER));
-    int rate = tFLOAT hellwm_luaGetField(L, "rate", LUA_TNUMBER));
-
     struct xkb_context *context = xkb_context_new(XKB_CONTEXT_NO_FLAGS);
-
+    
     struct xkb_rule_names rule_names = 
     {
-   		.rules = rules,
-   		.model = model,
-   		.layout = layout,
-   		.variant = variant,
-   		.options = options 
+      	.rules = NULL,
+      	.model = NULL,
+      	.layout = "us",
+      	.variant = NULL,
+      	.options = NULL 
     };
 
 	 struct xkb_keymap *keymap = xkb_keymap_new_from_names(
            context,
            &rule_names,
            XKB_KEYMAP_COMPILE_NO_FLAGS);
-	
-    for (int i = 0; i < config_pointer->server->keyboard_list->count; ++i)
+
+    if (hellwm_luaGetTable(L, (char*)hellwm_config_groups_arr[HELLWM_CONFIG_KEYBOARD]))
     {
-        wlr_keyboard_set_keymap(config_pointer->server->keyboard_list->keyboards[i]->wlr_keyboard,keymap);
-        wlr_keyboard_set_repeat_info(config_pointer->server->keyboard_list->keyboards[i]->wlr_keyboard,rate,delay);
+        char * rules   = hellwm_luaGetField(L, "rules", LUA_TSTRING);
+        char * model   = hellwm_luaGetField(L, "model", LUA_TSTRING);
+        char * layout  = hellwm_luaGetField(L, "layout", LUA_TSTRING);
+        char * variant = hellwm_luaGetField(L, "variant", LUA_TSTRING);
+        char * options = hellwm_luaGetField(L, "options", LUA_TSTRING);
+
+        int delay =  tFLOAT hellwm_luaGetField(L, "delay", LUA_TNUMBER));
+        int rate = tFLOAT hellwm_luaGetField(L, "rate", LUA_TNUMBER));
+
+        rule_names.rules   = rules;
+        rule_names.model   = model;
+        rule_names.layout  = layout;
+        rule_names.variant = variant;
+        rule_names.options = options;
+
+        wlr_keyboard_set_repeat_info(keyboard,rate,delay);
+
+        hellwm_log(
+                HELLWM_LOG,
+                "Keyboard Config: name: %s, delay: %d, rate: %d, rules: %s, model: %s, layout: %s, variant: %s, options: %s ",
+                keyboard->base.name,
+                delay, 
+                rate, 
+                rules, 
+                model, 
+                layout, 
+                variant, 
+                options
+        );
     }
-	 
+    else
+    {
+        hellwm_log(HELLWM_INFO, "Cannot find keyboard configuration in config file. Keyboard set by default"); 
+    }
+
+    wlr_keyboard_set_keymap(keyboard,keymap);
+
     xkb_keymap_unref(keymap);
     xkb_context_unref(context);
 
-    hellwm_log(
-            HELLWM_LOG,
-            "Keyboard Config: name: %s, delay: %d, rate: %d, rules: %s, model: %s, layout: %s, variant: %s, options: %s ",
-            config_pointer->server->keyboard_list->keyboards[0]->wlr_keyboard->base.name,
-            delay, 
-            rate, 
-            rules, 
-            model, 
-            layout, 
-            variant, 
-            options
-    );
+    lua_pop(L,1); 
+}
+
+void hellwm_config_reload_keyboards(lua_State *L, struct hellwm_server *server)
+{
+    struct hellwm_keyboard *keyboard, *tmp;
+    wl_list_for_each_safe(keyboard, tmp, &server->keyboards, link)
+    {
+       hellwm_log(HELLWM_INFO, "KBD: %s",keyboard->wlr_keyboard->base.name); 
+    }
+
     lua_pop(L,1); 
 }
 
