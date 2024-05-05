@@ -63,10 +63,10 @@ void hellwm_config_set_monitor(lua_State *L, struct wlr_output *output)
     
     if (hellwm_luaGetTable(L, name))
     {
-        int   width      =  tFLOAT hellwm_luaGetField(L, "width", LUA_TNUMBER));
-        int   height     =  tFLOAT hellwm_luaGetField(L, "height", LUA_TNUMBER));
-        int   hz         =  tFLOAT hellwm_luaGetField(L, "hz", LUA_TNUMBER));
-        int   transfrom  =  tFLOAT hellwm_luaGetField(L, "transfrom", LUA_TNUMBER));
+        int32_t   width      =  tFLOAT hellwm_luaGetField(L, "width", LUA_TNUMBER));
+        int32_t   height     =  tFLOAT hellwm_luaGetField(L, "height", LUA_TNUMBER));
+        int32_t   hz         =  tFLOAT hellwm_luaGetField(L, "hz", LUA_TNUMBER));
+        int32_t   transfrom  =  tFLOAT hellwm_luaGetField(L, "transfrom", LUA_TNUMBER));
         float scale      =  tFLOAT hellwm_luaGetField(L, "scale", LUA_TNUMBER));
         
         switch (transfrom)
@@ -94,7 +94,7 @@ void hellwm_config_set_monitor(lua_State *L, struct wlr_output *output)
 
         if (width != 0 && height != 0) 
         {
-            wlr_output_state_set_custom_mode(&state, width, height, hz);
+            wlr_output_state_set_custom_mode(&state, width, height, ((float)hz)*1000.f);
         }
         else
         {
