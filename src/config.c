@@ -204,12 +204,7 @@ void hellwm_config_set_keyboard(lua_State *L, struct wlr_keyboard *keyboard)
       	.options = NULL 
     };
 
-	 struct xkb_keymap *keymap = xkb_keymap_new_from_names(
-           context,
-           &rule_names,
-           XKB_KEYMAP_COMPILE_NO_FLAGS);
-
-    if (hellwm_luaGetTable(L, (char*)hellwm_config_groups_arr[HELLWM_CONFIG_KEYBOARD]))
+	 if (hellwm_luaGetTable(L, (char*)hellwm_config_groups_arr[HELLWM_CONFIG_KEYBOARD]))
     {
         char * rules   = hellwm_luaGetField(L, "rules", LUA_TSTRING);
         char * model   = hellwm_luaGetField(L, "model", LUA_TSTRING);
@@ -239,6 +234,11 @@ void hellwm_config_set_keyboard(lua_State *L, struct wlr_keyboard *keyboard)
     {
         hellwm_log(HELLWM_INFO, "Cannot find keyboard configuration in config file. Keyboard set by default"); 
     }
+    
+    struct xkb_keymap *keymap = xkb_keymap_new_from_names(
+        context,
+        &rule_names,
+        XKB_KEYMAP_COMPILE_NO_FLAGS);
 
     wlr_keyboard_set_keymap(keyboard,keymap);
 
