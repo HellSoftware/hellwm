@@ -43,6 +43,7 @@ void hellwm_config_binds_load(lua_State *L, struct hellwm_config_binds *binds)
     lua_setglobal(L, "bind"); 
     global_keybinds.count=0;
 }
+
 void hellwm_config_bind_add(const char *key, const char *val)
 {
     struct hellwm_config_one_bind *new_bind = malloc(sizeof(struct hellwm_config_one_bind));

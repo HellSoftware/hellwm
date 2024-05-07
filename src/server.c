@@ -992,6 +992,7 @@ static void server_new_xdg_popup(struct wl_listener *listener, void *data) {
 	wl_signal_add(&xdg_popup->events.destroy, &popup->destroy);
 }
 
+/* Reload Config and Lua State */ // TODO - fix bug after reloading keybinds
 void hellwm_config_reload(struct hellwm_server *server)
 {
 	/* Close old lua state */
