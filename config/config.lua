@@ -1,9 +1,20 @@
+-- Config File
+
+-- Keybinds
+bind("Escape","killall hellwm")
+bind("Return","kitty")
+bind("b","firefox")
+bind("e","nemo")	
+bind("p","pavucontrol");
+
+-- Keyboard Configuration
 keyboard = {
   delay = 200,
   rate = 50,
   layout = "pl"
 }
 
+-- Monitors Configuration
 monitor_DP_2 = {
   transfrom = 1,
   vrr = true
@@ -12,15 +23,9 @@ monitor_DP_2 = {
 monitor_WL_1 = {
   width = 500,
   height = 500,
-  hz = 0,
-  transfrom = 1,
-  scale = 2,
   vrr = true
 }
 
-bind("Escape","killall hellwm")
-bind("Return","kitty")
-bind("b","firefox")
-
+-- Hello Message :)
 print("Welcome to HellWM")
 

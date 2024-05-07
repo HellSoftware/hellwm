@@ -62,7 +62,7 @@ static void exec_cmd(char *command)
 // LOG
 void hellwm_log(char *logtype, char *format, ...)
 {
-	char *helwm_log_filename = "logfile.txt";
+	char *hellwm_log_filename = "logfile.txt";
 	char content[128];
 
 	strcpy(content, logtype);
@@ -76,7 +76,7 @@ void hellwm_log(char *logtype, char *format, ...)
    //vprintf(format, args);
 	//printf("\n");
 
-	FILE *logfile = fopen(helwm_log_filename,"a");
+	FILE *logfile = fopen(hellwm_log_filename,"a");
 
 	fseek(logfile, 0L, SEEK_END);
 	if (ftell(logfile) == 0)
@@ -255,13 +255,13 @@ static void keyboard_handle_modifiers(
 
 static bool handle_keybinding(struct hellwm_server *server, xkb_keysym_t sym)
 {
-	/*
-	 * Here we handle compositor keybindings. This is when the compositor is
-	 * processing keys, rather than passing them on to the client for its own
-	 * processing.
-	 *
-	 * This function assumes Meta key is held down.
-	 */	
+	/*	
+	* This function assumes Meta key is held down.
+	*/	
+	if (server->keybinds==NULL)
+		return true;
+	if (server->keybinds->binds==NULL)
+		return true;
 
 	for (int i = 0; i < server->keybinds->count; i++)
 	{
@@ -272,55 +272,6 @@ static bool handle_keybinding(struct hellwm_server *server, xkb_keysym_t sym)
 		}
 	}
 	return false;
-
-	switch (sym)
-	{
-	case XKB_KEY_Return:
-		exec_cmd("kitty");
-		break;
-	case XKB_KEY_q:
-		destroy_toplevel(server);
-		break;
-	case XKB_KEY_e:
-		exec_cmd("nemo");	
-		break;
-	case XKB_KEY_b:
-		exec_cmd("firefox");
-		break;
-	case XKB_KEY_p:
-		exec_cmd("pavucontrol");
-		break;
-	case XKB_KEY_Escape:
-		wl_display_terminate(server->wl_display);
-		break;
-	case XKB_KEY_l:
-		hellwm_resize_toplevel_by(server, 50, 0);
-		break;
-	case XKB_KEY_h:
-		hellwm_resize_toplevel_by(server, -50, 0);
-		break;
-	case XKB_KEY_k:
-		hellwm_resize_toplevel_by(server, 0, -50);
-		break;
-	case XKB_KEY_j:
-		hellwm_resize_toplevel_by(server, 0, 50);
-		break;
-	case XKB_KEY_f:
-		hellwm_toggle_fullscreen_toplevel(server);	
-		break;
-	case XKB_KEY_c:
-		/* Cycle to the next toplevel */
-		if (wl_list_length(&server->toplevels) < 2) {
-			break;
-		}
-		struct hellwm_toplevel *next_toplevel =
-			wl_container_of(server->toplevels.prev, next_toplevel, link);
-		focus_toplevel(next_toplevel, next_toplevel->xdg_toplevel->base->surface);
-		break;
-	default:
-		return false;
-	}
-	return true;
 }
 
 static void keyboard_handle_key(
@@ -342,14 +293,16 @@ static void keyboard_handle_key(
 	bool handled = false;
 	uint32_t modifiers = wlr_keyboard_get_modifiers(keyboard->wlr_keyboard);
 	if ((modifiers & WLR_MODIFIER_LOGO) &&
-			event->state == WL_KEYBOARD_KEY_STATE_PRESSED) {
-		/* If SUPER key is held down and this button was _pressed_, we attempt to
-		 * process it as a compositor keybinding. */
-		for (int i = 0; i < nsyms; i++) {
+			event->state == WL_KEYBOARD_KEY_STATE_PRESSED)
+	{
+		/* If Modifier key + button is held down,
+		 * and we check if it has assigned actions.
+		 */
+		for (int i = 0; i < nsyms; i++)
+		{
 			handled = handle_keybinding(server, syms[i]);
 		}
 	}
-
 	if (!handled) {
 		/* Otherwise, we pass it along to the client. */
 		wlr_seat_set_keyboard(seat, keyboard->wlr_keyboard);
@@ -1041,12 +994,22 @@ static void server_new_xdg_popup(struct wl_listener *listener, void *data) {
 
 void hellwm_config_reload(struct hellwm_server *server)
 {
+	/* Close old lua state */
 	lua_close(server->L);
 	server->L = hellwm_luaInit();
+
+	/* So after we set up lua state 
+	 * and and expose functions to this state
+	 * we can load lua config file
+	 * and make it work without errors
+	 */
+	hellwm_config_binds_load(server->L, server->keybinds);
+
+	/* Loading lua config */
 	hellwm_luaLoadFile(server->L, server->configPath);
 
-	hellwm_config_binds_load(server->L, server->keybinds);
-	// hellwm_config_reload_keyboards(server->L,server); TODO - reload it's not working 
+	// monitor reload TODO
+	hellwm_config_reload_keyboards(server->L,server);
 }
 
 void hellwm_setup(struct hellwm_server *server)
@@ -1054,7 +1017,6 @@ void hellwm_setup(struct hellwm_server *server)
 	hellwm_config_binds_load(server->L, server->keybinds);
 	hellwm_luaLoadFile(server->L, server->configPath);
 
-	hellwm_log(HELLWM_INFO, "%d <--------",server->keybinds->count);
 	wlr_log_init(WLR_DEBUG, NULL);
 	server->wl_display = wl_display_create();
 	
@@ -1183,7 +1145,9 @@ void hellwm_setup(struct hellwm_server *server)
 	wlr_log(WLR_INFO,
 		"Running Wayland compositor on WAYLAND_DISPLAY=%s",server->socket);
 
-/*	pthread_t tid;
+/*	HellCli Setup */
+/*
+ 	pthread_t tid;
 	pthread_create(&tid,
 			NULL,
 			(void *)hellcli_serv,

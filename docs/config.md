@@ -2,16 +2,20 @@
 
 To make your own config edit config/config.lua for your needs.
 You don't have to manually set every value provided bellow,
-for example you can just set only layout:
+set only those you need to, rest will be set by default.
+
+# Keybinds
+
+Name: bind(key, action)
+
+Example if you want on Meta Key + Return execute kitty termulator:
 ```
-keyboard = {
-    layout = "us"
-}
+bind("Return","kitty")
 ```
 
-# monitor 
+# Monitor 
 
-Name: monitor_OUTPUT
+Name: ***monitor_OUTPUT***
 
 Keywords:
 - width [int]
@@ -29,9 +33,9 @@ monitor_DP_1 = {
 }
 ```
 
-# keyboard
+# Keyboard
 
-Name: keyboard
+Name: ***keyboard***
 
 Keywords:
 - rules [char*]

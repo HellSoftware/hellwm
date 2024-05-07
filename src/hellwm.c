@@ -64,15 +64,15 @@ int main(int argc, char *argv[])
 
 	struct hellwm_server server = {NULL};
 
-	/* Lua setup */
-	hellwm_config_setup(&server);
-	
 	/* 
 	 *	Hardcoded config path - it will be changed soon,
 	 * it's just easier to debug everything
 	 */
 	server.configPath = "config/config.lua";
 
+	/* Lua setup */
+	hellwm_config_setup(&server);
+	
 	/* Setup all necessary stuff for running server */
 	hellwm_setup(&server);
 
