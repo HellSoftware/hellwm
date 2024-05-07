@@ -68,8 +68,8 @@ struct hellwm_config_binds
 
 struct hellwm_config_one_bind
 {
-    const char *key;
-    const char *val;
+    xkb_keysym_t key;
+    char *val;
 };
 
 static int hellwm_c_bind(lua_State *L);
@@ -79,6 +79,6 @@ void hellwm_config_set_monitor(lua_State *L, struct wlr_output *output);
 void hellwm_config_set_keyboard(lua_State *L, struct wlr_keyboard *keyboard);
 void hellwm_config_binds_load(lua_State *L, struct hellwm_config_binds *binds);
 void hellwm_config_reload_keyboards(lua_State *L, struct hellwm_server *server);
-void hellwm_config_bind_add(struct hellwm_config_binds *binds, const char *key, const char *val);
+void hellwm_config_bind_add(struct hellwm_config_binds **binds, const char *key, const char *val);
 
 #endif

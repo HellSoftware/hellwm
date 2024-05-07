@@ -18,7 +18,8 @@ monitor_WL_1 = {
   vrr = true
 }
 
-print("Welcome to HellWM")
-bind("l","kitty")
+bind("Return","kitty")
+bind("Escape","killall hellwm")
+
 print("Welcome to HellWM")
 

@@ -261,25 +261,17 @@ static bool handle_keybinding(struct hellwm_server *server, xkb_keysym_t sym)
 	 * processing.
 	 *
 	 * This function assumes Meta key is held down.
-	
-	if (XKB_KEY_c==sym)
-	{
-		struct hellwm_toplevel *next_toplevel =
-			wl_container_of(server->toplevels.prev, next_toplevel, link);
-		focus_toplevel(next_toplevel, next_toplevel->xdg_toplevel->base->surface);
-		return true;
-	}
 
-	for (int i = 0; i < server->config_storage.keyboard_binds_count; i++)
+	for (int i = 0; i < server->keybinds->count; i++)
 	{
-		if (sym==server->config_storage.keyboard_binds_key[i])
+		DBG
+		if (server->keybinds->binds[i]->key==sym)
 		{
-			exec_cmd(server->config_storage.keyboard_binds_content[i]);
-			return true;
+			exec_cmd(server->keybinds->binds[i]->val);
 		}
 	}
-	return true;
-	*/
+	return false;
+	*/	
 
 	switch (sym)
 	{
@@ -1053,6 +1045,7 @@ void hellwm_config_reload(struct hellwm_server *server)
 	server->L = hellwm_luaInit();
 	hellwm_luaLoadFile(server->L, server->configPath);
 
+	hellwm_config_binds_load(server->L, server->keybinds);
 	// hellwm_config_reload_keyboards(server->L,server); TODO - reload it's not working 
 }
 
