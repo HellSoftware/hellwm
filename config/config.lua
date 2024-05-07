@@ -18,8 +18,9 @@ monitor_WL_1 = {
   vrr = true
 }
 
-bind("Return","kitty")
 bind("Escape","killall hellwm")
+bind("Return","kitty")
+bind("b","firefox")
 
 print("Welcome to HellWM")
 

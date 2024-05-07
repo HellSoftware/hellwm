@@ -27,13 +27,18 @@
 #define tDOUBLE *((double *) 
 #define tBOOLEAN *((boolean *)
 
+struct hellwm_config_binds global_keybinds;
+struct hellwm_server *global_server;
+
 void hellwm_config_setup(struct hellwm_server *server)
 {
     server->L = hellwm_luaInit();
+    global_server = server; 
 }
 
 void hellwm_config_binds_load(lua_State *L, struct hellwm_config_binds *binds)
 {
+    global_keybinds.count=0;
     lua_pushlightuserdata(L, binds);
     lua_setglobal(L, "binds");
 
@@ -41,7 +46,7 @@ void hellwm_config_binds_load(lua_State *L, struct hellwm_config_binds *binds)
     lua_setglobal(L, "bind"); 
 }
 
-void hellwm_config_bind_add(struct hellwm_config_binds **binds, const char *key, const char *val)
+void hellwm_config_bind_add(struct hellwm_config_binds *binds, const char *key, const char *val)
 {
     struct hellwm_config_one_bind *new_bind = malloc(sizeof(struct hellwm_config_one_bind));
     if (new_bind==NULL)
@@ -53,32 +58,45 @@ void hellwm_config_bind_add(struct hellwm_config_binds **binds, const char *key,
     new_bind->key = xkb_keysym_from_name(key, XKB_KEYSYM_CASE_INSENSITIVE);
     new_bind->val = strdup(val);
 
-    if (*binds == NULL)
+    /*if (binds == NULL)
     {
-        (*binds) = malloc(sizeof(struct hellwm_config_binds));
-        if (*binds==NULL)
+        binds = malloc(sizeof(struct hellwm_config_binds));
+        if (binds==NULL)
         {
-            hellwm_log(HELLWM_ERROR, "Failed to allocate memory for keybinds inside hellwm_config_bind_add()");
+            hellwm_log(HELLWM_ERROR, "Failed to allocate memory for binds inside hellwm_config_bind_add()");
             free(binds);
             return;
         }
 
-        (*binds)->binds = malloc(sizeof(struct hellwm_config_one_bind *));
-        if ((*binds)->binds==NULL)
+        binds->binds = malloc(sizeof(struct hellwm_config_one_bind *));
+        if (binds->binds==NULL)
         {
-            hellwm_log(HELLWM_ERROR, "Failed to allocate memory for keybinds inside hellwm_config_bind_add()");
+            hellwm_log(HELLWM_ERROR, "Failed to allocate memory for binds->binds inside hellwm_config_bind_add()");
             return;
         }
-        (*binds)->count=0; 
+        binds->count=0; 
     }
     else
     {
-        (*binds)->binds = realloc((*binds)->binds, ((*binds)->count + 1) * sizeof(struct hellwm_config_one_bind*)); 
-    }
-    (*binds)->binds[(*binds)->count] = new_bind;
-    (*binds)->count++;
+        binds->binds = realloc(binds->binds, (binds->count + 1) * sizeof(struct hellwm_config_one_bind*)); 
+    }*/
 
-    hellwm_log(HELLWM_LOG, "New BIND: [%s] = %s",key,(*binds)->binds[(*binds)->count-1]->val);
+    global_keybinds.binds = realloc(global_keybinds.binds, (global_keybinds.count + 1) * sizeof(struct hellwm_config_one_bind*)); 
+
+    if (global_keybinds.binds==NULL)
+    {
+        hellwm_log(HELLWM_ERROR, "Failed to reallocate memory for global_keybinds->binds inside hellwm_config_bind_add()");
+        return;
+    }
+    global_keybinds.binds[global_keybinds.count] = new_bind;
+    global_keybinds.count++;
+
+    //binds->binds[binds->count] = new_bind;
+    //binds->count++;
+
+    hellwm_log(HELLWM_LOG, "New BIND: [%s] = %s",key,global_keybinds.binds[global_keybinds.count-1]->val);
+
+    global_server->keybinds=&global_keybinds;
 }
 
 static int hellwm_c_bind(lua_State *L)
@@ -88,7 +106,7 @@ static int hellwm_c_bind(lua_State *L)
     const char *key = luaL_checkstring(L, 1);
     const char *val = luaL_checkstring(L, 2);
 
-    hellwm_config_bind_add(&binds, key, val);
+    hellwm_config_bind_add(binds, key, val);
 
     return 0;
 }

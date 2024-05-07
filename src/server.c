@@ -261,17 +261,17 @@ static bool handle_keybinding(struct hellwm_server *server, xkb_keysym_t sym)
 	 * processing.
 	 *
 	 * This function assumes Meta key is held down.
+	 */	
 
 	for (int i = 0; i < server->keybinds->count; i++)
 	{
-		DBG
 		if (server->keybinds->binds[i]->key==sym)
 		{
 			exec_cmd(server->keybinds->binds[i]->val);
+			return true;
 		}
 	}
 	return false;
-	*/	
 
 	switch (sym)
 	{
@@ -1054,6 +1054,7 @@ void hellwm_setup(struct hellwm_server *server)
 	hellwm_config_binds_load(server->L, server->keybinds);
 	hellwm_luaLoadFile(server->L, server->configPath);
 
+	hellwm_log(HELLWM_INFO, "%d <--------",server->keybinds->count);
 	wlr_log_init(WLR_DEBUG, NULL);
 	server->wl_display = wl_display_create();
 	
