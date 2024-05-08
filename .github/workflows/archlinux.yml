@@ -1,0 +1,54 @@
+name: Build and Install Dependencies
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+    branches:
+      - main
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Syu 
+      run: |
+        sudo pacman --noconfirm --noprogressbar -Syu 
+
+    - name: Install dependencies from Pacman
+      run: |
+        sudo pacman --noconfirm --noprogressbar -Syu \
+          git \
+          make \
+          pkg-config \
+          wayland \
+          wayland-protocols \
+          debugedit \
+          base-devel \
+          gcc \
+          clang \
+          lcms2 \
+          cmake \
+          lua
+
+    - name: Install yay 
+      run: |
+        git clone https://aur.archlinux.org/yay.git
+        cd yay
+        makepkg -si --noconfirm
+        cd ..
+
+    - name: Install wlroots-git from AUR
+      run: |
+        yay -Syu --noconfirm
+        yay -S --noconfirm wlroots-git 
+
+    - name: Build HellWM
+      run: make
+
+    - name: Build hellcli 
+      run: make hellcli
