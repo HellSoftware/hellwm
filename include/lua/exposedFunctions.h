@@ -35,15 +35,3 @@
 #include <wlr/types/wlr_layer_shell_v1.h>
 #include <wlr/types/wlr_xcursor_manager.h>
 
-#include "../../include/server.h"
-
-/* Get name of the function */
-#define FUNCTION_NAME(func) #func
-
-void hellwm_lua_expose_function(struct hellwm_server * server, void *function, char *name) 
-{
-   lua_pushcfunction(server->L, function);
-   lua_setglobal(server->L, name);
-
-   hellwm_log(HELLWM_LOG, "LUA: Exposed function: %s ", name);
-}

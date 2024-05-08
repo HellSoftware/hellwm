@@ -155,7 +155,7 @@ static void hellwm_resize_toplevel_by(struct hellwm_server *server, int32_t w, i
 	wlr_xdg_toplevel_set_resizing(toplevel, false);
 }
 
-void hellwm_toggle_fullscreen_toplevel(struct hellwm_server *server)
+void toggle_fullscreen(struct hellwm_server *server)
 {
 	struct wlr_xdg_toplevel *toplevel = wlr_xdg_toplevel_try_from_wlr_surface(
 			server->seat->keyboard_state.focused_surface);
@@ -163,6 +163,17 @@ void hellwm_toggle_fullscreen_toplevel(struct hellwm_server *server)
 	wlr_xdg_toplevel_set_fullscreen(
 			toplevel,
 			!toplevel->current.fullscreen);
+}
+
+void focus_next(struct hellwm_server *server)
+{
+	if (wl_list_length(&server->toplevels) < 2)
+	{
+			return;
+	}
+	struct hellwm_toplevel *next_toplevel =
+			wl_container_of(server->toplevels.prev, next_toplevel, link);
+	focus_toplevel(next_toplevel, next_toplevel->xdg_toplevel->base->surface);
 }
 
 static void focus_toplevel(struct hellwm_toplevel *toplevel, struct wlr_surface *surface) 
@@ -211,9 +222,8 @@ static void focus_toplevel(struct hellwm_toplevel *toplevel, struct wlr_surface 
 	}
 }
 
-static void destroy_toplevel(struct hellwm_server *server)
+static void kill_active(struct hellwm_server *server)
 {
-
 	if (wl_list_length(&server->toplevels) < 1)
 		return;
 	
@@ -226,11 +236,6 @@ static void destroy_toplevel(struct hellwm_server *server)
 			wl_container_of(server->toplevels.prev, next_toplevel, link);
 
 	focus_toplevel(next_toplevel, next_toplevel->xdg_toplevel->base->surface);
-
-	/* focus_toplevel(server->alltoplevels->list[server->alltoplevels->
-			last_id]->toplevel,server->alltoplevels->list[server->
-			alltoplevels->last_id]->toplevel->xdg_toplevel->base->surface);
-	*/
 	wlr_xdg_toplevel_send_close(prev_toplevel);
 }
 
@@ -809,9 +814,7 @@ static void xdg_toplevel_destroy(struct wl_listener *listener, void *data) {
 	wl_list_remove(&toplevel->request_maximize.link);
 	wl_list_remove(&toplevel->request_fullscreen.link);
 
-   //focus_toplevel(focus_toplevel(server->alltoplevels->list[server->alltoplevels->current_id]->toplevel),server->alltoplevels->list[server->alltoplevels->current_id]->toplevel));
 	free(toplevel);
-	//TODO free server->alltoplevels	
 }
 
 static void begin_interactive(struct hellwm_toplevel *toplevel,
@@ -997,16 +1000,13 @@ void hellwm_config_reload(struct hellwm_server *server)
 {
 	/* Close old lua state */
 	lua_close(server->L);
-	server->L = hellwm_luaInit();
+	hellwm_config_setup(server);
 
 	/* So after we set up lua state 
 	 * and and expose functions to this state
 	 * we can load lua config file
 	 * and make it work without errors
 	 */
-	hellwm_config_binds_load(server->L, server->keybinds);
-
-	/* Loading lua config */
 	hellwm_luaLoadFile(server->L, server->configPath);
 
 	// monitor reload TODO
@@ -1015,9 +1015,6 @@ void hellwm_config_reload(struct hellwm_server *server)
 
 void hellwm_setup(struct hellwm_server *server)
 { 
-	hellwm_config_binds_load(server->L, server->keybinds);
-	hellwm_luaLoadFile(server->L, server->configPath);
-
 	wlr_log_init(WLR_DEBUG, NULL);
 	server->wl_display = wl_display_create();
 	

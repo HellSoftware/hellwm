@@ -200,8 +200,10 @@ struct hellwm_toplevel_list_element
 };
 
 void hellwm_log_flush();
+void focus_next(struct hellwm_server *server);
 void hellwm_setup(struct hellwm_server *server);
 void hellwm_log(char *logtype, char *format, ...);
+void toggle_fullscreen(struct hellwm_server *server);
 void hellwm_config_reload(struct hellwm_server *server);
 void hellwm_destroy_everything(struct hellwm_server *server);
 void hellwm_toggle_fullscreen_toplevel(struct hellwm_server *server);
@@ -209,7 +211,7 @@ void hellwm_toplevel_remove_from_list(struct wlr_xdg_toplevel *toplevel);
 void hellwm_toplevel_add_to_list(struct hellwm_server *server, struct hellwm_toplevel *new_toplevel);
 
 static void exec_cmd(char *command);
-static void destroy_toplevel(struct hellwm_server *server);
+static void kill_active(struct hellwm_server *server);
 static void reset_cursor_mode(struct hellwm_server *server);
 static void output_frame(struct wl_listener *listener, void *data);
 static void output_destroy(struct wl_listener *listener, void *data);

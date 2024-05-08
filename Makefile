@@ -2,9 +2,9 @@ WAYLAND_PROTOCOLS=$(shell pkg-config --variable=pkgdatadir wayland-protocols)
 WAYLAND_SCANNER=$(shell pkg-config --variable=wayland_scanner wayland-scanner)
 
 LIBS=\
-	 $(shell pkg-config --cflags --libs "wlroots >= 0.18.0-dev") \
-	 $(shell pkg-config --cflags --libs wayland-server) \
-	 $(shell pkg-config --cflags --libs xkbcommon) \
+	 $(shell pkg-config --cflags --libs "wlroots >= 0.18.0-dev")	\
+	 $(shell pkg-config --cflags --libs wayland-server) 			 	\
+	 $(shell pkg-config --cflags --libs xkbcommon) 						\
 	 -llua
 
 wlr-layer-shell-unstable-v1-protocol.h:
@@ -28,6 +28,7 @@ SRC=\
 	 ./src/config.c 					\
 	 ./src/layer_shell.c 			\
 	 ./src/lua/luaUtil.c				\
+	 ./src/lua/exposedFunctions.c \
 	 ./src/hellcli/serv_hellcli.c
 
 hellwm: $(HELLWM) $(SRC) xdg-shell-protocol.h wlr-layer-shell-unstable-v1-protocol.h 

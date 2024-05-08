@@ -28,4 +28,3 @@ monitor_WL_1 = {
 
 -- Hello Message :)
 print("Welcome to HellWM")
-

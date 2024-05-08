@@ -18,6 +18,8 @@
 #include "../include/server.h"
 #include "../include/lua/luaUtil.h"
 
+#include "./lua/exposedFunctions.c"
+
 /* purpose of this boolean define is just because this thing down there looks with it cool :) */
 #define boolean bool
 
@@ -35,13 +37,22 @@ void hellwm_config_setup(struct hellwm_server *server)
     server->L = hellwm_luaInit();
     global_server = server; 
     global_server->keybinds=&global_keybinds;
+    hellwm_lua_expose_functions(server);
+    hellwm_luaLoadFile(server->L, server->configPath);
 }
 
-void hellwm_config_binds_load(lua_State *L, struct hellwm_config_binds *binds)
+void hellwm_lua_expose_functions(struct hellwm_server *server)
 {
-    lua_pushcfunction(L, hellwm_c_bind);
-    lua_setglobal(L, "bind"); 
-    global_keybinds.count=0;
+    hellwm_lua_expose_function(server, hellwm_c_bind    , "bind");
+
+    hellwm_lua_expose_function(server, exec_cmd                  , FUNCTION_NAME(exec_cmd));
+    hellwm_lua_expose_function(server, hellwm_log                , FUNCTION_NAME(hellwm_log));
+    hellwm_lua_expose_function(server, focus_next                , FUNCTION_NAME(focus_next));
+    hellwm_lua_expose_function(server, kill_active               , FUNCTION_NAME(kill_active));
+    hellwm_lua_expose_function(server, hellwm_log_flush          , FUNCTION_NAME(hellwm_log_flush));
+    hellwm_lua_expose_function(server, toggle_fullscreen         , FUNCTION_NAME(toggle_fullscreen));
+    hellwm_lua_expose_function(server, hellwm_config_reload      , FUNCTION_NAME(hellwm_config_reload));
+    hellwm_lua_expose_function(server, hellwm_resize_toplevel_by , FUNCTION_NAME(hellwm_resize_toplevel_by));
 }
 
 void hellwm_config_bind_add(const char *key, const char *val)
