@@ -1,9 +1,6 @@
 # a bit more detailed reminders for me
 
-# next thing in config right after keybinds
-- [ ] MONITORS wlr_output and wlr_state, create array to store monitors and add config option to configure them 
-- [ ] communication with compositor using cli
+- [ ] communication with compositor using cli (PROBABLY in lua or C)
 
-- [ ] array of sorted toplevels on screen, to identify which should be focused next after one is closed
-- [ ] monitors - config: w, h, hz, rotation, ... (almost)
-- [ ] keyboard - delay, rate, layout (almost)
+- [x] monitors - config: w, h, hz, rotation
+- [x] keyboard - delay, rate, layout
