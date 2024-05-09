@@ -45,6 +45,7 @@
 #include "../include/server.h"
 #include "../include/layer_shell.h"
 
+#include "../src/xwayland.c"
 #include "../src/lua/luaUtil.c"
 #include "../include/lua/luaUtil.h"
 
@@ -1096,7 +1097,7 @@ void hellwm_setup(struct hellwm_server *server)
 /* Set up xwayland */
 #ifdef XWAYLAND
 	server->xwayland = wlr_xwayland_create(server->wl_display, server->compositor, false);
-	server->new_xwayland_surface.notify = server_new_xwayland_surface;
+	server->new_xwayland_surface.notify = server_handle_xwayland_surface;
 	wl_signal_add(&server->xwayland->events.new_surface, &server->new_xwayland_surface);
 
 	server->xwayland_ready.notify = server_xwayland_ready;

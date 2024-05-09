@@ -108,6 +108,98 @@ struct hellwm_server
 #endif
 };
 
+struct hellwm_xwayland_surface
+{
+	struct hellwm_view *view;
+
+	struct wlr_xwayland_surface *xwayland_surface;
+
+	struct wl_listener destroy;
+	struct wl_listener request_configure;
+	struct wl_listener request_move;
+	struct wl_listener request_resize;
+	struct wl_listener request_maximize;
+	struct wl_listener request_fullscreen;
+	struct wl_listener map;
+	struct wl_listener unmap;
+	struct wl_listener set_title;
+	struct wl_listener set_class;
+
+	struct wl_listener surface_commit;
+};
+
+enum hellwm_view_type
+{
+	HELLWM_XDG_SHELL_VIEW,
+#if WLR_HAS_XWAYLAND
+	HELLWM_XWAYLAND_VIEW,
+#endif
+};
+
+struct hellwm_view_interface
+{
+	void (*activate)(struct hellwm_view *view, bool active);
+	void (*move)(struct hellwm_view *view, double x, double y);
+	void (*resize)(struct hellwm_view *view, uint32_t width, uint32_t height);
+	void (*move_resize)(struct hellwm_view *view, double x, double y,
+		uint32_t width, uint32_t height);
+	void (*maximize)(struct hellwm_view *view, bool maximized);
+	void (*set_fullscreen)(struct hellwm_view *view, bool fullscreen);
+	void (*close)(struct hellwm_view *view);
+	void (*for_each_surface)(struct hellwm_view *view,
+		wlr_surface_iterator_func_t iterator, void *user_data);
+	void (*destroy)(struct hellwm_view *view);
+};
+
+struct hellwm_view 
+{
+	enum hellwm_view_type type;
+	const struct hellwm_view_interface *impl;
+	struct hellwm_server *server;
+	struct wl_list link;
+
+	struct wlr_box box;
+	float rotation;
+	float alpha;
+
+	bool decorated;
+	int border_width;
+	int titlebar_height;
+
+	char *title;
+	char *app_id;
+
+	bool maximized;
+	struct hellwm_output *fullscreen_output;
+	struct
+	{
+		double x, y;
+		uint32_t width, height;
+		float rotation;
+	} saved;
+
+	struct {
+		bool update_x, update_y;
+		double x, y;
+		uint32_t width, height;
+	} pending_move_resize;
+
+	struct wlr_surface *wlr_surface;
+	struct wl_list children;
+
+	struct wlr_foreign_toplevel_handle_v1 *toplevel_handle;
+	struct wl_listener toplevel_handle_request_maximize;
+	struct wl_listener toplevel_handle_request_activate;
+	struct wl_listener toplevel_handle_request_fullscreen;
+	struct wl_listener toplevel_handle_request_close;
+
+	struct wl_listener new_subsurface;
+
+	struct {
+		struct wl_signal unmap;
+		struct wl_signal destroy;
+	} events;
+};
 
 struct hellwm_output
 {

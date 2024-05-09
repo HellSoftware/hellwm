@@ -121,20 +121,3 @@ wlr_scene_tree *hellwm_layer_get_scene(
 	hellwm_log(HELLWM_ERROR, "Unknown layer shell type");
 	return NULL;
 }
-
-#if XWAYLAND
-static void server_new_xwayland_surface(struct wl_listener *listener, void *data)
-{
-	struct hellwm_server *server = wl_container_of(listener, server, new_xwayland_surface);
-   struct wlr_xwayland_surface *xwayland_surface = data;
-}
-
-static void server_xwayland_ready(struct wl_listener *listener, void *data)
-{
-	struct hellwm_server *server = wl_container_of(listener, server, xwayland_ready);
-   struct wlr_seat *wlr_seat = server->seat; 
-
-   wlr_xwayland_set_seat(server->xwayland, wlr_seat);
-   hellwm_log(HELLWM_INFO, "XWayland is ready");
-}
-#endif 
