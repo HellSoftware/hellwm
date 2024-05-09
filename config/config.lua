@@ -3,9 +3,11 @@
 -- Keybinds
 bind("Escape","killall hellwm")
 bind("Return","kitty")
-bind("b","firefox")
-bind("e","nemo")	
-bind("p","pavucontrol");
+bind("b", "firefox")
+bind("e", "nemo")	
+bind("p", "pavucontrol");
+bind("c", focus_next)
+bind("q", kill_active)
 
 -- Keyboard Configuration
 keyboard = {

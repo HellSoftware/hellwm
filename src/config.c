@@ -36,58 +36,81 @@ void hellwm_config_setup(struct hellwm_server *server)
 {
     server->L = hellwm_luaInit();
     global_server = server; 
+    
     global_server->keybinds=&global_keybinds;
+    hellwm_get_Server_g(server);
+
     hellwm_lua_expose_functions(server);
     hellwm_luaLoadFile(server->L, server->configPath);
 }
 
 void hellwm_lua_expose_functions(struct hellwm_server *server)
 {
-    hellwm_lua_expose_function(server, hellwm_c_bind    , "bind");
+    hellwm_lua_expose_function(server, hellwm_c_bind               , "bind");
+    hellwm_lua_expose_function(server, hellwm_c_log                , "log");
+    hellwm_lua_expose_function(server, hellwm_c_destroy            , "destroy");
 
-    hellwm_lua_expose_function(server, exec_cmd                  , FUNCTION_NAME(exec_cmd));
-    hellwm_lua_expose_function(server, hellwm_log                , FUNCTION_NAME(hellwm_log));
-    hellwm_lua_expose_function(server, focus_next                , FUNCTION_NAME(focus_next));
-    hellwm_lua_expose_function(server, kill_active               , FUNCTION_NAME(kill_active));
-    hellwm_lua_expose_function(server, hellwm_log_flush          , FUNCTION_NAME(hellwm_log_flush));
-    hellwm_lua_expose_function(server, toggle_fullscreen         , FUNCTION_NAME(toggle_fullscreen));
-    hellwm_lua_expose_function(server, hellwm_config_reload      , FUNCTION_NAME(hellwm_config_reload));
-    hellwm_lua_expose_function(server, hellwm_resize_toplevel_by , FUNCTION_NAME(hellwm_resize_toplevel_by));
+    hellwm_lua_expose_function(server, hellwm_c_exec               , FUNCTION_NAME(exec));
+    hellwm_lua_expose_function(server, hellwm_c_log_flush          , FUNCTION_NAME(log_flush));
+    hellwm_lua_expose_function(server, hellwm_c_focus_next         , FUNCTION_NAME(focus_next));
+    hellwm_lua_expose_function(server, hellwm_c_kill_active        , FUNCTION_NAME(kill_active));
+    hellwm_lua_expose_function(server, hellwm_c_config_reload      , FUNCTION_NAME(config_reload));
+    hellwm_lua_expose_function(server, hellwm_c_toggle_fullscreen  , FUNCTION_NAME(toggle_fullscreen));
+    hellwm_lua_expose_function(server, hellwm_c_resize_toplevel_by , FUNCTION_NAME(hellwm_resize_toplevel_by));
 }
 
-void hellwm_config_bind_add(const char *key, const char *val)
+void hellwm_config_bind_add(const char *key, void *val, bool isFunc)
 {
-    struct hellwm_config_one_bind *new_bind = malloc(sizeof(struct hellwm_config_one_bind));
-    if (new_bind==NULL)
+    const char *valueString = "";
+    if (!isFunc)
     {
-        hellwm_log(HELLWM_ERROR, "Failed to allocate memory for new_bind inside hellwm_config_bind_add().");
-        free(new_bind);
-        return;
+        valueString = (const char *) valueString;
+        struct hellwm_config_one_bind *new_bind = malloc(sizeof(struct hellwm_config_one_bind));
+        if (new_bind==NULL)
+        {
+            hellwm_log(HELLWM_ERROR, "Failed to allocate memory for new_bind inside hellwm_config_bind_add().");
+            free(new_bind);
+            return;
+        }
+        new_bind->key = xkb_keysym_from_name(key, XKB_KEYSYM_CASE_INSENSITIVE);
+        new_bind->val = strdup(val);
+
+        global_keybinds.binds = realloc(global_keybinds.binds, (global_keybinds.count + 1) * sizeof(struct hellwm_config_one_bind*)); 
+
+        if (global_keybinds.binds==NULL)
+        {
+            hellwm_log(HELLWM_ERROR, "Failed to reallocate memory for global_keybinds->binds inside hellwm_config_bind_add()");
+            return;
+        }
+        global_keybinds.binds[global_keybinds.count] = new_bind;
+        global_keybinds.count++;
+        
+        hellwm_log(HELLWM_LOG, "New BIND: [%s] = %s",key,global_keybinds.binds[global_keybinds.count-1]->val);
     }
-    new_bind->key = xkb_keysym_from_name(key, XKB_KEYSYM_CASE_INSENSITIVE);
-    new_bind->val = strdup(val);
-
-    global_keybinds.binds = realloc(global_keybinds.binds, (global_keybinds.count + 1) * sizeof(struct hellwm_config_one_bind*)); 
-
-    if (global_keybinds.binds==NULL)
+    else
     {
-        hellwm_log(HELLWM_ERROR, "Failed to reallocate memory for global_keybinds->binds inside hellwm_config_bind_add()");
-        return;
+        struct hellwm_config_one_fbind *new_bind = malloc(sizeof(struct hellwm_config_one_fbind));
+        if (new_bind==NULL)
+        {
+            hellwm_log(HELLWM_ERROR, "Failed to allocate memory for new_bind inside hellwm_config_bind_add().");
+            free(new_bind);
+            return;
+        }
+        new_bind->key = xkb_keysym_from_name(key, XKB_KEYSYM_CASE_INSENSITIVE);
+        new_bind->val = val;
+
+        global_keybinds.fbinds= realloc(global_keybinds.fbinds, (global_keybinds.fcount + 1) * sizeof(struct hellwm_config_one_fbind*)); 
+
+        if (global_keybinds.fbinds==NULL)
+        {
+            hellwm_log(HELLWM_ERROR, "Failed to reallocate memory for global_keybinds->binds inside hellwm_config_bind_add()");
+            return;
+        }
+        global_keybinds.fbinds[global_keybinds.fcount] = new_bind;
+        global_keybinds.fcount++;
+    
+        hellwm_log(HELLWM_LOG, "New BIND: [%s] = %s",key, "function");
     }
-    global_keybinds.binds[global_keybinds.count] = new_bind;
-    global_keybinds.count++;
-
-    hellwm_log(HELLWM_LOG, "New BIND: [%s] = %s",key,global_keybinds.binds[global_keybinds.count-1]->val);
-}
-
-static int hellwm_c_bind(lua_State *L)
-{
-    const char *key = luaL_checkstring(L, 1);
-    const char *val = luaL_checkstring(L, 2);
-
-    hellwm_config_bind_add(key, val);
-
-    return 0;
 }
 
 void hellwm_config_bind_free_array(struct hellwm_config_binds *binds)

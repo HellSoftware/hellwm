@@ -49,9 +49,10 @@
 #include "../include/lua/luaUtil.h"
 
 #define DBG hellwm_log(HELLWM_ERROR, HELLWM_INFO);
+typedef void (*FunctionPtr)();
 
 // Execute command in new thread
-static void exec_cmd(char *command)
+static void exec(char *command)
 {
 	if (fork() == 0)
 	{
@@ -272,10 +273,21 @@ static bool handle_keybinding(struct hellwm_server *server, xkb_keysym_t sym)
 	{
 		if (server->keybinds->binds[i]->key==sym)
 		{
-			exec_cmd(server->keybinds->binds[i]->val);
+			exec(server->keybinds->binds[i]->val);
 			return true;
-		}
+		}	
 	}
+	
+	for (int i = 0; i < server->keybinds->fcount; i++)
+	{
+		if (server->keybinds->fbinds[i]->key==sym)
+		{
+			FunctionPtr val = server->keybinds->fbinds[i]->val;
+			val();
+			return true;
+		}	
+	}
+
 	return false;
 }
 
@@ -1131,12 +1143,7 @@ void hellwm_setup(struct hellwm_server *server)
 	setenv("WAYLAND_DISPLAY", server->socket, true);
 	setenv("XDG_CURRENT_DESKTOP", "HellWM", true);	
 
-	/*for (int i=0;i<server->config_storage.autostart_cmds->count;i++)
-	{
-		exec_cmd(server->config_storage.autostart_cmds->cmds[i]);
-	}*/
-
-/* Run the Wayland event loop. This does not return until you exit the
+	/* Run the Wayland event loop. This does not return until you exit the
 	 * compositor. Starting the backend rigged up all of the necessary event
 	 * loop configuration to listen to libinput events, DRM events, generate
 	 * frame events at the refresh rate, and so on. */
