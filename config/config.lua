@@ -1,13 +1,14 @@
 -- Config File
 
 -- Keybinds
-bind("Escape","killall hellwm")
-bind("Return","kitty")
+bind("Escape", "killall hellwm")
+bind("p", "pavucontrol")
+bind("Return", "kitty")
 bind("b", "firefox")
 bind("e", "nemo")	
-bind("p", "pavucontrol");
 bind("c", focus_next)
 bind("q", kill_active)
+bind("f", toggle_fullscreen)
 
 -- Keyboard Configuration
 keyboard = {

@@ -989,6 +989,8 @@ static void xdg_popup_destroy(struct wl_listener *listener, void *data) {
 }
 
 static void server_new_xdg_popup(struct wl_listener *listener, void *data) {
+
+	hellwm_log(HELLWM_LOG, "server_new_xdg_popup() called");
 	/* This event is raised when a client creates a new popup. */
 	struct wlr_xdg_popup *xdg_popup = data;
 
@@ -1058,6 +1060,7 @@ void hellwm_setup(struct hellwm_server *server)
 	server->compositor = wlr_compositor_create(server->wl_display,
 		6,server->renderer);
 	wlr_subcompositor_create(server->wl_display);
+
 	wlr_data_device_manager_create(server->wl_display);
 
 	server->output_layout = wlr_output_layout_create(
@@ -1089,6 +1092,18 @@ void hellwm_setup(struct hellwm_server *server)
 	wl_signal_add(&server->layer_shell->events.new_surface,
 		&server->new_layer_surface);	
 	server->new_layer_surface.notify = server_new_layer_surface;
+
+/* Set up xwayland */
+#ifdef XWAYLAND
+	server->xwayland = wlr_xwayland_create(server->wl_display, server->compositor, false);
+	server->new_xwayland_surface.notify = server_new_xwayland_surface;
+	wl_signal_add(&server->xwayland->events.new_surface, &server->new_xwayland_surface);
+
+	server->xwayland_ready.notify = server_xwayland_ready;
+	wl_signal_add(&server->xwayland->events.new_surface, &server->xwayland_ready);
+
+   setenv("DISPLAY", server->xwayland->server->display_name, true);
+#endif
 
 	server->cursor = wlr_cursor_create();
 	wlr_cursor_attach_output_layout(server->cursor, server->output_layout);

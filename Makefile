@@ -31,8 +31,18 @@ SRC=\
 	 ./src/lua/exposedFunctions.c \
 	 ./src/hellcli/serv_hellcli.c
 
+ARGS=\
+	  -Werror \
+	  -DWLR_USE_UNSTABLE
+
+XWAYLAND=\
+	  -DXWAYLAND
+
+noxwayland: $(HELLWM) $(SRC) xdg-shell-protocol.h wlr-layer-shell-unstable-v1-protocol.h 
+		$(CC)	-g $(ARGS) $(INCLUDE) xdg-shell-protocol.h -o $@ $< $(LIBS) 
+
 hellwm: $(HELLWM) $(SRC) xdg-shell-protocol.h wlr-layer-shell-unstable-v1-protocol.h 
-		$(CC)	-g -Werror -DWLR_USE_UNSTABLE $(INCLUDE) xdg-shell-protocol.h -o $@ $< $(LIBS) 
+		$(CC)	-g $(ARGS) $(XWAYLAND) $(INCLUDE) xdg-shell-protocol.h -o $@ $< $(LIBS) 
 
 hellcli: src/hellcli/hellcli.c
 	$(CC)	-o $@ $<

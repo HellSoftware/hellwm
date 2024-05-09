@@ -38,9 +38,8 @@
 #include "lua/luaUtil.h"
 
 #ifdef XWAYLAND
-#include <wlr/xwayland.h>
-#include <xcb/xcb.h>
-#include <xcb/xcb_icccm.h>
+#include <wlr/xwayland/shell.h>
+#include <wlr/xwayland/xwayland.h>
 #endif
 
 #define HELLWM_INFO  "INFO"
@@ -53,14 +52,6 @@ enum hellwm_cursor_mode
 	HELLWM_CURSOR_MOVE,
 	HELLWM_CURSOR_RESIZE,
 };
-
-#if XWAYLAND
-struct hellwm_xwayland
-{
-	struct wlr_xwayland *wlr_xwayland;
-	struct wlr_xcursor_manager *xcursor_manager;
-};
-#endif
 
 struct hellwm_server
 {
@@ -111,9 +102,9 @@ struct hellwm_server
 	struct hellwm_config_pointers *config_pointer;
 	
 #if XWAYLAND
-	struct hellwm_xwayland xwayland;
+	struct wlr_xwayland *xwayland;
 	struct wl_listener xwayland_ready;
-	struct wl_listener xwayland_surface;
+	struct wl_listener new_xwayland_surface;
 #endif
 };
 

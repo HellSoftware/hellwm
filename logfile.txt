@@ -1,0 +1,25 @@
+******** HELLWM LOGFILE ********
+ERROR: unable to delete logfile
+LOG: LUA: Exposed function: log 
+LOG: LUA: Exposed function: bind 
+LOG: LUA: Exposed function: destroy 
+LOG: LUA: Exposed function: resize_by 
+LOG: LUA: Exposed function: exec 
+LOG: LUA: Exposed function: log_flush 
+LOG: LUA: Exposed function: focus_next 
+LOG: LUA: Exposed function: kill_active 
+LOG: LUA: Exposed function: config_reload 
+LOG: LUA: Exposed function: toggle_fullscreen 
+LOG: New BIND: [Escape] = killall hellwm
+LOG: New BIND: [p] = pavucontrol
+LOG: New BIND: [Return] = kitty
+LOG: New BIND: [b] = firefox
+LOG: New BIND: [e] = nemo
+LOG: New BIND: [c] = 2 - 0
+LOG: New BIND: [q] = 2 - 0
+LOG: New BIND: [f] = 2 - 0
+LOG: New Keyboard: wayland-keyboard-seat0, layout: pl
+INFO: New output: WL-1 | Wayland output 1
+LOG: Output monitor_WL_1 - set to: 500x500@0.000000, scale: 1.000000, VRR: 1
+LOG: New Pointer: wayland-pointer-seat0
+INFO: Started HellWM Wayland Session at wayland-1
