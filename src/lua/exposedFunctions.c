@@ -58,14 +58,19 @@ void hellwm_lua_expose_function(struct hellwm_server *server, void *function, ch
 
 static int hellwm_c_bind(lua_State *L)
 {
-    const char *key = luaL_checkstring(L, 1);
 
-    if (lua_isfunction(L, 2))
+   const char *key = luaL_checkstring(L, 1);
+   
+   if (lua_isfunction(L, 2))
+   {
       hellwm_config_bind_add(key, lua_tocfunction(L, 2), true);
-    else
+   }
+   else
+   {
       hellwm_config_bind_add(key, (char*)luaL_checkstring(L,2), false);
+   }
 
-    return 0;
+   return 0;
 }
 
 void hellwm_c_resize_toplevel_by(lua_State *L)

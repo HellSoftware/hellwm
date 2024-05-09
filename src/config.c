@@ -46,9 +46,10 @@ void hellwm_config_setup(struct hellwm_server *server)
 
 void hellwm_lua_expose_functions(struct hellwm_server *server)
 {
-    hellwm_lua_expose_function(server, hellwm_c_bind               , "bind");
     hellwm_lua_expose_function(server, hellwm_c_log                , "log");
+    hellwm_lua_expose_function(server, hellwm_c_bind               , "bind");
     hellwm_lua_expose_function(server, hellwm_c_destroy            , "destroy");
+    hellwm_lua_expose_function(server, hellwm_c_resize_toplevel_by , "resize_by");
 
     hellwm_lua_expose_function(server, hellwm_c_exec               , FUNCTION_NAME(exec));
     hellwm_lua_expose_function(server, hellwm_c_log_flush          , FUNCTION_NAME(log_flush));
@@ -56,7 +57,6 @@ void hellwm_lua_expose_functions(struct hellwm_server *server)
     hellwm_lua_expose_function(server, hellwm_c_kill_active        , FUNCTION_NAME(kill_active));
     hellwm_lua_expose_function(server, hellwm_c_config_reload      , FUNCTION_NAME(config_reload));
     hellwm_lua_expose_function(server, hellwm_c_toggle_fullscreen  , FUNCTION_NAME(toggle_fullscreen));
-    hellwm_lua_expose_function(server, hellwm_c_resize_toplevel_by , FUNCTION_NAME(hellwm_resize_toplevel_by));
 }
 
 void hellwm_config_bind_add(const char *key, void *val, bool isFunc)
@@ -89,6 +89,9 @@ void hellwm_config_bind_add(const char *key, void *val, bool isFunc)
     }
     else
     {
+        int num_args = lua_gettop(global_server->L);
+        int num_additional_args = num_args - 2;
+
         struct hellwm_config_one_fbind *new_bind = malloc(sizeof(struct hellwm_config_one_fbind));
         if (new_bind==NULL)
         {
@@ -108,8 +111,8 @@ void hellwm_config_bind_add(const char *key, void *val, bool isFunc)
         }
         global_keybinds.fbinds[global_keybinds.fcount] = new_bind;
         global_keybinds.fcount++;
-    
-        hellwm_log(HELLWM_LOG, "New BIND: [%s] = %s",key, "function");
+
+        hellwm_log(HELLWM_LOG, "New BIND: [%s] = %d - %d", key, num_args, num_additional_args);
     }
 }
 
