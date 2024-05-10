@@ -92,11 +92,9 @@ struct hellwm_server
 	struct wl_listener new_layer_surface;
 	struct wlr_layer_shell_v1 *layer_shell;
 	struct wlr_xcursor_manager *cursor_mgr;
-	struct hellwm_keyboard_list *keyboard_list; /* store wlr_keyboard pointers for easy access */
 	struct wlr_output_layout *output_layout;
 	struct hellwm_toplevel *grabbed_toplevel;
 	struct wl_listener request_set_selection;
-	struct hellwm_toplevel_list *alltoplevels;
 	struct wl_listener cursor_motion_absolute;
 	struct wlr_scene_output_layout *scene_layout;
 	struct hellwm_config_pointers *config_pointer;
@@ -218,12 +216,6 @@ struct hellwm_output
 	struct hellwm_server *server;
 	struct wlr_output *wlr_output;
 	struct wl_listener request_state;
-};
-
-struct hellwm_keyboard_list
-{
-	int count;
-	struct hellwm_keyboard **keyboards;
 };
 
 struct hellwm_toplevel

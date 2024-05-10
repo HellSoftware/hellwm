@@ -23,8 +23,7 @@
 #include "../include/layer_shell.h"
 #include "../wlr-layer-shell-unstable-v1-protocol.h"
 
-static void
-server_new_layer_surface(struct wl_listener *listener, void *data)
+static void handle_layer_shell_surface(struct wl_listener *listener, void *data)
 {
 	struct hellwm_server *server = wl_container_of(listener, server, new_layer_surface);
    struct wlr_layer_surface_v1 *layer_surface = data;
@@ -57,7 +56,9 @@ server_new_layer_surface(struct wl_listener *listener, void *data)
 		hellwm_log(HELLWM_ERROR, "failed to allocate wlr_scene_layer_surface");
 	}
 	
-	struct hellwm_toplevel *toplevel = hellwm_layer_surface_create(scene_surface);
+	struct hellwm_toplevel *toplevel;
+	hellwm_layer_surface_create(scene_surface, toplevel);
+
 	if (!toplevel)
 	{
 		wlr_layer_surface_v1_destroy(layer_surface);
@@ -85,13 +86,13 @@ server_new_layer_surface(struct wl_listener *listener, void *data)
 	/* TODO: POPUPS */
 }
 
-static struct 
-hellwm_toplevel *hellwm_layer_surface_create(struct wlr_scene_layer_surface_v1 *scene)
+static void hellwm_layer_surface_create(struct wlr_scene_layer_surface_v1 *scene, struct hellwm_toplevel *_toplevel)
 {
-	struct hellwm_toplevel *toplevel = calloc(1, sizeof(*toplevel));
-	if (!toplevel) {
-		hellwm_log(HELLWM_ERROR, "calloc() toplevel");
-		return NULL;
+	struct hellwm_toplevel *toplevel = calloc(1, sizeof(struct hellwm_toplevel));
+	if (!toplevel) 
+	{
+		hellwm_log(HELLWM_ERROR, "Failed to allocate memory for hellwm_toplevel");
+		return;
 	}
 
 	toplevel->scene_tree = scene->tree;
@@ -99,7 +100,7 @@ hellwm_toplevel *hellwm_layer_surface_create(struct wlr_scene_layer_surface_v1 *
 	toplevel->layer_surface = scene->layer_surface;
 	toplevel->layer_surface->data = toplevel;
 
-	return toplevel;
+	_toplevel = toplevel;
 }
 
 static struct

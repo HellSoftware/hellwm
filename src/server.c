@@ -105,34 +105,6 @@ void hellwm_log_flush()
 	}
 }
 
-void hellwm_toplevel_add_to_list(struct hellwm_server *server, struct hellwm_toplevel *new_toplevel)
-{
-	if (server->alltoplevels)
-	{
-		struct hellwm_toplevel_list *instance = malloc(sizeof(struct hellwm_toplevel_list));
-		instance->size = 0;
-		instance->last_id = 0;
-		instance->current_id = 0;
-		server->alltoplevels = instance;
-	}
-	struct hellwm_toplevel_list_element **elements = 
-		(struct hellwm_toplevel_list_element**)realloc(server->alltoplevels->list,
-				(server->alltoplevels->size + 1) * sizeof(struct hellwm_toplevel_list_element**));
-
-	elements = server->alltoplevels->list;
-	elements[server->alltoplevels->size]->toplevel = new_toplevel;
-
-	server->alltoplevels->list = elements;
-	server->alltoplevels->size += 1;
-	server->alltoplevels->last_id = server->alltoplevels->current_id;
-	server->alltoplevels->current_id = server->alltoplevels->size-1;
-}
-
-void hellwm_toplevel_remove_from_list(struct wlr_xdg_toplevel *toplevel)
-{
-	free(toplevel); // idkkk
-}
-
 static void hellwm_resize_toplevel_by(struct hellwm_server *server, int32_t w, int32_t h)
 {
 	struct wlr_surface *focused_surface =
@@ -1092,11 +1064,11 @@ void hellwm_setup(struct hellwm_server *server)
 			4);
 	wl_signal_add(&server->layer_shell->events.new_surface,
 		&server->new_layer_surface);	
-	server->new_layer_surface.notify = server_new_layer_surface;
+	server->new_layer_surface.notify = handle_layer_shell_surface;
 
 /* Set up xwayland */
 #ifdef XWAYLAND
-	server->xwayland = wlr_xwayland_create(server->wl_display, server->compositor, false);
+	server->xwayland = wlr_xwayland_create(server->wl_display, server->compositor, true);
 	server->new_xwayland_surface.notify = server_handle_xwayland_surface;
 	wl_signal_add(&server->xwayland->events.new_surface, &server->new_xwayland_surface);
 
