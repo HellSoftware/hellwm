@@ -1,6 +1,7 @@
 #include <lua.h>
 #include <time.h>
 #include <stdio.h>
+#include <wayland-cursor.h>
 #include <wayland-util.h>
 #include <wchar.h>
 #include <assert.h>
@@ -46,13 +47,14 @@
 #include "../include/layer_shell.h"
 
 #include "../src/xwayland.c"
+#include "../src/workspaces.c"
 #include "../src/lua/luaUtil.c"
 #include "../include/lua/luaUtil.h"
 
 #define DBG hellwm_log(HELLWM_ERROR, HELLWM_INFO);
 typedef void (*FunctionPtr)();
 
-// Execute command in new thread
+/* Execute command in new thread */
 static void exec(char *command)
 {
 	if (fork() == 0)
@@ -152,19 +154,21 @@ void focus_next(struct hellwm_server *server)
 
 static void focus_toplevel(struct hellwm_toplevel *toplevel, struct wlr_surface *surface) 
 {
-	/* Note: this function only deals with keyboard focus. */
-	if (toplevel == NULL) {
+	if (toplevel == NULL)
+	{
 		return;
 	}
 	struct hellwm_server *server = toplevel->server;
 	struct wlr_seat *seat = server->seat;
 	struct wlr_surface *prev_surface = seat->keyboard_state.focused_surface;
-	if (prev_surface == surface) {
+	if (prev_surface == surface)
+	{
 		/* Don't re-focus an already focused surface. */
 		return;
 	}
 	
-	if (prev_surface) {
+	if (prev_surface)
+	{
 		/*
 		 * Deactivate the previously focused surface. This lets the client know
 		 * it no longer has focus and the client will repaint accordingly, e.g.
@@ -172,10 +176,9 @@ static void focus_toplevel(struct hellwm_toplevel *toplevel, struct wlr_surface 
 		 */
 		struct wlr_xdg_toplevel *prev_toplevel =
 			wlr_xdg_toplevel_try_from_wlr_surface(prev_surface);
-		if (prev_toplevel != NULL) {
+		if (prev_toplevel != NULL)
+		{
 			wlr_xdg_toplevel_set_activated(prev_toplevel, false);
-			// idk
-			//wlr_xdg_toplevel_send_close(prev_toplevel);
 		}
 	}
 	struct wlr_keyboard *keyboard = wlr_seat_get_keyboard(seat);
@@ -190,7 +193,8 @@ static void focus_toplevel(struct hellwm_toplevel *toplevel, struct wlr_surface 
 	 * track of this and automatically send key events to the appropriate
 	 * clients without additional work on your part.
 	 */
-	if (keyboard != NULL) {
+	if (keyboard != NULL)
+	{
 		wlr_seat_keyboard_notify_enter(seat, toplevel->xdg_toplevel->base->surface,
 			keyboard->keycodes, keyboard->num_keycodes, &keyboard->modifiers);
 	}
@@ -557,6 +561,12 @@ static void process_cursor_motion(struct hellwm_server *server, uint32_t time) {
 		 */
 		wlr_seat_pointer_notify_enter(seat, surface, sx, sy);
 		wlr_seat_pointer_notify_motion(seat, time, sx, sy);
+
+		focus_toplevel(toplevel, surface); /* 
+														 TODO - add config variable
+													  * for focusing toplevel by cursor position
+													  * - true by default
+													  */
 	} else {
 		/* Clear pointer focus so future button events and such are not sent to
 		 * the last client to have the cursor over it. */
@@ -596,7 +606,8 @@ static void server_cursor_motion_absolute(
 	process_cursor_motion(server, event->time_msec);
 }
 
-static void server_cursor_button(struct wl_listener *listener, void *data) {
+static void server_cursor_button(struct wl_listener *listener, void *data)
+{
 	/* This event is forwarded by the cursor when a pointer emits a button
 	 * event. */
 	struct hellwm_server *server =
@@ -609,10 +620,13 @@ static void server_cursor_button(struct wl_listener *listener, void *data) {
 	struct wlr_surface *surface = NULL;
 	struct hellwm_toplevel *toplevel = desktop_toplevel_at(server,
 			server->cursor->x, server->cursor->y, &surface, &sx, &sy);
-	if (event->state == WL_POINTER_BUTTON_STATE_RELEASED) {
+	
+   if (event->state == WL_POINTER_BUTTON_STATE_RELEASED) 
+   {
 		/* If you released any buttons, we exit interactive move/resize mode. */
 		reset_cursor_mode(server);
-	} else {
+	}else 
+   {
 		/* Focus that client if the button was _pressed_ */
 		focus_toplevel(toplevel, surface);
 	}
@@ -696,25 +710,9 @@ static void server_new_output(struct wl_listener *listener, void *data)
       wlr_output->name,
 		wlr_output->description
       );
-
 	wlr_output_init_render(wlr_output, server->allocator, server->renderer);
 
-	/*
-	struct wlr_output_state state;
-	wlr_output_state_init(&state);
-	wlr_output_state_set_enabled(&state, true);
-
-	struct wlr_output_mode *mode = wlr_output_preferred_mode(wlr_output);
-
-	if (mode != NULL)
-	{
-		wlr_output_state_set_mode(&state, mode);
-	}
-
-	wlr_output_commit_state(wlr_output, &state);
-	wlr_output_state_finish(&state);
-	*/
-
+	/* From lua config */
 	hellwm_config_set_monitor(server->L, wlr_output);
 
 	/* Allocates and configures our state for this output */
@@ -879,9 +877,7 @@ static void xdg_toplevel_request_maximize(
 	}
 }
 
-static void
-xdg_toplevel_request_fullscreen(
-		struct wl_listener *listener, void *data)
+static void xdg_toplevel_request_fullscreen(struct wl_listener *listener, void *data)
 {
 	hellwm_log(HELLWM_LOG, "xdg_toplevel_request_fullscreen() called");
 	/* Just as with request_maximize, we must send a configure here. */
@@ -897,7 +893,8 @@ xdg_toplevel_request_fullscreen(
 			!toplevel->xdg_toplevel->current.fullscreen);
 }
 
-static void server_new_xdg_toplevel(struct wl_listener *listener, void *data) {
+static void server_new_xdg_toplevel(struct wl_listener *listener, void *data)
+{
 	/* This event is raised when a client creates a new toplevel (application window). */
 	struct hellwm_server *server = wl_container_of(listener, server, new_xdg_toplevel);
 	struct wlr_xdg_toplevel *xdg_toplevel = data;
@@ -910,10 +907,6 @@ static void server_new_xdg_toplevel(struct wl_listener *listener, void *data) {
 		wlr_scene_xdg_surface_create(&toplevel->server->scene->tree, xdg_toplevel->base);
 	toplevel->scene_tree->node.data = toplevel;
 	xdg_toplevel->base->data = toplevel->scene_tree;
-
-
-	/* TODO fix this failed attempt to create system of focusing last focused window. */
-	//hellwm_toplevel_add_to_list(server, toplevel);
 
 	/* Listen to the various events it can emit */
 	toplevel->map.notify = xdg_toplevel_map;
@@ -935,6 +928,8 @@ static void server_new_xdg_toplevel(struct wl_listener *listener, void *data) {
 	wl_signal_add(&xdg_toplevel->events.request_maximize, &toplevel->request_maximize);
 	toplevel->request_fullscreen.notify = xdg_toplevel_request_fullscreen;
 	wl_signal_add(&xdg_toplevel->events.request_fullscreen, &toplevel->request_fullscreen);
+
+	hellwm_tile(toplevel);
 }
 
 static void xdg_popup_commit(struct wl_listener *listener, void *data) {

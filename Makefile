@@ -27,6 +27,7 @@ SRC=\
 	 ./src/server.c 					\
 	 ./src/config.c 					\
 	 ./src/xwayland.c 				\
+	 ./src/workspaces.c 				\
 	 ./src/layer_shell.c 			\
 	 ./src/lua/luaUtil.c				\
 	 ./src/lua/exposedFunctions.c \

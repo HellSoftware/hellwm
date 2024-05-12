@@ -24,8 +24,8 @@ monitor_DP_2 = {
 }
 
 monitor_WL_1 = {
-  width = 500,
-  height = 500,
+  width = 1000,
+  height = 1000,
   vrr = true
 }
 

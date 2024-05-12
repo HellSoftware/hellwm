@@ -73,6 +73,7 @@ struct hellwm_server
 	struct wl_list toplevels;
 	struct wlr_cursor *cursor;
 	struct wlr_box grab_geobox;
+	struct hellwm_tile *tiles;
 	struct wlr_backend *backend;
 	struct wl_listener new_input;
 	struct wl_display *wl_display;
@@ -132,6 +133,13 @@ enum hellwm_view_type
 #if WLR_HAS_XWAYLAND
 	HELLWM_XWAYLAND_VIEW,
 #endif
+};
+
+struct hellwm_tile
+{
+	struct hellwm_tile **tile;
+	struct hellwm_toplevel *toplevel;
+	int32_t count;
 };
 
 struct hellwm_view_interface
