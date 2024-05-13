@@ -73,7 +73,6 @@ struct hellwm_server
 	struct wl_list toplevels;
 	struct wlr_cursor *cursor;
 	struct wlr_box grab_geobox;
-	struct hellwm_tile *tiles;
 	struct wlr_backend *backend;
 	struct wl_listener new_input;
 	struct wl_display *wl_display;
@@ -87,6 +86,7 @@ struct hellwm_server
 	struct wl_listener cursor_motion;
 	struct wl_listener new_xdg_popup;
 	struct wl_listener request_cursor;
+	struct hellwm_tile_tree *tile_tree;
 	struct hellwm_config_binds *keybinds;
 	struct wlr_compositor *compositor;
 	struct wl_listener new_xdg_toplevel;
@@ -135,11 +135,15 @@ enum hellwm_view_type
 #endif
 };
 
-struct hellwm_tile
+struct hellwm_tile_tree
 {
-	struct hellwm_tile **tile;
 	struct hellwm_toplevel *toplevel;
-	int32_t count;
+	int x, y;
+	int width, height;
+
+	struct hellwm_tile_tree *parent;
+	struct hellwm_tile_tree *right;
+	struct hellwm_tile_tree *left;
 };
 
 struct hellwm_view_interface

@@ -246,6 +246,12 @@ static bool handle_keybinding(struct hellwm_server *server, xkb_keysym_t sym)
 	if (server->keybinds->binds==NULL)
 		return true;
 
+	if (sym == XKB_KEY_g)
+	{
+		hellwm_tile_tree_preorderTraversal(server->tile_tree);
+		return true;
+	}
+
 	for (int i = 0; i < server->keybinds->count; i++)
 	{
 		if (server->keybinds->binds[i]->key==sym)
@@ -928,8 +934,6 @@ static void server_new_xdg_toplevel(struct wl_listener *listener, void *data)
 	wl_signal_add(&xdg_toplevel->events.request_maximize, &toplevel->request_maximize);
 	toplevel->request_fullscreen.notify = xdg_toplevel_request_fullscreen;
 	wl_signal_add(&xdg_toplevel->events.request_fullscreen, &toplevel->request_fullscreen);
-
-	hellwm_tile(toplevel);
 }
 
 static void xdg_popup_commit(struct wl_listener *listener, void *data) {
@@ -997,6 +1001,15 @@ void hellwm_config_reload(struct hellwm_server *server)
 
 void hellwm_setup(struct hellwm_server *server)
 { 
+	server->tile_tree = malloc(sizeof(struct hellwm_tile_tree));
+	server->tile_tree->parent = NULL; /* This mean that the tree is the root */
+	server->tile_tree->left = NULL;
+	server->tile_tree->right = NULL;
+	server->tile_tree->x = 0;
+	server->tile_tree->y = 0;
+	server->tile_tree->width = 1600;
+	server->tile_tree->height = 900;
+
 	wlr_log_init(WLR_DEBUG, NULL);
 	server->wl_display = wl_display_create();
 	
