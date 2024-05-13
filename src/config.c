@@ -185,7 +185,7 @@ void hellwm_config_set_monitor(lua_State *L, struct wlr_output *output)
 
         if (width != 0 && height != 0) 
         {
-            wlr_output_state_set_custom_mode(&state, width, height, hz);
+            wlr_output_state_set_custom_mode(&state, width, height, hz * pow(10, -6));
         }
         else
         {

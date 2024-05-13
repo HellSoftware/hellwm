@@ -246,12 +246,6 @@ static bool handle_keybinding(struct hellwm_server *server, xkb_keysym_t sym)
 	if (server->keybinds->binds==NULL)
 		return true;
 
-	if (sym == XKB_KEY_g)
-	{
-		hellwm_tile_tree_preorderTraversal(server->tile_tree);
-		return true;
-	}
-
 	for (int i = 0; i < server->keybinds->count; i++)
 	{
 		if (server->keybinds->binds[i]->key==sym)
@@ -785,7 +779,7 @@ static void xdg_toplevel_commit(struct wl_listener *listener, void *data) {
 		 * reply with a configure so the client can map the surface. hellwm
 		 * configures the xdg_toplevel with 0,0 size to let the client pick the
 		 * dimensions itself. */
-		wlr_xdg_toplevel_set_size(toplevel->xdg_toplevel, 0, 0);
+		//wlr_xdg_toplevel_set_size(toplevel->xdg_toplevel, 0, 0);
 	}
 }
 
@@ -934,6 +928,8 @@ static void server_new_xdg_toplevel(struct wl_listener *listener, void *data)
 	wl_signal_add(&xdg_toplevel->events.request_maximize, &toplevel->request_maximize);
 	toplevel->request_fullscreen.notify = xdg_toplevel_request_fullscreen;
 	wl_signal_add(&xdg_toplevel->events.request_fullscreen, &toplevel->request_fullscreen);
+
+	spiralTiling(toplevel);
 }
 
 static void xdg_popup_commit(struct wl_listener *listener, void *data) {
