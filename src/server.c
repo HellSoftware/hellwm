@@ -788,6 +788,8 @@ static void xdg_toplevel_destroy(struct wl_listener *listener, void *data) {
 	struct hellwm_toplevel *toplevel = wl_container_of(listener, toplevel, destroy);
 	struct hellwm_server *server = toplevel->server;
 
+	hellmw_tile_erase_toplevel(toplevel);
+
 	wl_list_remove(&toplevel->map.link);
 	wl_list_remove(&toplevel->unmap.link);
 	wl_list_remove(&toplevel->commit.link);
@@ -929,7 +931,11 @@ static void server_new_xdg_toplevel(struct wl_listener *listener, void *data)
 	toplevel->request_fullscreen.notify = xdg_toplevel_request_fullscreen;
 	wl_signal_add(&xdg_toplevel->events.request_fullscreen, &toplevel->request_fullscreen);
 
-	spiralTiling(toplevel);
+	if (server->tile_tree == NULL)
+	{
+		server->tile_tree = hellwm_tile_setup(wlr_output_layout_get_center_output(server->output_layout));
+	}
+	hellwm_tile_insert_toplevel(hellwm_tile_farthest(server->tile_tree, false, 0), toplevel, false);
 }
 
 static void xdg_popup_commit(struct wl_listener *listener, void *data) {
@@ -997,15 +1003,6 @@ void hellwm_config_reload(struct hellwm_server *server)
 
 void hellwm_setup(struct hellwm_server *server)
 { 
-	server->tile_tree = malloc(sizeof(struct hellwm_tile_tree));
-	server->tile_tree->parent = NULL; /* This mean that the tree is the root */
-	server->tile_tree->left = NULL;
-	server->tile_tree->right = NULL;
-	server->tile_tree->x = 0;
-	server->tile_tree->y = 0;
-	server->tile_tree->width = 1600;
-	server->tile_tree->height = 900;
-
 	wlr_log_init(WLR_DEBUG, NULL);
 	server->wl_display = wl_display_create();
 	

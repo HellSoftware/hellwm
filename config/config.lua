@@ -1,4 +1,4 @@
--- Config File
+-- HellWM Config File
 
 -- Keybinds
 bind("Escape", "killall hellwm")

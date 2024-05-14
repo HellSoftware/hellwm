@@ -140,6 +140,7 @@ struct hellwm_tile_tree
 	struct hellwm_toplevel *toplevel;
 	int x, y;
 	int width, height;
+	int direction;
 
 	struct hellwm_tile_tree *parent;
 	struct hellwm_tile_tree *right;
