@@ -31,3 +31,8 @@ monitor_WL_1 = {
 
 -- Hello Message :)
 print("Welcome to HellWM")
+
+loop = function()
+  print ("Hello World!")
+  sleep(1)
+end

@@ -66,6 +66,8 @@ static void exec(char *command)
 // LOG
 void hellwm_log(char *logtype, char *format, ...)
 {
+	// TODO: add log verbosity levels
+	
 	char *hellwm_log_filename = "logfile.txt";
 	char content[128];
 
@@ -111,8 +113,14 @@ static void hellwm_resize_toplevel_by(struct hellwm_server *server, int32_t w, i
 {
 	struct wlr_surface *focused_surface =
 		server->seat->keyboard_state.focused_surface;
+
+	if (focused_surface == NULL)
+		return;
 	
 	struct wlr_xdg_toplevel *toplevel = wlr_xdg_toplevel_try_from_wlr_surface(focused_surface);
+
+	if (toplevel == NULL)
+		return;
 
 	wlr_xdg_toplevel_set_resizing(toplevel,true);
 
@@ -135,6 +143,11 @@ void toggle_fullscreen(struct hellwm_server *server)
 {
 	struct wlr_xdg_toplevel *toplevel = wlr_xdg_toplevel_try_from_wlr_surface(
 			server->seat->keyboard_state.focused_surface);
+
+	if (toplevel == NULL)
+	{
+		return;
+	}
 
 	wlr_xdg_toplevel_set_fullscreen(
 			toplevel,

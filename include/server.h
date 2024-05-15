@@ -45,6 +45,7 @@
 #define HELLWM_INFO  "INFO"
 #define HELLWM_ERROR "ERROR"
 #define HELLWM_LOG   "LOG"
+#define HELLWM_DEBUG "DEBUG"
 
 enum hellwm_cursor_mode
 {
@@ -242,6 +243,7 @@ struct hellwm_toplevel
 	struct wl_listener request_move;
 	struct wl_listener request_resize;
 	struct wlr_scene_tree *scene_tree;
+	struct hellwm_tile_tree* tile_node;
 	struct wl_listener request_maximize;
 	struct wl_listener request_fullscreen;
 	struct wlr_xdg_toplevel *xdg_toplevel;

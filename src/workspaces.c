@@ -75,7 +75,7 @@ struct hellwm_tile_tree *hellwm_tile_setup(struct wlr_output *output)
 struct hellwm_tile_tree *hellwm_tile_farthest(struct hellwm_tile_tree *root, bool left, int i)
 {
 	i++;
-	hellwm_log(HELLWM_LOG, "Inside hellwm_tile_farthest() - %d", i);
+	hellwm_log(HELLWM_DEBUG, "Inside hellwm_tile_farthest() - %d", i);
 	if (root == NULL)
 	{
 		hellwm_log(HELLWM_ERROR, "Root is NULL inside hellwm_tile_farthest().");
@@ -100,26 +100,8 @@ struct hellwm_tile_tree *hellwm_tile_farthest(struct hellwm_tile_tree *root, boo
 	}
 }
 
-struct hellwm_tile_tree *hellwm_tile_find_toplevel(struct hellwm_tile_tree *node, struct hellwm_toplevel *toplevel)
-{
-	if (node->toplevel == toplevel)
-	{
-		return node;
-	}
-	if (node->left != NULL)
-	{
-		hellwm_tile_find_toplevel(node->left, toplevel);
-	}
-	if (node->right != NULL)
-	{
-		hellwm_tile_find_toplevel(node->right, toplevel);
-	}
-	return NULL;
-}
-
 void hellwm_tile_insert_toplevel(struct hellwm_tile_tree *node, struct hellwm_toplevel *new_toplevel, bool left)
 {
-
 	struct wlr_output *output = wlr_output_layout_get_center_output(new_toplevel->server->output_layout);
 	
 	if (node == NULL)
@@ -178,98 +160,60 @@ void hellwm_tile_insert_toplevel(struct hellwm_tile_tree *node, struct hellwm_to
 	branch->direction = direction;
 	branch->toplevel = new_toplevel;
 
+	new_toplevel->tile_node = branch;
+
+	if (left)
+	{
+		node->left = branch;
+	}
+	else
+	{
+		node->right = branch;
+	}
+
 	wlr_scene_node_set_position(&branch->toplevel->scene_tree->node, x, y);
 	wlr_xdg_toplevel_set_size(new_toplevel->xdg_toplevel, new_width, new_height);
 
-	hellwm_log(HELLWM_INFO, "Inserting toplevel at %d %d with %d %d", x, y, new_width, new_height);
-
-	// for tests only - remove change later
-	node->right = branch;
+	hellwm_log(HELLWM_DEBUG, "Inserting toplevel to the %p branch at %d %d with %d %d",branch, x, y, new_width, new_height);
 }
 
-void hellwm_tile_recalculate_bellow(struct hellwm_tile_tree *node)
+void hellwm_tile_free_all(struct hellwm_tile_tree *root)
 {
-	if (node == NULL)
+	if (root == NULL)
 	{
+		hellwm_log(HELLWM_ERROR, "Root is NULL inside hellwm_tile_free_all().");
 		return;
 	}
-	if (node->left != NULL)
+
+	if (root->parent != NULL)
 	{
-		if (node->left->toplevel != NULL)
-		{
-			hellwm_tile_insert_toplevel(node, node->left->toplevel, false);
-			hellwm_tile_recalculate_bellow(node);
-		}
+		hellwm_log(HELLWM_DEBUG, "Root's parent is not NULL inside hellwm_tile_free_all().");
+		return;
 	}
-	if (node->right != NULL)
-	{
-		if (node->right != NULL)
-		{
-			hellwm_tile_insert_toplevel(node, node->right->toplevel, false);
-			hellwm_tile_recalculate_bellow(node);
-		}
-	}
+
+	if (root->left != NULL)
+		hellwm_tile_free_all(root->left);
+
+	if (root->right != NULL)
+		hellwm_tile_free_all(root->right);
 }
 
+/* Free node of destroyed toplevel and everything 'bellow' this tree is re-added again */
 void hellmw_tile_erase_toplevel(struct hellwm_toplevel *toplevel)
 {
 	if (toplevel == NULL)
+	{
+		hellwm_log(HELLWM_ERROR, "Toplevel is NULL inside hellwm_tile_erase_toplevel().");
 		return;
-	struct hellwm_tile_tree *node = hellwm_tile_find_toplevel(toplevel->server->tile_tree, toplevel);
-	if (node == NULL)
-		return;
-
-	if (node->left != NULL)
-	{
-		if (node->left->toplevel != NULL)
-			hellwm_tile_insert_toplevel(toplevel->server->tile_tree, node->left->toplevel, false);
 	}
 
-	if (node->right != NULL)
+	/* TODO - fix this */
+	hellwm_tile_free_all(toplevel->server->tile_tree);
+
+	struct hellwm_toplevel *tp;
+	wl_list_for_each(tp, &toplevel->server->toplevels,link)
 	{
-		if (node->right->toplevel != NULL)
-			hellwm_tile_insert_toplevel(toplevel->server->tile_tree, node->right->toplevel, false);
+		if (toplevel != tp)
+			hellwm_tile_insert_toplevel(toplevel->server->tile_tree, tp, false);
 	}
-	free(node);
-}
-
-void spiralTiling(struct hellwm_toplevel *new_toplevel)
-{
-	struct hellwm_server *server = new_toplevel->server;
-
-   int direction = 0;
-	
-	struct wlr_output *output = wlr_output_layout_get_center_output(server->output_layout);
-	int sWidth = output->width;
-	int sHeight = output->height;
-
-	int width = sWidth, height = sHeight;
-
-	int n = wl_list_length(&server->toplevels);
-	int length = wl_list_length(&server->toplevels);
-
-	int x=0, y=0; 
-	for (int i = 0; i < n+1; i++)
-	{
-		x = sWidth-width;
-		y = sHeight-height;
-	
-		
-		if (direction == 0)
-		{
-			width = width/2;
-			direction = 1;
-		}
-		else
-		{
-			height = height/2;
-			direction = 0;
-		}
-	}
-		
-	hellwm_log(HELLWM_LOG, "%d - Tiling: %d %d %d %d", n , x, y, width, height);
-	wlr_scene_node_set_position(&new_toplevel->scene_tree->node, x, y);
-	wlr_xdg_toplevel_set_size(new_toplevel->xdg_toplevel,  width,  height);
-
-	hellwm_log("", "");
 }
