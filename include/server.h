@@ -139,9 +139,11 @@ enum hellwm_view_type
 struct hellwm_tile_tree
 {
 	struct hellwm_toplevel *toplevel;
-	int x, y;
 	int width, height;
 	int direction;
+	int x, y;
+	
+	bool safe;
 
 	struct hellwm_tile_tree *parent;
 	struct hellwm_tile_tree *right;

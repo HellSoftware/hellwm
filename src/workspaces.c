@@ -65,6 +65,7 @@ struct hellwm_tile_tree *hellwm_tile_setup(struct wlr_output *output)
 	rsetup->y = 0;
 	rsetup->direction = 0;
 	rsetup->toplevel = NULL;
+	rsetup->safe = true;
 
 	rsetup->width = output->width;
 	rsetup->height = output->height;
@@ -82,22 +83,26 @@ struct hellwm_tile_tree *hellwm_tile_farthest(struct hellwm_tile_tree *root, boo
 		return NULL;
 	}
 
-	if (left)
+	if (root->safe == true)
 	{
-		if (root->left == NULL)
+		if (left)
 		{
-			return root;
+			if (root->left == NULL)
+			{
+				return root;
+			}
+			return hellwm_tile_farthest(root->left, left, i);
 		}
-		return hellwm_tile_farthest(root->left, left, i);
-	}
-	else
-	{
-		if (root->right == NULL)
+		else
 		{
-			return root;
+			if (root->right == NULL)
+			{
+				return root;
+			}
+			return hellwm_tile_farthest(root->right, left, i);
 		}
-		return hellwm_tile_farthest(root->right, left, i);
 	}
+	return NULL;
 }
 
 void hellwm_tile_insert_toplevel(struct hellwm_tile_tree *node, struct hellwm_toplevel *new_toplevel, bool left)
@@ -115,6 +120,12 @@ void hellwm_tile_insert_toplevel(struct hellwm_tile_tree *node, struct hellwm_to
 	if (branch == NULL)
 	{
 		hellwm_log(HELLWM_ERROR, "Failed to allocate memory for branch inside hellwm_tile_insert_toplevel().");
+		return;
+	}
+
+	if (!node->safe)
+	{
+		hellwm_log(HELLWM_ERROR, "Node is not safe inside hellwm_tile_insert_toplevel().");
 		return;
 	}
 
@@ -159,6 +170,7 @@ void hellwm_tile_insert_toplevel(struct hellwm_tile_tree *node, struct hellwm_to
 	
 	branch->direction = direction;
 	branch->toplevel = new_toplevel;
+	branch->safe = true;
 
 	new_toplevel->tile_node = branch;
 
@@ -177,43 +189,25 @@ void hellwm_tile_insert_toplevel(struct hellwm_tile_tree *node, struct hellwm_to
 	hellwm_log(HELLWM_DEBUG, "Inserting toplevel to the %p branch at %d %d with %d %d",branch, x, y, new_width, new_height);
 }
 
-void hellwm_tile_free_all(struct hellwm_tile_tree *root)
-{
-	if (root == NULL)
-	{
-		hellwm_log(HELLWM_ERROR, "Root is NULL inside hellwm_tile_free_all().");
-		return;
-	}
-
-	if (root->parent != NULL)
-	{
-		hellwm_log(HELLWM_DEBUG, "Root's parent is not NULL inside hellwm_tile_free_all().");
-		return;
-	}
-
-	if (root->left != NULL)
-		hellwm_tile_free_all(root->left);
-
-	if (root->right != NULL)
-		hellwm_tile_free_all(root->right);
-}
-
 /* Free node of destroyed toplevel and everything 'bellow' this tree is re-added again */
-void hellmw_tile_erase_toplevel(struct hellwm_toplevel *toplevel)
+void hellmw_tile_delete_node(struct hellwm_tile_tree *node)
 {
-	if (toplevel == NULL)
+	if (node == NULL)
 	{
-		hellwm_log(HELLWM_ERROR, "Toplevel is NULL inside hellwm_tile_erase_toplevel().");
+		hellwm_log(HELLWM_ERROR, "Node is NULL inside hellwm_tile_delete_node().");
 		return;
 	}
+	struct hellwm_toplevel *toplevels;
 
-	/* TODO - fix this */
-	hellwm_tile_free_all(toplevel->server->tile_tree);
-
-	struct hellwm_toplevel *tp;
-	wl_list_for_each(tp, &toplevel->server->toplevels,link)
+	if (node->left != NULL)
 	{
-		if (toplevel != tp)
-			hellwm_tile_insert_toplevel(toplevel->server->tile_tree, tp, false);
+		hellmw_tile_delete_node(node->left);
 	}
+
+	if (node->right != NULL)
+	{
+		hellmw_tile_delete_node(node->right);
+	}
+
+	free(node);
 }
