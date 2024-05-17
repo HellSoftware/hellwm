@@ -35,6 +35,8 @@
 #include <xkbcommon/xkbcommon-keysyms.h>
 #include <wlr/types/wlr_layer_shell_v1.h>
 #include <wlr/types/wlr_xcursor_manager.h>
+#include <wlr/types/wlr_server_decoration.h>
+#include <wlr/types/wlr_xdg_decoration_v1.h>
 
 #ifdef XWAYLAND
 #include <xcb/xcb.h>
@@ -51,7 +53,6 @@
 #include "../src/lua/luaUtil.c"
 #include "../include/lua/luaUtil.h"
 
-#define DBG hellwm_log(HELLWM_ERROR, HELLWM_INFO);
 typedef void (*FunctionPtr)();
 
 /* Execute command in new thread */
@@ -965,6 +966,35 @@ static void xdg_popup_commit(struct wl_listener *listener, void *data) {
 	}
 }
 
+static void xdg_handle_decoration(struct wl_listener *listener, void *data)
+{
+	struct wlr_xdg_toplevel_decoration_v1 *dec = data;
+
+	struct hellwm_toplevel *toplevel = wl_container_of(listener, toplevel, set_decoration_mode);
+
+
+	wl_signal_add(&dec->events.request_mode, ((toplevel->set_decoration_mode.notify = xdg_toplevel_decoration_request_decoration_mode), &toplevel->set_decoration_mode));
+	wl_signal_add(&dec->events.destroy, ((toplevel->destroy_decoration.notify = xdg_toplevel_decoration_request_decoration_mode), &toplevel->destroy_decoration));
+
+	xdg_toplevel_decoration_request_decoration_mode(&toplevel->set_decoration_mode, dec);
+}
+
+void xdg_toplevel_decoration_request_decoration_mode(struct wl_listener *listener, void *data)
+{
+	// TODO: FROM CONFIG
+	struct hellwm_toplevel *toplevel = wl_container_of(listener, toplevel, set_decoration_mode);
+	wlr_xdg_toplevel_decoration_v1_set_mode(toplevel->decoration,
+		WLR_XDG_TOPLEVEL_DECORATION_V1_MODE_SERVER_SIDE);
+}
+
+void xdg_toplevel_decoration_request_destroy(struct wl_listener *listener, void *data)
+{
+	struct hellwm_toplevel *toplevel = wl_container_of(listener, toplevel, set_decoration_mode);
+
+	wl_list_remove(&toplevel->destroy_decoration.link);
+	wl_list_remove(&toplevel->set_decoration_mode.link);
+}
+
 static void xdg_popup_destroy(struct wl_listener *listener, void *data) {
 	/* Called when the xdg_popup is destroyed. */
 	struct hellwm_popup *popup = wl_container_of(listener, popup, destroy);
@@ -1079,6 +1109,19 @@ void hellwm_setup(struct hellwm_server *server)
 	wl_signal_add(&server->layer_shell->events.new_surface,
 		&server->new_layer_surface);	
 	server->new_layer_surface.notify = handle_layer_shell_surface;
+
+
+	wlr_server_decoration_manager_set_default_mode(
+
+			wlr_server_decoration_manager_create(server->wl_display),
+			WLR_SERVER_DECORATION_MANAGER_MODE_SERVER);
+	server->xdg_decoration_manager = wlr_xdg_decoration_manager_v1_create(server->wl_display);
+
+	struct wl_listener xdg_decoration_listener;
+	xdg_decoration_listener.notify = xdg_handle_decoration;
+
+	/* TODO - fix, here: for example when opening kitty, foot, alacritty, wayland compositor crashes */
+	//wl_signal_add(&server->xdg_decoration_manager->events.new_toplevel_decoration, &xdg_decoration_listener);
 
 /* Set up xwayland */
 #ifdef XWAYLAND

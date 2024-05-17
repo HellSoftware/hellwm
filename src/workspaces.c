@@ -48,6 +48,13 @@
 /* TODO - add workspaces, !layout (reminder) */
 /*	TODO: add borders */
 
+struct hellwm_workspace
+{
+	struct wlr_output *output;
+	struct wlr_scene_tree *scene;
+	struct wlr_scene_node *node;
+};
+
 struct hellwm_tile_tree *hellwm_tile_setup(struct wlr_output *output)
 {
 	struct hellwm_tile_tree *rsetup = malloc(sizeof(struct hellwm_tile_tree));
