@@ -801,8 +801,6 @@ static void xdg_toplevel_destroy(struct wl_listener *listener, void *data) {
 	struct hellwm_toplevel *toplevel = wl_container_of(listener, toplevel, destroy);
 	struct hellwm_server *server = toplevel->server;
 
-	hellmw_tile_delete_node(toplevel->tile_node);
-
 	wl_list_remove(&toplevel->map.link);
 	wl_list_remove(&toplevel->unmap.link);
 	wl_list_remove(&toplevel->commit.link);
@@ -813,6 +811,8 @@ static void xdg_toplevel_destroy(struct wl_listener *listener, void *data) {
 	wl_list_remove(&toplevel->request_fullscreen.link);
 
 	free(toplevel);
+
+	hellmw_tile_re_add(server);
 }
 
 static void begin_interactive(struct hellwm_toplevel *toplevel,

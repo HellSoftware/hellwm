@@ -143,8 +143,6 @@ struct hellwm_tile_tree
 	int direction;
 	int x, y;
 	
-	bool safe;
-
 	struct hellwm_tile_tree *parent;
 	struct hellwm_tile_tree *right;
 	struct hellwm_tile_tree *left;
