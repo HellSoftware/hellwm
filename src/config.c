@@ -149,16 +149,21 @@ void hellwm_config_set_monitor(lua_State *L, struct wlr_output *output)
     
     struct wlr_output_state state;
     wlr_output_state_init(&state);
+    wlr_output_state_set_enabled(&state, true);
     struct wlr_output_mode *mode = wlr_output_preferred_mode(output);
     
     if (hellwm_luaGetTable(L, name))
     {
-        int32_t  width      =  tFLOAT    hellwm_luaGetField(L, "width", LUA_TNUMBER));
-        int32_t  height     =  tFLOAT    hellwm_luaGetField(L, "height", LUA_TNUMBER));
-        int32_t  hz         =  tFLOAT    hellwm_luaGetField(L, "hz", LUA_TNUMBER));
-        int32_t  transfrom  =  tFLOAT    hellwm_luaGetField(L, "transfrom", LUA_TNUMBER));
-        float    scale      =  tFLOAT    hellwm_luaGetField(L, "scale", LUA_TNUMBER));
-        bool     vrr        =  tBOOLEAN  hellwm_luaGetField(L, "vrr", LUA_TBOOLEAN));
+        int32_t  width      =  tFLOAT             hellwm_luaGetField(L, "width", LUA_TNUMBER));
+        int32_t  height     =  tFLOAT             hellwm_luaGetField(L, "height", LUA_TNUMBER));
+        int32_t  hz         =  (int32_t)tFLOAT    hellwm_luaGetField(L, "hz", LUA_TNUMBER));
+        int32_t  transfrom  =  tFLOAT             hellwm_luaGetField(L, "transfrom", LUA_TNUMBER));
+        
+        int32_t  lx         = (int32_t) tFLOAT    hellwm_luaGetField(L, "x", LUA_TNUMBER));
+        int32_t  ly         = (int32_t) tFLOAT    hellwm_luaGetField(L, "y", LUA_TNUMBER));
+       
+        float    scale      =  tFLOAT             hellwm_luaGetField(L, "scale", LUA_TNUMBER));
+        bool     vrr        =  tBOOLEAN           hellwm_luaGetField(L, "vrr", LUA_TBOOLEAN));
         
         switch (transfrom)
         {
@@ -182,15 +187,7 @@ void hellwm_config_set_monitor(lua_State *L, struct wlr_output *output)
             wlr_output_state_set_transform(&state, WL_OUTPUT_TRANSFORM_NORMAL);
             break;
         }
-
-        if (width != 0 && height != 0) 
-        {
-            wlr_output_state_set_custom_mode(&state, width, height, hz * pow(10, -6));
-        }
-        else
-        {
-            hellwm_log(HELLWM_INFO, "Width or Height of %s output is not provided, set to preffered",name);
-        }
+ 
         if (scale != 0)
         {
             wlr_output_state_set_scale(&state, scale);
@@ -198,29 +195,47 @@ void hellwm_config_set_monitor(lua_State *L, struct wlr_output *output)
 
         /* Set variable refresh rate, if it's not set vrr = false */
         wlr_output_state_set_adaptive_sync_enabled(&state, vrr);
+        
+        struct wlr_output_layout_output *l_output = wlr_output_layout_add(global_server->output_layout, output, lx, ly);
+        struct wlr_scene_output *scene_output = wlr_scene_output_create(global_server->scene, output);
+        wlr_scene_output_layout_add_output(global_server->scene_layout, l_output, scene_output);
+
+
+        if (width != 0 && height != 0) 
+        {
+            wlr_output_state_set_custom_mode(&state, width, height, hz);
+        }
+        else
+        {
+            hellwm_log(HELLWM_INFO, "Width or Height of %s output is not provided, set to preffered",name);
+        }
+
+        if (wlr_output_test_state(output, &state))
+        {
+            wlr_output_commit_state(output, &state);
+        }
+        else
+        {
+           hellwm_log(HELLWM_ERROR, "Cannot commit changes to output %s, compositor may not work properly",name);
+        }
+
+        hellwm_log(HELLWM_LOG, 
+               "Output %s - set to: %"PRId32"x%"PRId32"@%f, on pos: %dx%d, scale: %f, VRR: %d",
+               name,
+               output->width, 
+               output->height, 
+               lx, ly,
+               (float)(output->refresh)/(1000.f), // it's easier to read logfiles, just it 
+               output->scale,
+               output->adaptive_sync_status
+        );
     }
     else
     {
         hellwm_log(HELLWM_LOG, "Could not access table: %s", name); 
     }
 
-    /* Enable output */
-    wlr_output_state_set_enabled(&state, true);
-
-    if (wlr_output_commit_state(output, &state)==false)
-    {
-       hellwm_log(HELLWM_ERROR, "Cannot commit changes to output %s, compositor may not work properly",name);
-    }
-
-    hellwm_log(HELLWM_LOG, 
-               "Output %s - set to: %"PRId32"x%"PRId32"@%f, scale: %f, VRR: %d",
-               name,
-               output->width, 
-               output->height, 
-               (float)(output->refresh)/(1000.f), // it's easier to read logfiles, just it 
-               output->scale,
-               output->adaptive_sync_status
-               );
+    
     wlr_output_state_finish(&state);
 
     lua_pop(L, 1);

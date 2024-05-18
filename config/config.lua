@@ -18,7 +18,15 @@ keyboard = {
 }
 
 -- Monitors Configuration
+monitor_DP_1 = {
+  x = 0,
+  y = 0
+}
+
 monitor_DP_2 = {
+  x = 2560,
+  y = -300,
+  scale = 1,
   transfrom = 1,
   vrr = true
 }
