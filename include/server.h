@@ -144,15 +144,6 @@ struct hellwm_tile_tree
 
 struct hellwm_output
 {
-	struct {
-		struct wlr_scene_tree *shell_background;
-		struct wlr_scene_tree *shell_overlay;
-		struct wlr_scene_tree *shell_bottom;
-		struct wlr_scene_tree *fullscreen;
-		struct wlr_scene_tree *shell_top;
-		struct wlr_scene_tree *tiling;
-	} layers;
-
 	struct wl_list link;
 	struct wl_listener frame;
 	struct wl_listener destroy;
@@ -179,7 +170,8 @@ struct hellwm_toplevel
 	struct wlr_xdg_toplevel *xdg_toplevel;
 	struct wl_listener set_decoration_mode;
 	struct wlr_xdg_toplevel_decoration_v1 *decoration; 
-
+	struct wl_list layers[4]; /* LayerSurface link */
+	
 	struct hellwm_output *output;
 	struct wlr_scene_layer_surface_v1 *scene;
 	struct wlr_layer_surface_v1 *layer_surface;
