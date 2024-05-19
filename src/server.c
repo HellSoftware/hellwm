@@ -1089,6 +1089,8 @@ void hellwm_setup(struct hellwm_server *server)
 	wl_signal_add(&server->xdg_shell->events.new_popup,
 			&server->new_xdg_popup);
 
+
+	hellwm_layer_shell_init();
 	server->layer_shell = wlr_layer_shell_v1_create(
 			server->wl_display,
 			3);

@@ -32,9 +32,11 @@ struct hellwm_layer_surface
   struct wl_listener surface_commit;
 };
 
-static void handle_layer_shell_surface(struct wl_listener *listener, void *data);
+void hellwm_layer_shell_init();
+void arrange_layers(struct hellwm_output *output, struct hellwm_layer_surface *hwm_layer);
+void layer_surface_map(struct wl_listener *listener, void *data);
 void layer_surface_commit(struct wl_listener *listener, void *data);
-void arrange_layers(struct hellwm_toplevel *toplevel);
-void arrangelayer(struct hellwm_toplevel *toplevel, struct wl_list *list, struct wlr_box *usable_area, int exclusive);
+
+static void handle_layer_shell_surface(struct wl_listener *listener, void *data);
 
 #endif
