@@ -375,11 +375,13 @@ static void
 server_new_touch(struct hellwm_server *server, struct wlr_input_device *device)
 {
 	wlr_cursor_attach_input_device(server->cursor, device);
+	hellwm_log(HELLWM_LOG, "New Touch: %s",device->name);
 }
 
 static void
 server_new_tablet(struct hellwm_server *server, struct wlr_input_device *device)
 {
+	hellwm_log(HELLWM_LOG, "New Tablet: %s",device->name);
 	wlr_cursor_attach_input_device(server->cursor, device);
 }
 
@@ -405,9 +407,6 @@ static void server_new_input(struct wl_listener *listener, void *data) {
 	default:
 		break;
 	}
-	/* We need to let the wlr_seat know what our capabilities are, which is
-	 * communiciated to the client. In TinyWL we always have a cursor, even if
-	 * there are no pointer devices, so we always include that capability. */
 	uint32_t caps = WL_SEAT_CAPABILITY_POINTER;
 	if (!wl_list_empty(&server->keyboards)) {
 		caps |= WL_SEAT_CAPABILITY_KEYBOARD;
@@ -639,10 +638,6 @@ static void server_cursor_button(struct wl_listener *listener, void *data)
    {
 		/* If you released any buttons, we exit interactive move/resize mode. */
 		reset_cursor_mode(server);
-	}else 
-   {
-		/* Focus that client if the button was _pressed_ */
-		focus_toplevel(toplevel, surface);
 	}
 }
 
@@ -921,7 +916,6 @@ static void server_new_xdg_toplevel(struct wl_listener *listener, void *data)
 	toplevel->destroy.notify = xdg_toplevel_destroy;
 	wl_signal_add(&xdg_toplevel->events.destroy, &toplevel->destroy);
 
-	/* cotd */
 	toplevel->request_move.notify = xdg_toplevel_request_move;
 	wl_signal_add(&xdg_toplevel->events.request_move, &toplevel->request_move);
 	toplevel->request_resize.notify = xdg_toplevel_request_resize;
@@ -930,12 +924,30 @@ static void server_new_xdg_toplevel(struct wl_listener *listener, void *data)
 	wl_signal_add(&xdg_toplevel->events.request_maximize, &toplevel->request_maximize);
 	toplevel->request_fullscreen.notify = xdg_toplevel_request_fullscreen;
 	wl_signal_add(&xdg_toplevel->events.request_fullscreen, &toplevel->request_fullscreen);
+	toplevel->request_title.notify = xdg_toplevel_set_title;
+	wl_signal_add(&xdg_toplevel->events.set_title, &toplevel->request_title);
+	toplevel->request_app_id.notify = xdg_toplevel_set_app_id;
+	wl_signal_add(&xdg_toplevel->events.set_app_id, &toplevel->request_app_id);
 
 	if (server->tile_tree == NULL)
 	{
 		server->tile_tree = hellwm_tile_setup(wlr_output_layout_get_center_output(server->output_layout));
 	}
 	hellwm_tile_insert_toplevel(hellwm_tile_farthest(server->tile_tree, false, 0), toplevel, false);
+}
+
+static void xdg_toplevel_set_title(struct wl_listener *listener, void *data)
+{
+	struct hellwm_toplevel *toplevel = wl_container_of(listener, toplevel, request_title);
+	const char *title = toplevel->xdg_toplevel->title;
+	hellwm_log(HELLWM_LOG, "xdg_toplevel_set_title() called on %s", title);
+}
+
+static void xdg_toplevel_set_app_id(struct wl_listener *listener, void *data)
+{
+	struct hellwm_toplevel *toplevel = wl_container_of(listener, toplevel, request_app_id);
+	const char *app_id = toplevel->xdg_toplevel->app_id;
+	hellwm_log(HELLWM_LOG, "xdg_toplevel_set_app_id() called on %s", app_id);
 }
 
 static void xdg_popup_commit(struct wl_listener *listener, void *data) {
@@ -1146,6 +1158,7 @@ void hellwm_setup(struct hellwm_server *server)
 	server->new_input.notify = server_new_input;
 	wl_signal_add(&server->backend->events.new_input,
 			&server->new_input);
+
 	server->seat = wlr_seat_create(server->wl_display, "seat0");
 	server->request_cursor.notify = seat_request_cursor;
 	wl_signal_add(&server->seat->events.request_set_cursor,
