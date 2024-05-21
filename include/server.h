@@ -170,11 +170,8 @@ struct hellwm_toplevel
 	struct wlr_xdg_toplevel *xdg_toplevel;
 	struct wl_listener set_decoration_mode;
 	struct wlr_xdg_toplevel_decoration_v1 *decoration; 
-	struct wl_list layers[4]; /* LayerSurface link */
 	
 	struct hellwm_output *output;
-	struct wlr_scene_layer_surface_v1 *scene;
-	struct wlr_layer_surface_v1 *layer_surface;
 };
 
 struct hellwm_popup
