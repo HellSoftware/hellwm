@@ -1,4 +1,3 @@
-
 #include <linux/input-event-codes.h>
 #include <assert.h>
 #include <GLES2/gl2.h>
@@ -14,81 +13,137 @@
 #include <wayland-server-core.h>
 #include <wayland-util.h>
 #include <wlr/util/log.h>
+#include <xcb/xcb_icccm.h>
 
-#ifdef XWAYLAND
 #include <wlr/xwayland/shell.h>
 #include <wlr/xwayland/xwayland.h>
-#endif
 
 #include "../include/server.h"
+#include "../include/xwayland.h"
 
-#if XWAYLAND
+static const char *atom_map[ATOM_LAST] = {
+	[NET_WM_WINDOW_TYPE_NORMAL] = "_NET_WM_WINDOW_TYPE_NORMAL",
+	[NET_WM_WINDOW_TYPE_DIALOG] = "_NET_WM_WINDOW_TYPE_DIALOG",
+	[NET_WM_WINDOW_TYPE_UTILITY] = "_NET_WM_WINDOW_TYPE_UTILITY",
+	[NET_WM_WINDOW_TYPE_TOOLBAR] = "_NET_WM_WINDOW_TYPE_TOOLBAR",
+	[NET_WM_WINDOW_TYPE_SPLASH] = "_NET_WM_WINDOW_TYPE_SPLASH",
+	[NET_WM_WINDOW_TYPE_MENU] = "_NET_WM_WINDOW_TYPE_MENU",
+	[NET_WM_WINDOW_TYPE_DROPDOWN_MENU] = "_NET_WM_WINDOW_TYPE_DROPDOWN_MENU",
+	[NET_WM_WINDOW_TYPE_POPUP_MENU] = "_NET_WM_WINDOW_TYPE_POPUP_MENU",
+	[NET_WM_WINDOW_TYPE_TOOLTIP] = "_NET_WM_WINDOW_TYPE_TOOLTIP",
+	[NET_WM_WINDOW_TYPE_NOTIFICATION] = "_NET_WM_WINDOW_TYPE_NOTIFICATION",
+	[NET_WM_STATE_MODAL] = "_NET_WM_STATE_MODAL",
+};
 
 static void server_handle_xwayland_surface(struct wl_listener *listener, void *data)
 {
 	struct hellwm_server *server = wl_container_of(listener, server, new_xwayland_surface);
-   struct wlr_xwayland_surface *surface = data;
+   struct wlr_xwayland_surface *xwayland_surface = data;	
 
-	hellwm_log(HELLWM_LOG, "New xwayland surface: title=%s, class=%s, instance=%s",
-		surface->title, surface->class, surface->instance);
-	wlr_xwayland_surface_ping(surface);
+	wlr_xwayland_surface_ping(xwayland_surface);
 
-	struct hellwm_xwayland_surface *hellwm_surface =
-		calloc(1, sizeof(struct hellwm_xwayland_surface));
-	if (hellwm_surface == NULL) {
-		return;
-	}/*
+   struct hellwm_xwayland_toplevel *xtoplevel = calloc(1, sizeof(*xtoplevel));
 
-	view_init(&hellwm_surface->view, &view_impl, HELLWM_XWAYLAND_VIEW, server);
-	hellwm_surface->view.box.x = surface->x;
-	hellwm_surface->view.box.y = surface->y;
-	hellwm_surface->xwayland_surface = surface;
+	xtoplevel->server = server;
+	xtoplevel->xwayland_surface = xwayland_surface;
 
-	view_set_title(&hellwm_surface->view, surface->title);
-	view_set_app_id(&hellwm_surface->view, surface->class);
+   xwayland_surface->data = xtoplevel;
 
-	hellwm_surface->destroy.notify = xwayland_handle_destroy;
-	wl_signal_add(&surface->events.destroy, &hellwm_surface->destroy);
+   wl_signal_add(&xwayland_surface->events.associate, &xtoplevel->associate);
+   xtoplevel->associate.notify = xhandle_associate;
 
-	hellwm_surface->map.notify = handle_map;
-	wl_signal_add(&surface->events.map, &hellwm_surface->map);
+   wl_signal_add(&xwayland_surface->events.destroy, &xtoplevel->destroy);
+   xtoplevel->destroy.notify = xhandle_destroy;
 
-	hellwm_surface->unmap.notify = handle_unmap;
-	wl_signal_add(&surface->events.unmap, &hellwm_surface->unmap);
-	
-	hellwm_surface->request_move.notify = handle_request_move;
-	wl_signal_add(&surface->events.request_move, &hellwm_surface->request_move);
-	
-	hellwm_surface->request_resize.notify = handle_request_resize;
+   wl_signal_add(&xwayland_surface->events.request_configure, &xtoplevel->request_configure);
+   xtoplevel->request_configure.notify = xhandle_configure;
+   
+   wl_signal_add(&xwayland_surface->events.set_title, &xtoplevel->request_title);
+   xtoplevel->request_title.notify = xhandle_set_title;
 
-	wl_signal_add(&surface->events.request_resize,
-		&hellwm_surface->request_resize);
-	hellwm_surface->request_maximize.notify = handle_request_maximize;
-	
-	wl_signal_add(&surface->events.request_maximize,
-		&hellwm_surface->request_maximize);
-	hellwm_surface->request_fullscreen.notify = handle_request_fullscreen;
-	
-	wl_signal_add(&surface->events.request_fullscreen,
-		&hellwm_surface->request_fullscreen);
-	hellwm_surface->set_title.notify = handle_set_title;
-	
-	wl_signal_add(&surface->events.set_title, &hellwm_surface->set_title);
-	hellwm_surface->set_class.notify = handle_set_class;
-	
-	wl_signal_add(&surface->events.set_class,
-			&hellwm_surface->set_class);
-	*/
+   wl_signal_add(&xwayland_surface->events.set_class, &xtoplevel->request_app_id);
+   xtoplevel->request_app_id.notify = xhandle_set_app_id;
+
+   wl_signal_add(&xwayland_surface->events.set_role, &xtoplevel->request_role);
+   xtoplevel->request_role.notify = xhandle_set_role;
 }
 
-/*
-static void xwayland_handle_destroy(struct wl_listener *listener, void *data)
+static void xhandle_set_role(struct wl_listener *listener, void *data)
 {
-	struct hellwm_xwayland_surface *hellwm_surface =
-		wl_container_of(listener, hellwm_surface, destroy);
-	view_destroy(&hellwm_surface->view);
+   struct hellwm_xwayland_toplevel *xtoplevel = wl_container_of(listener, xtoplevel, request_role);
+   const char *role = xtoplevel->xwayland_surface->role;
+   hellwm_log(HELLWM_INFO, "xwayland set role: %s", role);
 }
-*/
+
+static void handle_surface_commit(struct wl_listener *listener, void *data)
+{
+   struct hellwm_xwayland_toplevel *xtoplevel = wl_container_of(listener, xtoplevel, commit);
+
+   int new_width = xtoplevel->xwayland_surface->width;
+   int new_height = xtoplevel->xwayland_surface->height;
+   int new_x = xtoplevel->xwayland_surface->x;
+   int new_y = xtoplevel->xwayland_surface->y;
+
+   hellwm_log(HELLWM_LOG, "xwayland surface commit: %dx%d - %d, %d", new_width, new_height, new_x, new_y);
+}
+
+static void xhandle_associate(struct wl_listener *listener, void *data)
+{
+   struct hellwm_xwayland_toplevel *xtoplevel = wl_container_of(listener, xtoplevel, associate);
+	struct wlr_xwayland_surface *xsurface = xtoplevel->xwayland_surface;
+
+	wl_signal_add(&xsurface->surface->events.unmap, &xtoplevel->unmap);
+	xtoplevel->unmap.notify = xhandle_unmap;
+	wl_signal_add(&xsurface->surface->events.map, &xtoplevel->map);
+	xtoplevel->map.notify = xhandle_map;
+}
+
+static void xhandle_set_app_id(struct wl_listener *listener, void *data)
+{
+   struct hellwm_xwayland_toplevel *xtoplevel = wl_container_of(listener, xtoplevel, request_app_id);
+   const char *app_id = xtoplevel->xwayland_surface->class;
+   hellwm_log(HELLWM_INFO, "xwayland set app_id: %s", app_id);
+}
+
+static void xhandle_set_title(struct wl_listener *listener, void *data)
+{
+   struct hellwm_xwayland_toplevel *xtoplevel = wl_container_of(listener, xtoplevel, request_title);
+   const char *title = xtoplevel->xwayland_surface->title;
+   hellwm_log(HELLWM_INFO, "xwayland set title: %s", title);
+}
+
+static void xhandle_configure(struct wl_listener *listener, void *data)
+{
+   struct hellwm_xwayland_toplevel *xtoplevel = wl_container_of(listener, xtoplevel, request_configure);
+   wlr_xwayland_surface_configure(xtoplevel->xwayland_surface, 0, 0, 500, 500);
+}
+
+static void xhandle_map(struct wl_listener *listener, void *data)
+{
+   struct hellwm_xwayland_toplevel *xtoplevel = wl_container_of(listener, xtoplevel, map);
+   struct wlr_xwayland_surface *xwayland_surface = xtoplevel->xwayland_surface;
+   wl_list_insert(&xtoplevel->server->xtoplevels, &xtoplevel->link);
+
+   wl_signal_add(&xwayland_surface->surface->events.commit, &xtoplevel->commit);
+   xtoplevel->commit.notify = handle_surface_commit;
+
+   wl_signal_add(&xwayland_surface->surface->events.unmap, &xtoplevel->unmap);
+   xtoplevel->unmap.notify = xhandle_unmap;
+}
+
+static void xhandle_unmap(struct wl_listener *listener, void *data)
+{
+   struct hellwm_xwayland_toplevel *xwayland_toplevel = wl_container_of(listener, xwayland_toplevel, unmap);
+
+   wl_list_remove(&xwayland_toplevel->link);
+}
+
+static void xhandle_destroy(struct wl_listener *listener, void *data)
+{
+   struct hellwm_xwayland_toplevel *xtoplevel = wl_container_of(listener, xtoplevel, destroy);
+   wl_list_remove(&xtoplevel->link);
+   free(xtoplevel);
+}
 
 static void server_xwayland_ready(struct wl_listener *listener, void *data)
 {
@@ -96,6 +151,45 @@ static void server_xwayland_ready(struct wl_listener *listener, void *data)
    struct wlr_seat *wlr_seat = server->seat; 
 
    wlr_xwayland_set_seat(server->xwayland, wlr_seat);
+
+   xcb_connection_t *xcb_conn = xcb_connect(NULL, NULL);
+   int result = xcb_connection_has_error(xcb_conn);
+	if (result)
+   {
+      hellwm_log(HELLWM_ERROR, "XCB failed to connect: %d", result);
+		return;
+	}
+
+   xcb_intern_atom_cookie_t cookies[ATOM_LAST];
+	for (size_t i = 0; i < ATOM_LAST; i++)
+   {
+		cookies[i] =
+			xcb_intern_atom(xcb_conn, 0, strlen(atom_map[i]), atom_map[i]);
+	}
+	for (size_t i = 0; i < ATOM_LAST; i++)
+   {
+		xcb_generic_error_t *error = NULL;
+		xcb_intern_atom_reply_t *reply =
+			xcb_intern_atom_reply(xcb_conn, cookies[i], &error);
+		if (reply != NULL && error == NULL) {
+			server->atoms[i] = reply->atom;
+		}
+		free(reply);
+
+		if (error != NULL)
+      {
+			hellwm_log(
+              HELLWM_LOG,
+               "error atom %s, X11 error code %d",
+               atom_map[i],
+               error->error_code);
+			free(error);
+			break;
+		}
+	}
+
+  	xcb_disconnect(xcb_conn);
+
    hellwm_log(HELLWM_INFO, "XWayland is ready");
 }
-#endif 
+

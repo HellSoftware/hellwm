@@ -40,9 +40,12 @@
 #include "config.h"
 #include "lua/luaUtil.h"
 
+
 #ifdef XWAYLAND
+#include <xcb/xproto.h>
 #include <wlr/xwayland/shell.h>
 #include <wlr/xwayland/xwayland.h>
+#include "../include/xwayland.h"
 #endif
 
 #define HELLWM_INFO  "INFO"
@@ -75,6 +78,7 @@ struct hellwm_server
 	struct wlr_scene *scene;
 	struct wl_list keyboards;
 	struct wl_list toplevels;
+	struct wl_list xtoplevels;
 	struct wlr_cursor *cursor;
 	struct wlr_box grab_geobox;
 	struct wlr_backend *backend;
@@ -105,29 +109,10 @@ struct hellwm_server
 	struct hellwm_config_pointers *config_pointer;
 	struct wlr_xdg_decoration_manager_v1 *xdg_decoration_manager;	
 
-#if XWAYLAND
+	xcb_atom_t atoms[ATOM_LAST];
 	struct wlr_xwayland *xwayland;
 	struct wl_listener xwayland_ready;
 	struct wl_listener new_xwayland_surface;
-#endif
-};
-
-struct hellwm_xwayland_surface
-{
-	struct wlr_xwayland_surface *xwayland_surface;
-
-	struct wl_listener destroy;
-	struct wl_listener request_configure;
-	struct wl_listener request_move;
-	struct wl_listener request_resize;
-	struct wl_listener request_maximize;
-	struct wl_listener request_fullscreen;
-	struct wl_listener map;
-	struct wl_listener unmap;
-	struct wl_listener set_title;
-	struct wl_listener set_class;
-
-	struct wl_listener surface_commit;
 };
 
 struct hellwm_tile_tree
@@ -154,7 +139,6 @@ struct hellwm_output
 
 struct hellwm_toplevel
 {
-	char *title;
 	struct wl_list link;
 	struct wl_listener map;
 	struct wl_listener unmap;

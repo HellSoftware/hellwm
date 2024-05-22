@@ -5,7 +5,8 @@ LIBS=\
 	 $(shell pkg-config --cflags --libs "wlroots >= 0.18.0-dev")	\
 	 $(shell pkg-config --cflags --libs wayland-server) 			 	\
 	 $(shell pkg-config --cflags --libs xkbcommon) 						\
-	 -llua
+	 -llua  																 			\
+	 -lxcb
 
 wlr-layer-shell-unstable-v1-protocol.h:
 	$(WAYLAND_SCANNER) server-header \

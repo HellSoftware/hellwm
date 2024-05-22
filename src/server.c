@@ -694,15 +694,6 @@ static void output_destroy(struct wl_listener *listener, void *data) {
 	struct hellwm_output *output = wl_container_of(listener, output, destroy);
 	struct hellwm_server *server = output->server;
 	
-	/*for (int i=0;i<server->outputs_list->count;i++)
-	{
-		if (server->outputs_list->outputs[i]->wlr_output->name == output->wlr_output->name)
-		{
-			free(server->outputs_list->outputs[i]);
-			server->outputs_list->count--;
-		}
-	}*/
-
 	wl_list_remove(&output->frame.link);
 	wl_list_remove(&output->request_state.link);
 	wl_list_remove(&output->destroy.link);
@@ -795,6 +786,7 @@ static void xdg_toplevel_destroy(struct wl_listener *listener, void *data) {
 	free(toplevel);
 
 	hellmw_tile_re_add(server);
+	focus_next(server);
 }
 
 static void begin_interactive(struct hellwm_toplevel *toplevel,
@@ -939,7 +931,7 @@ static void server_new_xdg_toplevel(struct wl_listener *listener, void *data)
 static void xdg_toplevel_set_title(struct wl_listener *listener, void *data)
 {
 	struct hellwm_toplevel *toplevel = wl_container_of(listener, toplevel, request_title);
-	const char *title = toplevel->xdg_toplevel->title;
+	const char *title = data;
 	hellwm_log(HELLWM_LOG, "xdg_toplevel_set_title() called on %s", title);
 }
 
@@ -1121,16 +1113,23 @@ void hellwm_setup(struct hellwm_server *server)
 	//wl_signal_add(&server->xdg_decoration_manager->events.new_toplevel_decoration, &xdg_decoration_listener);
 
 /* Set up xwayland */
-#ifdef XWAYLAND
+	wl_list_init(&server->xtoplevels);
 	server->xwayland = wlr_xwayland_create(server->wl_display, server->compositor, true);
-	server->new_xwayland_surface.notify = server_handle_xwayland_surface;
-	wl_signal_add(&server->xwayland->events.new_surface, &server->new_xwayland_surface);
+	if (!server->xwayland)
+	{
+		hellwm_log(HELLWM_ERROR, "Failed to create xwayland");
+		unsetenv("DISPLAY");
+	}
+	else
+	{
+		server->new_xwayland_surface.notify = server_handle_xwayland_surface;		
+		wl_signal_add(&server->xwayland->events.new_surface, &server->new_xwayland_surface);
 
-	server->xwayland_ready.notify = server_xwayland_ready;
-	wl_signal_add(&server->xwayland->events.new_surface, &server->xwayland_ready);
+		server->xwayland_ready.notify = server_xwayland_ready;
+		wl_signal_add(&server->xwayland->events.ready, &server->xwayland_ready);
 
-   setenv("DISPLAY", server->xwayland->server->display_name, true);
-#endif
+		setenv("DISPLAY", server->xwayland->display_name, true);
+	}
 
 	server->cursor = wlr_cursor_create();
 	wlr_cursor_attach_output_layout(server->cursor, server->output_layout);
