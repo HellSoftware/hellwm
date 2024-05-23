@@ -66,6 +66,31 @@ static void server_handle_xwayland_surface(struct wl_listener *listener, void *d
 
    wl_signal_add(&xwayland_surface->events.set_role, &xtoplevel->request_role);
    xtoplevel->request_role.notify = xhandle_set_role;
+
+   wl_signal_add(&xwayland_surface->events.set_geometry, &xtoplevel->request_geometry);
+   xtoplevel->request_geometry.notify = xhandle_set_geometry;
+
+   wl_signal_add(&xwayland_surface->events.request_activate, &xtoplevel->request_activate);
+   xtoplevel->request_activate.notify = xhandle_request_activate;
+}
+
+static void xhandle_request_activate(struct wl_listener *listener, void *data)
+{
+   struct hellwm_xwayland_toplevel *xtoplevel = wl_container_of(listener, xtoplevel, request_activate);
+   wlr_xwayland_surface_activate(xtoplevel->xwayland_surface, true);
+}
+
+static void xhandle_set_geometry(struct wl_listener *listener, void *data)
+{
+   struct hellwm_xwayland_toplevel *xtoplevel = wl_container_of(listener, xtoplevel, request_geometry);
+   int x = xtoplevel->xwayland_surface->x;
+   int y = xtoplevel->xwayland_surface->y;
+   int width = xtoplevel->xwayland_surface->width;
+   int height = xtoplevel->xwayland_surface->height;
+
+   wlr_xwayland_surface_configure(xtoplevel->xwayland_surface, x, y, width, height);
+
+   hellwm_log(HELLWM_INFO, "xwayland set geometry: %dx%d - %d, %d", width, height, x, y);
 }
 
 static void xhandle_set_role(struct wl_listener *listener, void *data)
@@ -94,8 +119,11 @@ static void xhandle_associate(struct wl_listener *listener, void *data)
 
 	wl_signal_add(&xsurface->surface->events.unmap, &xtoplevel->unmap);
 	xtoplevel->unmap.notify = xhandle_unmap;
-	wl_signal_add(&xsurface->surface->events.map, &xtoplevel->map);
+
+	wl_signal_add(&xsurface->events.map_request, &xtoplevel->map);
 	xtoplevel->map.notify = xhandle_map;
+   
+   wlr_xwayland_surface_configure(xsurface, 0, 0, 0, 0);
 }
 
 static void xhandle_set_app_id(struct wl_listener *listener, void *data)
@@ -115,7 +143,7 @@ static void xhandle_set_title(struct wl_listener *listener, void *data)
 static void xhandle_configure(struct wl_listener *listener, void *data)
 {
    struct hellwm_xwayland_toplevel *xtoplevel = wl_container_of(listener, xtoplevel, request_configure);
-   wlr_xwayland_surface_configure(xtoplevel->xwayland_surface, 0, 0, 500, 500);
+   wlr_xwayland_surface_configure(xtoplevel->xwayland_surface, 0, 0, xtoplevel->xwayland_surface->width, xtoplevel->xwayland_surface->height);
 }
 
 static void xhandle_map(struct wl_listener *listener, void *data)
@@ -126,9 +154,6 @@ static void xhandle_map(struct wl_listener *listener, void *data)
 
    wl_signal_add(&xwayland_surface->surface->events.commit, &xtoplevel->commit);
    xtoplevel->commit.notify = handle_surface_commit;
-
-   wl_signal_add(&xwayland_surface->surface->events.unmap, &xtoplevel->unmap);
-   xtoplevel->unmap.notify = xhandle_unmap;
 }
 
 static void xhandle_unmap(struct wl_listener *listener, void *data)

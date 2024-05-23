@@ -1,7 +1,0 @@
-******** HELLWM LOGFILE ********
-LOG: xdg_toplevel_set_title() called on (null)
-LOG: xdg_toplevel_set_title() called on (null)
-LOG: xdg_toplevel_set_title() called on (null)
-LOG: xdg_toplevel_set_title() called on (null)
-LOG: xdg_toplevel_set_title() called on (null)
-LOG: xdg_toplevel_set_title() called on (null)

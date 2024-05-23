@@ -1121,7 +1121,6 @@ void hellwm_setup(struct hellwm_server *server)
 	//wl_signal_add(&server->xdg_decoration_manager->events.new_toplevel_decoration, &xdg_decoration_listener);
 
 /* Set up xwayland */
-/*
 	wl_list_init(&server->xtoplevels);
 	server->xwayland = wlr_xwayland_create(server->wl_display, server->compositor, true);
 	if (!server->xwayland)
@@ -1139,7 +1138,6 @@ void hellwm_setup(struct hellwm_server *server)
 
 		setenv("DISPLAY", server->xwayland->display_name, true);
 	}
-*/
 	server->cursor = wlr_cursor_create();
 	wlr_cursor_attach_output_layout(server->cursor, server->output_layout);
 
