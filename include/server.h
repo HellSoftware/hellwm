@@ -107,6 +107,10 @@ struct hellwm_server
 	struct wl_listener cursor_motion_absolute;
 	struct wlr_scene_output_layout *scene_layout;
 	struct hellwm_config_pointers *config_pointer;
+	struct wl_listener *new_screen_copy;
+	struct wlr_xdg_output_manager_v1 *xdg_output_manager;
+	struct wl_listener output_manager_apply;
+	struct wlr_screencopy_manager_v1 *screencopy_manager;
 	struct wlr_xdg_decoration_manager_v1 *xdg_decoration_manager;	
 
 	xcb_atom_t atoms[ATOM_LAST];

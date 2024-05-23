@@ -34,9 +34,11 @@
 #include <wlr/types/wlr_subcompositor.h>
 #include <xkbcommon/xkbcommon-keysyms.h>
 #include <wlr/types/wlr_layer_shell_v1.h>
+#include <wlr/types/wlr_screencopy_v1.h>
 #include <wlr/types/wlr_xcursor_manager.h>
 #include <wlr/types/wlr_server_decoration.h>
 #include <wlr/types/wlr_xdg_decoration_v1.h>
+#include <wlr/types/wlr_xdg_output_v1.h>
 
 #ifdef XWAYLAND
 #include <xcb/xcb.h>
@@ -1093,6 +1095,12 @@ void hellwm_setup(struct hellwm_server *server)
 	wl_signal_add(&server->xdg_shell->events.new_popup,
 			&server->new_xdg_popup);
 
+	server->xdg_output_manager = wlr_xdg_output_manager_v1_create(
+			server->wl_display,
+			server->output_layout
+	);
+	struct wlr_xdg_output_manager_v1 *xdg_output_manager = server->xdg_output_manager;
+
 	server->layer_shell = wlr_layer_shell_v1_create(
 			server->wl_display,
 			3);
@@ -1113,6 +1121,7 @@ void hellwm_setup(struct hellwm_server *server)
 	//wl_signal_add(&server->xdg_decoration_manager->events.new_toplevel_decoration, &xdg_decoration_listener);
 
 /* Set up xwayland */
+/*
 	wl_list_init(&server->xtoplevels);
 	server->xwayland = wlr_xwayland_create(server->wl_display, server->compositor, true);
 	if (!server->xwayland)
@@ -1130,7 +1139,7 @@ void hellwm_setup(struct hellwm_server *server)
 
 		setenv("DISPLAY", server->xwayland->display_name, true);
 	}
-
+*/
 	server->cursor = wlr_cursor_create();
 	wlr_cursor_attach_output_layout(server->cursor, server->output_layout);
 
@@ -1178,6 +1187,8 @@ void hellwm_setup(struct hellwm_server *server)
 		wl_display_destroy(server->wl_display);
 		exit(EXIT_FAILURE);
 	}
+
+	server->screencopy_manager = wlr_screencopy_manager_v1_create(server->wl_display);
 
 	/* Set the WAYLAND_DISPLAY environment variable to our socket, 
 	 * XDG_CURRENT_DESKTOP to HellWM and run the startup commands if ANY. */
