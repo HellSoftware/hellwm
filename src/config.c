@@ -47,6 +47,7 @@ void hellwm_config_setup(struct hellwm_server *server)
 void hellwm_lua_expose_functions(struct hellwm_server *server)
 {
     hellwm_lua_expose_function(server, hellwm_c_log                , "log");
+    hellwm_lua_expose_function(server, hellwm_c_env                , "env"); 
     hellwm_lua_expose_function(server, hellwm_c_bind               , "bind");
     hellwm_lua_expose_function(server, hellwm_c_destroy            , "destroy");
     hellwm_lua_expose_function(server, hellwm_c_resize_toplevel_by , "resize_by");

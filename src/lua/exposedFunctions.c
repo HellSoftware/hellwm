@@ -86,6 +86,13 @@ void hellwm_c_config_reload()
    hellwm_config_reload(global_server);
 }
 
+void hellwm_c_env()
+{
+   char *env = (char *)luaL_checkstring(global_server->L, 1);
+   char *val = (char *)luaL_checkstring(global_server->L, 2);
+   setenv(env, val, 1);
+}
+
 void hellwm_c_toggle_fullscreen()
 {
    toggle_fullscreen(global_server);

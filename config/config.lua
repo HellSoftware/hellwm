@@ -38,6 +38,8 @@ monitor_WL_1 = {
   vrr = true
 }
 
+env("GTK_THEME", "Adwaita:dark")
+
 -- Hello Message :)
 print("Welcome to HellWM")
 
