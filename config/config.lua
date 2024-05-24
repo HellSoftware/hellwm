@@ -1,4 +1,5 @@
--- HellWM Config File
+-- My HellWM Config File 
+-- Example config to see how to get things working :)
 
 -- Keybinds
 bind("Escape", "killall hellwm")
@@ -38,6 +39,7 @@ monitor_WL_1 = {
   vrr = true
 }
 
+-- Environment
 env("GTK_THEME", "Adwaita:dark")
 
 -- Hello Message :)
