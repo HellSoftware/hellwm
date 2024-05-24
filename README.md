@@ -11,9 +11,9 @@ I'm open for contributions and ideas that will make this project better.
 ## IMPORTANT to do: 
 - [x] xdg-shell 
 - [x] config (now only keybinds, lua and full control over WM soon)
-- [ ] FULL lua integration (first working version) 
-- [ ] TILING
-- [ ] wlr-layer-shell (almost)
+- [x] lua integration
+- [x] TILING
+- [ ] wlr-layer-shell
 - [ ] xwayland
 - [ ] it's wm so workspaces feature :)
 
