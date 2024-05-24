@@ -1,0 +1,158 @@
+******** HELLWM LOGFILE ********
+LOG: logfile deleted
+LOG: LUA: Exposed function: log 
+LOG: LUA: Exposed function: bind 
+LOG: LUA: Exposed function: destroy 
+LOG: LUA: Exposed function: resize_by 
+LOG: LUA: Exposed function: exec 
+LOG: LUA: Exposed function: log_flush 
+LOG: LUA: Exposed function: focus_next 
+LOG: LUA: Exposed function: kill_active 
+LOG: LUA: Exposed function: config_reload 
+LOG: LUA: Exposed function: toggle_fullscreen 
+LOG: New BIND: [Escape] = killall hellwm
+LOG: New BIND: [p] = pavucontrol
+LOG: New BIND: [Return] = kitty
+LOG: New BIND: [b] = firefox
+LOG: New BIND: [e] = nemo
+LOG: New BIND: [l] = fuzzel
+LOG: New BIND: [c] = 2 - 0
+LOG: New BIND: [q] = 2 - 0
+LOG: New BIND: [f] = 2 - 0
+LOG: New Keyboard: Power Button, layout: pl
+LOG: New Keyboard: Video Bus, layout: pl
+LOG: New Keyboard: Sleep Button, layout: pl
+LOG: New Keyboard: AT Translated Set 2 keyboard, layout: pl
+LOG: New Pointer: SynPS/2 Synaptics TouchPad
+LOG: New Pointer: TPPS/2 IBM TrackPoint
+LOG: New Keyboard: ThinkPad Extra Buttons, layout: pl
+INFO: New output: LVDS-1 | Seiko Epson Corporation 0x324C (LVDS-1)
+ERROR: monitor_LVDS_1 is not a table
+LOG: Could not access table: monitor_LVDS_1
+LOG: Output monitor_LVDS_1 - set to: 1600x900@60.000999, on pos: 0x0, scale: 1.000000, VRR: 0
+INFO: Started HellWM Wayland Session at wayland-0
+DEBUG: Inside hellwm_tile_farthest() - 1
+DEBUG: Inserting toplevel to the 0x5d698dbb9c90 branch at 0 0 with 1600 900
+LOG: xdg_toplevel_set_title() called on (null)
+LOG: xdg_toplevel_set_app_id() called on kitty
+LOG: xdg_toplevel_set_title() called on (null)
+LOG: xdg_toplevel_set_title() called on (null)
+LOG: xdg_toplevel_set_title() called on (null)
+LOG: xdg_toplevel_set_title() called on (null)
+DEBUG: Inside hellwm_tile_farthest() - 1
+DEBUG: Inserting toplevel to the 0x5d698db316f0 branch at 0 0 with 1600 900
+LOG: xdg_toplevel_set_title() called on (null)
+LOG: xdg_toplevel_set_app_id() called on firefox
+DEBUG: Inside hellwm_tile_farthest() - 1
+DEBUG: Inserting toplevel to the 0x5d698db88f60 branch at 0 0 with 1600 900
+LOG: xdg_toplevel_set_title() called on (null)
+LOG: xdg_toplevel_set_app_id() called on nemo
+LOG: server_new_xdg_popup() called
+LOG: server_new_xdg_popup() called
+DEBUG: Inside hellwm_tile_farthest() - 1
+DEBUG: Inside hellwm_tile_farthest() - 2
+DEBUG: Inserting toplevel to the 0x5d698dbbe800 branch at 800 0 with 800 900
+LOG: xdg_toplevel_set_title() called on (null)
+LOG: xdg_toplevel_set_app_id() called on nemo
+DEBUG: Inside hellwm_tile_farthest() - 1
+DEBUG: Inside hellwm_tile_farthest() - 2
+DEBUG: Inside hellwm_tile_farthest() - 3
+DEBUG: Inserting toplevel to the 0x5d698dbce670 branch at 800 450 with 800 450
+LOG: xdg_toplevel_set_title() called on (null)
+LOG: xdg_toplevel_set_app_id() called on nemo
+DEBUG: Inside hellwm_tile_farthest() - 1
+DEBUG: Inside hellwm_tile_farthest() - 2
+DEBUG: Inside hellwm_tile_farthest() - 3
+DEBUG: Inside hellwm_tile_farthest() - 4
+DEBUG: Inserting toplevel to the 0x5d698db02ae0 branch at 1200 450 with 400 450
+LOG: xdg_toplevel_set_title() called on (null)
+LOG: xdg_toplevel_set_app_id() called on nemo
+LOG: server_new_xdg_popup() called
+DEBUG: Inside hellwm_tile_farthest() - 1
+DEBUG: Inserting toplevel to the 0x5d698db475c0 branch at 0 0 with 1600 900
+DEBUG: Inside hellwm_tile_farthest() - 1
+DEBUG: Inside hellwm_tile_farthest() - 2
+DEBUG: Inserting toplevel to the 0x5d698db31850 branch at 800 0 with 800 900
+DEBUG: Inside hellwm_tile_farthest() - 1
+DEBUG: Inside hellwm_tile_farthest() - 2
+DEBUG: Inside hellwm_tile_farthest() - 3
+DEBUG: Inserting toplevel to the 0x5d698dbbaa60 branch at 800 450 with 800 450
+DEBUG: Inside hellwm_tile_farthest() - 1
+DEBUG: Inserting toplevel to the 0x5d698dbb60a0 branch at 0 0 with 1600 900
+DEBUG: Inside hellwm_tile_farthest() - 1
+DEBUG: Inside hellwm_tile_farthest() - 2
+DEBUG: Inserting toplevel to the 0x5d698dacdae0 branch at 800 0 with 800 900
+DEBUG: Inside hellwm_tile_farthest() - 1
+DEBUG: Inserting toplevel to the 0x5d698db2df90 branch at 0 0 with 1600 900
+DEBUG: Inside hellwm_tile_farthest() - 1
+DEBUG: Inserting toplevel to the 0x5d698db42050 branch at 0 0 with 1600 900
+LOG: xdg_toplevel_set_title() called on (null)
+LOG: xdg_toplevel_set_app_id() called on nemo
+DEBUG: Inside hellwm_tile_farthest() - 1
+DEBUG: Inside hellwm_tile_farthest() - 2
+DEBUG: Inserting toplevel to the 0x5d698db033f0 branch at 800 0 with 800 900
+LOG: xdg_toplevel_set_title() called on (null)
+LOG: xdg_toplevel_set_app_id() called on nemo
+DEBUG: Inside hellwm_tile_farthest() - 1
+DEBUG: Inside hellwm_tile_farthest() - 2
+DEBUG: Inside hellwm_tile_farthest() - 3
+DEBUG: Inserting toplevel to the 0x5d698dbb5710 branch at 800 450 with 800 450
+LOG: xdg_toplevel_set_title() called on (null)
+LOG: xdg_toplevel_set_app_id() called on nemo
+DEBUG: Inside hellwm_tile_farthest() - 1
+DEBUG: Inside hellwm_tile_farthest() - 2
+DEBUG: Inside hellwm_tile_farthest() - 3
+DEBUG: Inside hellwm_tile_farthest() - 4
+DEBUG: Inserting toplevel to the 0x5d698db40290 branch at 1200 450 with 400 450
+LOG: xdg_toplevel_set_title() called on (null)
+LOG: xdg_toplevel_set_app_id() called on nemo
+DEBUG: Inside hellwm_tile_farthest() - 1
+DEBUG: Inside hellwm_tile_farthest() - 2
+DEBUG: Inside hellwm_tile_farthest() - 3
+DEBUG: Inside hellwm_tile_farthest() - 4
+DEBUG: Inside hellwm_tile_farthest() - 5
+DEBUG: Inserting toplevel to the 0x5d698dbd3770 branch at 1200 675 with 400 225
+LOG: xdg_toplevel_set_title() called on (null)
+LOG: xdg_toplevel_set_app_id() called on nemo
+LOG: server_new_xdg_popup() called
+DEBUG: Inside hellwm_tile_farthest() - 1
+DEBUG: Inserting toplevel to the 0x5d698dbc7b30 branch at 0 0 with 1600 900
+DEBUG: Inside hellwm_tile_farthest() - 1
+DEBUG: Inside hellwm_tile_farthest() - 2
+DEBUG: Inserting toplevel to the 0x5d698dbb53e0 branch at 800 0 with 800 900
+DEBUG: Inside hellwm_tile_farthest() - 1
+DEBUG: Inside hellwm_tile_farthest() - 2
+DEBUG: Inside hellwm_tile_farthest() - 3
+DEBUG: Inserting toplevel to the 0x5d698dbb5a40 branch at 800 450 with 800 450
+DEBUG: Inside hellwm_tile_farthest() - 1
+DEBUG: Inside hellwm_tile_farthest() - 2
+DEBUG: Inside hellwm_tile_farthest() - 3
+DEBUG: Inside hellwm_tile_farthest() - 4
+DEBUG: Inserting toplevel to the 0x5d698dbbc710 branch at 1200 450 with 400 450
+DEBUG: Inside hellwm_tile_farthest() - 1
+DEBUG: Inserting toplevel to the 0x5d698db8f310 branch at 0 0 with 1600 900
+DEBUG: Inside hellwm_tile_farthest() - 1
+DEBUG: Inside hellwm_tile_farthest() - 2
+DEBUG: Inserting toplevel to the 0x5d698d1ca050 branch at 800 0 with 800 900
+DEBUG: Inside hellwm_tile_farthest() - 1
+DEBUG: Inside hellwm_tile_farthest() - 2
+DEBUG: Inside hellwm_tile_farthest() - 3
+DEBUG: Inserting toplevel to the 0x5d698dc02db0 branch at 800 450 with 800 450
+DEBUG: Inside hellwm_tile_farthest() - 1
+DEBUG: Inserting toplevel to the 0x5d698da91400 branch at 0 0 with 1600 900
+DEBUG: Inside hellwm_tile_farthest() - 1
+DEBUG: Inside hellwm_tile_farthest() - 2
+DEBUG: Inserting toplevel to the 0x5d698db417d0 branch at 800 0 with 800 900
+DEBUG: Inside hellwm_tile_farthest() - 1
+DEBUG: Inserting toplevel to the 0x5d698db912d0 branch at 0 0 with 1600 900
+DEBUG: Inside hellwm_tile_farthest() - 1
+DEBUG: Inserting toplevel to the 0x5d698dbbd5f0 branch at 0 0 with 1600 900
+LOG: xdg_toplevel_set_title() called on (null)
+LOG: xdg_toplevel_set_app_id() called on kitty
+LOG: xdg_toplevel_set_title() called on (null)
+LOG: xdg_toplevel_set_title() called on (null)
+LOG: xdg_toplevel_set_title() called on (null)
+LOG: xdg_toplevel_set_title() called on (null)
+LOG: xdg_toplevel_set_title() called on (null)
+LOG: xdg_toplevel_set_title() called on (null)
+LOG: xdg_toplevel_set_title() called on (null)
