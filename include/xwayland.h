@@ -43,8 +43,8 @@ struct hellwm_xwayland_toplevel
 {
 	struct hellwm_server *server;
 	struct wlr_xwayland_surface *xwayland_surface;
-	
 	struct wl_list link;
+
 	struct wl_listener map;
 	struct wl_listener unmap;
 	struct wl_listener commit;
@@ -74,6 +74,7 @@ static void xhandle_set_geometry(struct wl_listener *listener, void * data);
 static void handle_surface_commit(struct wl_listener *listener ,void * data);
 static void server_xwayland_ready(struct wl_listener *listener, void  * data);
 static void xhandle_request_activate(struct wl_listener *listener, void *data);
+static void xhandle_request_maximize(struct wl_listener *listener, void  *data);
 static void server_handle_xwayland_surface(struct wl_listener*listener,void*data);
 
 #endif

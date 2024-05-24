@@ -43,7 +43,7 @@ static void server_handle_xwayland_surface(struct wl_listener *listener, void *d
 	wlr_xwayland_surface_ping(xwayland_surface);
 
    struct hellwm_xwayland_toplevel *xtoplevel = calloc(1, sizeof(*xtoplevel));
-
+   
 	xtoplevel->server = server;
 	xtoplevel->xwayland_surface = xwayland_surface;
 
@@ -72,6 +72,16 @@ static void server_handle_xwayland_surface(struct wl_listener *listener, void *d
 
    wl_signal_add(&xwayland_surface->events.request_activate, &xtoplevel->request_activate);
    xtoplevel->request_activate.notify = xhandle_request_activate;
+
+   wl_signal_add(&xwayland_surface->events.request_maximize, &xtoplevel->request_maximize);
+   xtoplevel->request_maximize.notify = xhandle_request_maximize;
+}
+
+static void xhandle_request_maximize(struct wl_listener *listener, void *data)
+{
+   struct hellwm_xwayland_toplevel *xtoplevel = wl_container_of(listener, xtoplevel, request_maximize);
+   // TODO
+   return;
 }
 
 static void xhandle_request_activate(struct wl_listener *listener, void *data)
