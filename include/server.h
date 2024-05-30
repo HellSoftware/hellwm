@@ -4,7 +4,6 @@
 #include <lua.h>
 #include <time.h>
 #include <stdio.h>
-#include <wayland-util.h>
 #include <wchar.h>
 #include <assert.h>
 #include <getopt.h>
@@ -14,6 +13,7 @@
 #include <complex.h>
 #include <stdbool.h>
 #include <wlr/backend.h>
+#include <wayland-util.h>
 #include <wlr/util/log.h>
 #include <wlr/types/wlr_seat.h>
 #include <wayland-server-core.h>
@@ -37,15 +37,18 @@
 #include <wlr/types/wlr_xdg_decoration_v1.h>
 #include <wlr/types/wlr_server_decoration.h>
 
-#include "config.h"
-#include "lua/luaUtil.h"
-
+#include "../include/config.h"
+#include "../include/lua/lua_util.h"
 
 #ifdef XWAYLAND
+
+#include <xcb/xcb.h>
 #include <xcb/xproto.h>
+#include <wlr/xwayland.h>
+#include <xcb/xcb_icccm.h>
 #include <wlr/xwayland/shell.h>
 #include <wlr/xwayland/xwayland.h>
-#include "../include/xwayland.h"
+
 #endif
 
 #define HELLWM_INFO  "INFO"
@@ -113,10 +116,12 @@ struct hellwm_server
 	struct wlr_screencopy_manager_v1 *screencopy_manager;
 	struct wlr_xdg_decoration_manager_v1 *xdg_decoration_manager;	
 
+#ifdef XWAYLAND
 	xcb_atom_t atoms[ATOM_LAST];
 	struct wlr_xwayland *xwayland;
 	struct wl_listener xwayland_ready;
 	struct wl_listener new_xwayland_surface;
+#endif
 };
 
 struct hellwm_tile_tree

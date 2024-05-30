@@ -1,5 +1,5 @@
-#ifndef __LUA_UTIL_H
-#define __LUA_UTIL_H
+#ifndef LUAUTIL_H
+#define LUAUTIL_H
 
 #include <lua.h>
 #include <lualib.h>

@@ -48,17 +48,8 @@ void hellwm_get_Server_g(struct hellwm_server *server)
    global_server = server;
 }
 
-void hellwm_lua_expose_function(struct hellwm_server *server, void *function, char *name) 
-{
-   lua_pushcfunction(server->L, function);
-   lua_setglobal(server->L, name);
-
-   hellwm_log(HELLWM_LOG, "LUA: Exposed function: %s ", name);
-}
-
 static int hellwm_c_bind(lua_State *L)
 {
-
    const char *key = luaL_checkstring(L, 1);
    
    if (lua_isfunction(L, 2))
@@ -71,6 +62,14 @@ static int hellwm_c_bind(lua_State *L)
    }
 
    return 0;
+}
+
+void hellwm_lua_expose_function(struct hellwm_server *server, void *function, char *name) 
+{
+   lua_pushcfunction(server->L, function);
+   lua_setglobal(server->L, name);
+
+   hellwm_log(HELLWM_LOG, "LUA: Exposed function: %s ", name);
 }
 
 void hellwm_c_resize_toplevel_by(lua_State *L)

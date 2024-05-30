@@ -33,18 +33,21 @@
 #include <xkbcommon/xkbcommon-keysyms.h>
 #include <wlr/types/wlr_layer_shell_v1.h>
 #include <wlr/types/wlr_xcursor_manager.h>
+
 #ifdef XWAYLAND
+
 #include <wlr/xwayland.h>
 #include <xcb/xcb.h>
 #include <xcb/xcb_icccm.h>
+#include "../include/xwayland.h"
+#include "../src/xwayland.c"
+
 #endif
 
 #include "../include/server.h"
 #include "../include/config.h"
-#include "../include/layer_shell.h"
 
 // problem with linking :/
-#include "./layer_shell.c"
 #include "./server.c"
 #include "./config.c"
 

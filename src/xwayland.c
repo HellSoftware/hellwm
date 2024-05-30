@@ -1,7 +1,5 @@
 #include <linux/input-event-codes.h>
-#include <assert.h>
 #include <GLES2/gl2.h>
-#include <limits.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -227,4 +225,3 @@ static void server_xwayland_ready(struct wl_listener *listener, void *data)
 
    hellwm_log(HELLWM_INFO, "XWayland is ready");
 }
-

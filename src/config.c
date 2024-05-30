@@ -16,9 +16,10 @@
 
 #include "../include/config.h"
 #include "../include/server.h"
-#include "../include/lua/luaUtil.h"
+#include "../include/lua/lua_util.h"
+#include "../include/lua/exposed_functions.h"
 
-#include "./lua/exposedFunctions.c"
+#include "../src/lua/exposed_functions.c"
 
 /* purpose of this boolean define is just because this thing down there looks with it cool :) */
 #define boolean bool

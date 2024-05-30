@@ -41,19 +41,20 @@
 #include <wlr/types/wlr_xdg_output_v1.h>
 
 #ifdef XWAYLAND
+
 #include <xcb/xcb.h>
 #include <wlr/xwayland.h>
 #include <xcb/xcb_icccm.h>
+
 #endif
 
 #include "../include/config.h"
 #include "../include/server.h"
-#include "../include/layer_shell.h"
+#include "../include/lua/lua_util.h"
+#include "../include/lua/exposed_functions.h"
 
-#include "../src/xwayland.c"
+#include "../src/lua/lua_util.c"
 #include "../src/workspaces.c"
-#include "../src/lua/luaUtil.c"
-#include "../include/lua/luaUtil.h"
 
 typedef void (*FunctionPtr)();
 
@@ -1101,12 +1102,13 @@ void hellwm_setup(struct hellwm_server *server)
 	);
 	struct wlr_xdg_output_manager_v1 *xdg_output_manager = server->xdg_output_manager;
 
-	server->layer_shell = wlr_layer_shell_v1_create(
+	/*server->layer_shell = wlr_layer_shell_v1_create(
 			server->wl_display,
 			3);
 	wl_signal_add(&server->layer_shell->events.new_surface,
 		&server->new_layer_surface);	
-	//server->new_layer_surface.notify = handle_layer_shell_surface;
+	server->new_layer_surface.notify = handle_layer_shell_surface;
+	*/
 
 	wlr_server_decoration_manager_set_default_mode(
 
@@ -1120,6 +1122,7 @@ void hellwm_setup(struct hellwm_server *server)
 	/* TODO - fix, here: for example when opening kitty, foot, alacritty, wayland compositor crashes */
 	//wl_signal_add(&server->xdg_decoration_manager->events.new_toplevel_decoration, &xdg_decoration_listener);
 	
+#ifdef XWAYLAND
 	wl_list_init(&server->xtoplevels);
 	server->xwayland = wlr_xwayland_create(server->wl_display, server->compositor, true);
 	if (!server->xwayland)
@@ -1137,6 +1140,7 @@ void hellwm_setup(struct hellwm_server *server)
 
 		setenv("DISPLAY", server->xwayland->display_name, true);
 	}
+#endif
 
 	server->cursor = wlr_cursor_create();
 	wlr_cursor_attach_output_layout(server->cursor, server->output_layout);

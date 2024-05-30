@@ -5,7 +5,7 @@
 #include <xkbcommon/xkbcommon.h>
 
 #include "../../include/server.h"
-#include "../../include/lua/luaUtil.h"
+#include "../../include/lua/lua_util.h"
 
 lua_State *hellwm_luaInit()
 {

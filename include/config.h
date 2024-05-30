@@ -38,8 +38,9 @@
 
 #include "../include/config.h"
 #include "../include/server.h"
-#include "../include/lua/luaUtil.h"
-#include "../include/lua/exposedFunctions.h"
+
+#include "../include/lua/lua_util.h"
+#include "../include/lua/exposed_functions.h"
 
 const char *hellwm_config_groups_arr[] = 
 {

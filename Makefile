@@ -21,18 +21,18 @@ HELLWM=./src/hellwm.c
 INCLUDE=\
 		  -I./ 						\
 		  -I./include 				\
+		  -I./include/lua			\
 		  -I./include/hellcli  
 
 SRC=\
-	 ./src/hellwm.c 					\
-	 ./src/server.c 					\
-	 ./src/config.c 					\
-	 ./src/xwayland.c 				\
-	 ./src/workspaces.c 				\
-	 ./src/layer_shell.c 			\
-	 ./src/lua/luaUtil.c				\
-	 ./src/lua/exposedFunctions.c \
-	 ./src/hellcli/serv_hellcli.c
+	 ./src/hellwm.c 					 \
+	 ./src/server.c 					 \
+	 ./src/config.c 					 \
+	 ./src/xwayland.c 				 \
+	 ./src/workspaces.c 				 \
+	 ./src/lua/lua_util.c			 \
+	 ./src/hellcli/serv_hellcli.c	 \
+	 ./src/lua/exposed_functions.c
 
 ARGS=\
 	  -Werror \
@@ -42,7 +42,7 @@ XWAYLAND=\
 	  -DXWAYLAND
 
 noxwayland: $(HELLWM) $(SRC) xdg-shell-protocol.h wlr-layer-shell-unstable-v1-protocol.h 
-		$(CC)	-g $(ARGS) $(INCLUDE) xdg-shell-protocol.h -o $@ $< $(LIBS) 
+		$(CC)	-g $(ARGS) $(INCLUDE) xdg-shell-protocol.h -o hellwm $< $(LIBS) 
 
 hellwm: $(HELLWM) $(SRC) xdg-shell-protocol.h wlr-layer-shell-unstable-v1-protocol.h 
 		$(CC)	-g $(ARGS) $(XWAYLAND) $(INCLUDE) xdg-shell-protocol.h -o $@ $< $(LIBS) 

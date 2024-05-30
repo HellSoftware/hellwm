@@ -1,5 +1,5 @@
-#ifndef SWAY_XWAYLAND_H
-#define SWAY_XWAYLAND_H
+#ifndef XWAYLAND_H
+#define XWAYLAND_H
 
 #include <linux/input-event-codes.h>
 #include <assert.h>
@@ -20,8 +20,6 @@
 
 #include <wlr/xwayland/shell.h>
 #include <wlr/xwayland/xwayland.h>
-
-#include "../include/server.h"
 
 enum atom_name
 {
