@@ -12,7 +12,6 @@
 #include <lauxlib.h>
 #include <pthread.h>
 #include <stdbool.h>
-#include <wlr/backend.h>
 #include <wlr/util/log.h>
 #include <wlr/types/wlr_seat.h>
 #include <wayland-server-core.h>
