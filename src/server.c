@@ -988,7 +988,7 @@ void xdg_toplevel_decoration_request_decoration_mode(struct wl_listener *listene
 
 	struct hellwm_decoration_toplevel *decoration = wl_container_of(listener, decoration, request_mode);
 	wlr_xdg_toplevel_decoration_v1_set_mode(decoration->wlr_decoration,
-		WLR_XDG_TOPLEVEL_DECORATION_V1_MODE_SERVER_SIDE);
+		WLR_XDG_TOPLEVEL_DECORATION_V1_MODE_SERVER_SIDE); // add server->default_decoration_mode
 }
 
 void xdg_toplevel_decoration_request_destroy(struct wl_listener *listener, void *data)

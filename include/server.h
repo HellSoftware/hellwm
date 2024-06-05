@@ -72,6 +72,7 @@ struct hellwm_server
 
 	double grab_x, grab_y;
 
+	uint8_t default_decoration_mode;
 	uint32_t resize_edges;
 
 	enum hellwm_cursor_mode cursor_mode;
@@ -169,6 +170,8 @@ struct hellwm_toplevel
 
 struct hellwm_decoration_toplevel
 {
+	uint8_t mode;
+
 	struct wl_listener destroy;
 	struct wl_listener request_mode;
 	struct wl_listener surface_commit;

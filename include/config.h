@@ -48,7 +48,7 @@ const char *hellwm_config_groups_arr[] =
  "bind",
  "monitor",
  "keyboard",
- "autostart"
+ "decoration"
 };
 
 enum hellwm_config_groups_types
@@ -57,7 +57,7 @@ enum hellwm_config_groups_types
     HELLWM_CONFIG_BIND=1,
     HELLWM_CONFIG_MONITOR=2,
     HELLWM_CONFIG_KEYBOARD=3,
-    HELLWM_CONFIG_AUTOSTART=4
+    HELLWM_CONFIG_DECORATION=4
 };
 
 struct hellwm_config_pointers
@@ -87,9 +87,11 @@ struct hellwm_config_one_fbind
 };
 
 static int hellwm_c_bind(lua_State *L);
+
+void hellwm_config_set_decoration(lua_State *L);
 void hellwm_config_setup(struct hellwm_server *server);
-void hellwm_config_bind_add(const char *key, void *val, bool isFunc);
 void hellwm_lua_expose_functions(struct hellwm_server *server);
+void hellwm_config_bind_add(const char *key, void *val, bool isFunc);
 void hellwm_config_bind_free_array(struct hellwm_config_binds *binds);
 void hellwm_config_set_monitor(lua_State *L, struct wlr_output *output);
 void hellwm_config_set_keyboard(lua_State *L, struct wlr_keyboard *keyboard);

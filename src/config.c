@@ -1,6 +1,7 @@
 #include <lauxlib.h>
 #include <linux/limits.h>
 #include <lua.h>
+#include <stdint.h>
 #include <stdio.h>
 #include <endian.h>
 #include <stddef.h>
@@ -26,7 +27,8 @@
 
 #define tINT *((int *) 
 #define tCHAR *((char *) 
-#define tFLOAT *((float *) 
+#define tFLOAT *((float *)  
+#define tUINT8 *((uint8_t*)
 #define tDOUBLE *((double *) 
 #define tBOOLEAN *((boolean *)
 
@@ -43,6 +45,8 @@ void hellwm_config_setup(struct hellwm_server *server)
 
     hellwm_lua_expose_functions(server);
     hellwm_luaLoadFile(server->L, server->configPath);
+
+    hellwm_config_set_decoration(server->L);
 }
 
 void hellwm_lua_expose_functions(struct hellwm_server *server)
@@ -129,6 +133,28 @@ void hellwm_config_bind_free_array(struct hellwm_config_binds *binds)
     free(binds);
 }
 
+void hellwm_config_set_decoration(lua_State *L)
+{
+    if (hellwm_luaGetTable(L, (char*)hellwm_config_groups_arr[HELLWM_CONFIG_DECORATION]))
+    {
+        uint8_t window_decoration_mode = tUINT8 hellwm_luaGetField(L, "window_decoration_mode", LUA_TNUMBER));
+
+        global_server->default_decoration_mode = window_decoration_mode;
+    }
+    else /* Set to default */
+    {
+        global_server->default_decoration_mode = 2; /* Server side */ 
+    }
+
+    
+    hellwm_log(
+                HELLWM_LOG,
+                "Decoration settings: window_decoration_mode: %d",
+                global_server->default_decoration_mode 
+        );
+
+}
+
 void hellwm_config_set_monitor(lua_State *L, struct wlr_output *output)
 {
     char name[32]="";
@@ -153,7 +179,6 @@ void hellwm_config_set_monitor(lua_State *L, struct wlr_output *output)
     wlr_output_state_init(&state);
     wlr_output_state_set_enabled(&state, true);
     struct wlr_output_mode *mode = wlr_output_preferred_mode(output);
-    
     
     int32_t lx = 0, ly = 0;
 

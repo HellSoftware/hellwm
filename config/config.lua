@@ -7,11 +7,16 @@ bind("p", "pavucontrol")
 bind("Return", "alacritty")
 bind("b", "firefox")
 bind("e", "nemo")	
-bind("l", "fuzzel")
+bind("o", "fuzzel")
 bind("c", focus_next)
 bind("q", kill_active)
 bind("f", toggle_fullscreen)
-bind("n", "alacritty")
+bind("l", "libreoffice")
+bind("0", "0ad")
+
+decoration = {
+  window_decoration_mode = 1
+}
 
 -- Keyboard Configuration
 keyboard = {
