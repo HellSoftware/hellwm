@@ -115,6 +115,7 @@ struct hellwm_server
 	struct wl_listener output_manager_apply;
 	struct wlr_screencopy_manager_v1 *screencopy_manager;
 	struct wlr_xdg_decoration_manager_v1 *xdg_decoration_manager;	
+	struct wl_listener xdg_decoration_listener;
 
 #ifdef XWAYLAND
 	xcb_atom_t atoms[ATOM_LAST];
@@ -162,10 +163,18 @@ struct hellwm_toplevel
 	struct hellwm_tile_tree* tile_node;
 	struct wl_listener request_maximize;
 	struct wl_listener request_fullscreen;
-	struct wl_listener destroy_decoration;
 	struct wlr_xdg_toplevel *xdg_toplevel;
-	struct wl_listener set_decoration_mode;
-	struct wlr_xdg_toplevel_decoration_v1 *decoration; 
+	struct hellwm_decoration_toplevel *decoration;
+};
+
+struct hellwm_decoration_toplevel
+{
+	struct wl_listener destroy;
+	struct wl_listener request_mode;
+	struct wl_listener surface_commit;
+
+	struct hellwm_toplevel *toplevel;
+	struct wlr_xdg_toplevel_decoration_v1 *wlr_decoration;
 };
 
 struct hellwm_popup
@@ -213,6 +222,8 @@ void hellwm_config_reload(struct hellwm_server *server);
 void hellwm_destroy_everything(struct hellwm_server *server);
 void hellwm_toggle_fullscreen_toplevel(struct hellwm_server *server);
 void hellwm_toplevel_remove_from_list(struct wlr_xdg_toplevel *toplevel);
+void xdg_toplevel_decoration_request_destroy(struct wl_listener *listener, void *data);
+void xdg_toplevel_decoration_request_decoration_mode(struct wl_listener *listener, void *data);
 void hellwm_toplevel_add_to_list(struct hellwm_server *server, struct hellwm_toplevel *new_toplevel);
 
 static void exec(char *command);
@@ -248,18 +259,16 @@ static void process_cursor_resize(struct hellwm_server *server, uint32_t time);
 static void keyboard_handle_modifiers(struct wl_listener *listener, void *data);
 static void xdg_toplevel_request_move(struct wl_listener *listener, void *data);
 static void seat_request_set_selection(struct wl_listener *listener, void *data);
-static void xdg_toplevel_request_resize(struct wl_listener *listener, void *data) ;
+static void xdg_toplevel_request_resize(struct wl_listener *listener, void *data);
 static void server_cursor_motion_absolute(struct wl_listener *listener, void *data);
 static void xdg_toplevel_request_maximize(struct wl_listener *listener, void *data);
 static void xdg_toplevel_request_fullscreen(struct wl_listener *listener, void *data);
-void xdg_toplevel_decoration_request_destroy(struct wl_listener *listener, void *data);
 static void focus_toplevel(struct hellwm_toplevel *toplevel, struct wlr_surface *surface);
 static void hellwm_resize_toplevel_by(struct hellwm_server *server, int32_t w, int32_t h);
 static void server_new_touch(struct hellwm_server *server, struct wlr_input_device *device);
 static void server_new_tablet(struct hellwm_server *server, struct wlr_input_device *device);
 static void server_new_pointer(struct hellwm_server *server, struct wlr_input_device *device);
 static void server_new_keyboard(struct hellwm_server *server, struct wlr_input_device *device);
-void xdg_toplevel_decoration_request_decoration_mode(struct wl_listener *listener, void *data);
 static void begin_interactive(struct hellwm_toplevel *toplevel, enum hellwm_cursor_mode mode, uint32_t edges);
 static struct hellwm_toplevel *desktop_toplevel_at(struct hellwm_server *server, double lx, double ly, struct wlr_surface **surface, double *sx, double *sy);
 

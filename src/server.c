@@ -1,4 +1,5 @@
 #include <lua.h>
+#include <stdalign.h>
 #include <time.h>
 #include <stdio.h>
 #include <wayland-cursor.h>
@@ -961,31 +962,41 @@ static void xdg_popup_commit(struct wl_listener *listener, void *data) {
 
 static void xdg_handle_decoration(struct wl_listener *listener, void *data)
 {
-	struct wlr_xdg_toplevel_decoration_v1 *dec = data;
+	hellwm_log(HELLWM_DEBUG, "xdg_handle_decoration() called");
 
-	struct hellwm_toplevel *toplevel = wl_container_of(listener, toplevel, set_decoration_mode);
+	struct wlr_xdg_toplevel_decoration_v1 *wlr_decoration = data;
+	struct wlr_xdg_toplevel *xdg_toplevel = wlr_decoration->toplevel;
+	struct hellwm_toplevel *toplevel = wl_container_of(listener, toplevel, xdg_toplevel);
 
+	toplevel->xdg_toplevel = wlr_decoration->toplevel;
+	
+	struct hellwm_decoration_toplevel *decoration = calloc(1, sizeof(*decoration));
+	decoration->wlr_decoration = wlr_decoration;
+	decoration->toplevel = toplevel;
 
-	wl_signal_add(&dec->events.request_mode, ((toplevel->set_decoration_mode.notify = xdg_toplevel_decoration_request_decoration_mode), &toplevel->set_decoration_mode));
-	wl_signal_add(&dec->events.destroy, ((toplevel->destroy_decoration.notify = xdg_toplevel_decoration_request_decoration_mode), &toplevel->destroy_decoration));
+	wl_signal_add(&wlr_decoration->events.destroy, &decoration->destroy);
+	decoration->destroy.notify = xdg_toplevel_decoration_request_destroy;
 
-	xdg_toplevel_decoration_request_decoration_mode(&toplevel->set_decoration_mode, dec);
+	wl_signal_add(&wlr_decoration->events.request_mode, &decoration->request_mode);
+	decoration->request_mode.notify = xdg_toplevel_decoration_request_decoration_mode;
 }
 
 void xdg_toplevel_decoration_request_decoration_mode(struct wl_listener *listener, void *data)
 {
-	// TODO: FROM CONFIG
-	struct hellwm_toplevel *toplevel = wl_container_of(listener, toplevel, set_decoration_mode);
-	wlr_xdg_toplevel_decoration_v1_set_mode(toplevel->decoration,
+	// TODO: FROM CONFIG, server side by default
+	hellwm_log(HELLWM_DEBUG, "xdg_toplevel_decoration_request_decoration_mode() called");	
+
+	struct hellwm_decoration_toplevel *decoration = wl_container_of(listener, decoration, request_mode);
+	wlr_xdg_toplevel_decoration_v1_set_mode(decoration->wlr_decoration,
 		WLR_XDG_TOPLEVEL_DECORATION_V1_MODE_SERVER_SIDE);
 }
 
 void xdg_toplevel_decoration_request_destroy(struct wl_listener *listener, void *data)
 {
-	struct hellwm_toplevel *toplevel = wl_container_of(listener, toplevel, set_decoration_mode);
+	hellwm_log(HELLWM_DEBUG, "xdg_toplevel_decoration_request_destroy() called");
 
-	wl_list_remove(&toplevel->destroy_decoration.link);
-	wl_list_remove(&toplevel->set_decoration_mode.link);
+	struct hellwm_decoration_toplevel *decoration = wl_container_of(listener, decoration, destroy);
+	free(decoration);
 }
 
 static void xdg_popup_destroy(struct wl_listener *listener, void *data) {
@@ -1110,17 +1121,19 @@ void hellwm_setup(struct hellwm_server *server)
 	server->new_layer_surface.notify = handle_layer_shell_surface;
 	*/
 
-	wlr_server_decoration_manager_set_default_mode(
+	server->xdg_decoration_manager = wlr_xdg_decoration_manager_v1_create(server->wl_display);
+	if (!server->xdg_decoration_manager)
+	{
+		hellwm_log(HELLWM_ERROR, "Failed to create xdg decoration manager");
+		exit(EXIT_FAILURE);
+	}
 
+	wl_signal_add(&server->xdg_decoration_manager->events.new_toplevel_decoration, &server->xdg_decoration_listener);
+	server->xdg_decoration_listener.notify = xdg_handle_decoration;
+
+	wlr_server_decoration_manager_set_default_mode(
 			wlr_server_decoration_manager_create(server->wl_display),
 			WLR_SERVER_DECORATION_MANAGER_MODE_SERVER);
-	server->xdg_decoration_manager = wlr_xdg_decoration_manager_v1_create(server->wl_display);
-
-	struct wl_listener xdg_decoration_listener;
-	xdg_decoration_listener.notify = xdg_handle_decoration;
-
-	/* TODO - fix, here: for example when opening kitty, foot, alacritty, wayland compositor crashes */
-	//wl_signal_add(&server->xdg_decoration_manager->events.new_toplevel_decoration, &xdg_decoration_listener);
 	
 #ifdef XWAYLAND
 	wl_list_init(&server->xtoplevels);

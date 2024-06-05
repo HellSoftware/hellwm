@@ -4,13 +4,14 @@
 -- Keybinds
 bind("Escape", "killall hellwm")
 bind("p", "pavucontrol")
-bind("Return", "kitty")
+bind("Return", "alacritty")
 bind("b", "firefox")
 bind("e", "nemo")	
 bind("l", "fuzzel")
 bind("c", focus_next)
 bind("q", kill_active)
 bind("f", toggle_fullscreen)
+bind("n", "alacritty")
 
 -- Keyboard Configuration
 keyboard = {
