@@ -645,6 +645,18 @@ static void server_cursor_button(struct wl_listener *listener, void *data)
 	}
 }
 
+static void hellwm_cursor_move(struct hellwm_server *server, double dx, double dy)
+{
+	wlr_cursor_move(server->cursor, NULL, dx, dy);
+	process_cursor_motion(server, 0);
+}
+
+static void hellwm_cursor_set_position(struct hellwm_server *server, double x, double y)
+{
+	wlr_cursor_warp(server->cursor, NULL, x, y);
+	process_cursor_motion(server, 0);
+}
+
 static void server_cursor_axis(struct wl_listener *listener, void *data) {
 	/* This event is forwarded by the cursor when a pointer emits an axis event,
 	 * for example when you move the scroll wheel. */

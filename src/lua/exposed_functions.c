@@ -72,6 +72,20 @@ void hellwm_lua_expose_function(struct hellwm_server *server, void *function, ch
    hellwm_log(HELLWM_LOG, "LUA: Exposed function: %s ", name);
 }
 
+void hellwm_c_cursor_move(lua_State *L)
+{
+   double dx = 0; // luaL_checkinteger(L, 1); TODO: read x, y, dx, dy values with func
+   double dy = 0; // luaL_checkinteger(L, 2);
+   hellwm_cursor_move(global_server, dx, dy);
+}
+
+void hellwm_c_cursor_set_position(lua_State *L)
+{
+   double x = 0; // luaL_checkinteger(L, 1);
+   double y = 0; // luaL_checkinteger(L, 2);
+   hellwm_cursor_set_position(global_server, x, y);
+}
+
 void hellwm_c_resize_toplevel_by(lua_State *L)
 {
    int32_t w = luaL_checkinteger(L, 1);

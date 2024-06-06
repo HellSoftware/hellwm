@@ -56,6 +56,8 @@ void hellwm_lua_expose_functions(struct hellwm_server *server)
     hellwm_lua_expose_function(server, hellwm_c_bind               , "bind");
     hellwm_lua_expose_function(server, hellwm_c_destroy            , "destroy");
     hellwm_lua_expose_function(server, hellwm_c_resize_toplevel_by , "resize_by");
+    hellwm_lua_expose_function(server, hellwm_c_cursor_move        , "cursor_move");
+    hellwm_lua_expose_function(server, hellwm_c_cursor_set_position, "cursor_set_position");
 
     hellwm_lua_expose_function(server, hellwm_c_exec               , FUNCTION_NAME(exec));
     hellwm_lua_expose_function(server, hellwm_c_log_flush          , FUNCTION_NAME(log_flush));

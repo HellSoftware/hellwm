@@ -12,8 +12,8 @@ bind("c", focus_next)
 bind("q", kill_active)
 bind("f", toggle_fullscreen)
 bind("l", "libreoffice")
-bind("0", "0ad")
 
+-- Appearance
 decoration = {
   window_decoration_mode = 1
 }
@@ -51,6 +51,7 @@ env("GTK_THEME", "Adwaita:dark")
 -- Hello Message :)
 print("Welcome to HellWM")
 
+-- Main Loop function
 loop = function()
   print ("Hello World!")
   sleep(1)
