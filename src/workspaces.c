@@ -182,6 +182,8 @@ void hellwm_tile_insert_toplevel(struct hellwm_tile_tree *node, struct hellwm_to
 	wlr_scene_node_set_position(&branch->toplevel->scene_tree->node, x, y);
 	wlr_xdg_toplevel_set_size(new_toplevel->xdg_toplevel, new_width, new_height);
 
+	hellwm_cursor_set_position(global_server, x + new_width/2, y + new_height/2);
+
 	hellwm_log(HELLWM_DEBUG, "Inserting toplevel to the %p branch at %d %d with %d %d",branch, x, y, new_width, new_height);
 }
 

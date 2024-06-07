@@ -206,6 +206,7 @@ static void focus_toplevel(struct hellwm_toplevel *toplevel, struct wlr_surface 
 	wl_list_insert(&server->toplevels, &toplevel->link);
 	/* Activate the new surface */
 	wlr_xdg_toplevel_set_activated(toplevel->xdg_toplevel, true);
+
 	/*
 	 * Tell the seat to have the keyboard enter this surface. wlroots will keep
 	 * track of this and automatically send key events to the appropriate
@@ -216,6 +217,14 @@ static void focus_toplevel(struct hellwm_toplevel *toplevel, struct wlr_surface 
 		wlr_seat_keyboard_notify_enter(seat, toplevel->xdg_toplevel->base->surface,
 			keyboard->keycodes, keyboard->num_keycodes, &keyboard->modifiers);
 	}
+
+	/*
+	struct wlr_box box;
+	wlr_xdg_surface_get_geometry(toplevel->xdg_toplevel->base, &box);
+	double x = box.x + (box.width / 2);
+	double y = box.y + (box.height / 2);
+	hellwm_cursor_set_position(server, x, y);
+	*/
 }
 
 static void kill_active(struct hellwm_server *server)
@@ -579,7 +588,8 @@ static void process_cursor_motion(struct hellwm_server *server, uint32_t time) {
 		wlr_seat_pointer_notify_enter(seat, surface, sx, sy);
 		wlr_seat_pointer_notify_motion(seat, time, sx, sy);
 
-		focus_toplevel(toplevel, surface); /* 
+		focus_toplevel(toplevel, surface); 
+													  /*
 														 TODO - add config variable
 													  * for focusing toplevel by cursor position
 													  * - true by default
