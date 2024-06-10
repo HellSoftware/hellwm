@@ -3,7 +3,6 @@
 
 -- Keybinds
 bind("Escape", "killall hellwm")
-bind("p", "pavucontrol")
 bind("Return", "alacritty")
 bind("b", "firefox")
 bind("e", "nemo")	
@@ -11,7 +10,6 @@ bind("o", "fuzzel")
 bind("c", focus_next)
 bind("q", kill_active)
 bind("f", toggle_fullscreen)
-bind("l", "libreoffice")
 
 -- Appearance
 decoration = {
@@ -22,18 +20,13 @@ decoration = {
 keyboard = {
   delay = 200,
   rate = 50,
-  layout = "pl"
+  layout = "us"
 }
 
 -- Monitors Configuration
 monitor_DP_1 = {
   x = 0,
-  y = 0
-}
-
-monitor_DP_2 = {
-  x = 2560,
-  y = -300,
+  y = 0,
   scale = 1,
   transfrom = 1,
   vrr = true

@@ -50,27 +50,20 @@
 #include "./server.c"
 #include "./config.c"
 
-void hellwm_print_usage(int *argc, char**argv[])
-{
-	// TODO add usage options under -h
-}
+#define cmp(x) strcmp(argv[i], x) == 0
+
+char * configPath = "~/.config/hellwm/config.lua";
+
+void hellwm_print_usage(int argc, char*argv[]);
 
 int main(int argc, char *argv[])
 {
-	hellwm_print_usage(&argc, &argv);
-
-	/*	Delete old log file
-	 * TODO it will be improved later: more details, system info, etc.
-	 */
+	hellwm_print_usage(argc, argv);
 	hellwm_log_flush();
 
 	struct hellwm_server server = {NULL};
 
-	/* 
-	 *	Hardcoded config path - it will be changed soon,
-	 * it's just easier to debug everything
-	 */
-	server.configPath = "config/config.lua";
+	server.configPath = configPath;
 
 	/* Lua setup */
 	hellwm_config_setup(&server);
@@ -87,4 +80,21 @@ int main(int argc, char *argv[])
 	hellwm_destroy_everything(&server);
 
 	return 0;
+}
+
+void hellwm_print_usage(int argc, char*argv[])
+{
+	for (int i = 0; i < argc; i++)
+	{
+		if (cmp("-c"))
+		{
+			if (i+1 >= argc)
+			{
+				fprintf(stderr, "Usage: %s no argument provided", argv[0]);
+				exit(1);
+			}
+			configPath = argv[i+1];
+			i++;
+		}
+	}
 }

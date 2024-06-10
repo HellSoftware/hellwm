@@ -1227,6 +1227,7 @@ void hellwm_setup(struct hellwm_server *server)
 
 	server->screencopy_manager = wlr_screencopy_manager_v1_create(server->wl_display);
 
+
 	/* Set the WAYLAND_DISPLAY environment variable to our socket, 
 	 * XDG_CURRENT_DESKTOP to HellWM and run the startup commands if ANY. */
 
