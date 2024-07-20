@@ -1,7 +1,7 @@
 WAYLAND_PROTOCOLS=$(shell pkg-config --variable=pkgdatadir wayland-protocols)
 WAYLAND_SCANNER=$(shell pkg-config --variable=wayland_scanner wayland-scanner)
 LIBS=\
-	 $(shell pkg-config --cflags --libs "wlroots-0.18") \
+	 $(shell pkg-config --cflags --libs "wlroots-0.19") \
 	 $(shell pkg-config --cflags --libs wayland-server) \
 	 $(shell pkg-config --cflags --libs xkbcommon) 		 \
 	 -llua  															 \
