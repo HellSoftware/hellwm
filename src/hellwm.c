@@ -51,13 +51,16 @@
 #include "./config.c"
 
 #define cmp(x) strcmp(argv[i], x) == 0
-
-char * configPath = "~/.config/hellwm/config.lua";
+#define CONFIG_HELLWM_DIR "/.config/hellwm/config.lua"
 
 void hellwm_print_usage(int argc, char*argv[]);
+void config_path_setup();
+
+char configPath[64] = ""; 
 
 int main(int argc, char *argv[])
 {
+	config_path_setup();
 	hellwm_print_usage(argc, argv);
 	hellwm_log_flush();
 
@@ -82,6 +85,20 @@ int main(int argc, char *argv[])
 	return 0;
 }
 
+void config_path_setup()
+{
+	char *homedir = getenv("HOME");
+	printf("%s\n", homedir);
+	if (homedir == NULL)
+	{
+		hellwm_log(HELLWM_ERROR, "Failed to get home directory");
+		exit(EXIT_FAILURE);
+	}
+	hellwm_log(HELLWM_DEBUG, "Home directory: %s", homedir);
+	strcpy(configPath, homedir);
+	strcat(configPath, CONFIG_HELLWM_DIR);
+}
+
 void hellwm_print_usage(int argc, char*argv[])
 {
 	for (int i = 0; i < argc; i++)
@@ -93,7 +110,7 @@ void hellwm_print_usage(int argc, char*argv[])
 				fprintf(stderr, "Usage: %s no argument provided", argv[0]);
 				exit(1);
 			}
-			configPath = argv[i+1];
+			strcpy(configPath, argv[i+1]);
 			i++;
 		}
 	}

@@ -53,4 +53,4 @@ hellcli: src/hellcli/hellcli.c
 
 .PHONY: clean
 clean:
-	rm -f hellwm hellcli xdg-shell-protocol.h xdg-shell-protocol.c wlr-layer-shell-unstable-v1-protocol.h logfile.txt
+	rm -f hellwm hellcli xdg-shell-protocol.h xdg-shell-protocol.c wlr-layer-shell-unstable-v1-protocol.h hellwmlog.log
