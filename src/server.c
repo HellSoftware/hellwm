@@ -57,6 +57,8 @@
 #include "../src/lua/lua_util.c"
 #include "../src/workspaces.c"
 
+#define LOGPATH "hellwmlog.log" // TODO: change to tmp
+
 typedef void (*FunctionPtr)();
 
 /* Execute command in new thread */
@@ -71,9 +73,9 @@ static void exec(char *command)
 // LOG
 void hellwm_log(char *logtype, char *format, ...)
 {
-	// TODO: add log verbosity levels
+	// TODO: add log verbosity levels, date, delete old log after x days
 	
-	char *hellwm_log_filename = "logfile.txt";
+	char *hellwm_log_filename = LOGPATH;
 	char content[128];
 
 	strcpy(content, logtype);
@@ -84,9 +86,6 @@ void hellwm_log(char *logtype, char *format, ...)
 	va_list args;
    va_start(args, format);
 
-   //vprintf(format, args);
-	//printf("\n");
-
 	FILE *logfile = fopen(hellwm_log_filename,"a");
 
 	fseek(logfile, 0L, SEEK_END);
@@ -95,7 +94,6 @@ void hellwm_log(char *logtype, char *format, ...)
 		fprintf(logfile, "******** HELLWM LOGFILE ********\n");
  	}
 
-	//fprintf(logfile, "\n%s: ", logtype);
    va_end(args);
 	vfprintf(logfile, content, args);
 	fclose(logfile);	
@@ -103,7 +101,7 @@ void hellwm_log(char *logtype, char *format, ...)
 
 void hellwm_log_flush()
 {
-	char *helwm_log_filename = "logfile.txt";
+	char *helwm_log_filename = LOGPATH; 
 	if (remove(helwm_log_filename)==0)
 	{
 		hellwm_log(HELLWM_LOG, "logfile deleted"); 

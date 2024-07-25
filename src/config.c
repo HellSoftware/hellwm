@@ -22,6 +22,8 @@
 
 #include "../src/lua/exposed_functions.c"
 
+#define defaultconfigPATH "config/config.lua"
+
 /* purpose of this boolean define is just because this thing down there looks with it cool :) */
 #define boolean bool
 
@@ -44,6 +46,13 @@ void hellwm_config_setup(struct hellwm_server *server)
     hellwm_get_Server_g(server);
 
     hellwm_lua_expose_functions(server);
+
+    if (access(server->configPath, F_OK) == -1)
+    {
+        hellwm_log(HELLWM_ERROR, "Could not find %s, using default path instead", server->configPath);
+        hellwm_luaLoadFile(server->L, defaultconfigPATH);
+    }
+
     hellwm_luaLoadFile(server->L, server->configPath);
 
     hellwm_config_set_decoration(server->L);
