@@ -9,19 +9,18 @@ with nixpkgs; mkShell {
     lua
     gdb
     udev
-    libg
-    glib
-    glibc
     clang
+    seatd 
     libGL
     libGLU
     pixman
-    libutil
+    libgcc
     glxinfo
     gnumake
     libllvm
     llvm_18
     wayland
+    libinput 
     pkg-config
     xorg.libxcb
     libxkbcommon
