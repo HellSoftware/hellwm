@@ -1,11 +1,11 @@
 WAYLAND_PROTOCOLS=$(shell pkg-config --variable=pkgdatadir wayland-protocols)
 WAYLAND_SCANNER=$(shell pkg-config --variable=wayland_scanner wayland-scanner)
 LIBS=\
-	 $(shell pkg-config --cflags --libs "wlroots-0.19") \
+	 $(shell pkg-config --cflags --libs "wlroots-0.18") \
 	 $(shell pkg-config --cflags --libs wayland-server) \
 	 $(shell pkg-config --cflags --libs xkbcommon) 		 \
-	 -llua  															 \
-	 -lxcb
+	 $(shell pkg-config --cflags --libs lua)				 \
+	 $(shell pkg-config --cflags --libs xcb)				 \
 
 wlr-layer-shell-unstable-v1-protocol.h:
 	$(WAYLAND_SCANNER) server-header \
@@ -34,8 +34,8 @@ SRC=\
 	 ./src/lua/exposed_functions.c
 
 ARGS=\
-	  -Werror \
 	  -DWLR_USE_UNSTABLE
+# 	  -Werror \
 
 XWAYLAND=\
 	  -DXWAYLAND
@@ -53,4 +53,4 @@ hellcli: src/hellcli/hellcli.c
 
 .PHONY: clean
 clean:
-	rm -f hellwm hellcli xdg-shell-protocol.h xdg-shell-protocol.c wlr-layer-shell-unstable-v1-protocol.h hellwmlog.log
+	rm -f hellwm hellcli xdg-shell-protocol.h xdg-shell-protocol.c wlr-layer-shell-unstable-v1-protocol.h logfile.log

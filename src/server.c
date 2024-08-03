@@ -57,7 +57,7 @@
 #include "../src/lua/lua_util.c"
 #include "../src/workspaces.c"
 
-#define LOGPATH "hellwmlog.log" // TODO: change to tmp
+#define LOGPATH "logfile.log" // TODO: change to tmp
 
 typedef void (*FunctionPtr)();
 

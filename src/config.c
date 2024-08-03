@@ -27,13 +27,6 @@
 /* purpose of this boolean define is just because this thing down there looks with it cool :) */
 #define boolean bool
 
-#define tINT *((int *) 
-#define tCHAR *((char *) 
-#define tFLOAT *((float *)  
-#define tUINT8 *((uint8_t*)
-#define tDOUBLE *((double *) 
-#define tBOOLEAN *((boolean *)
-
 struct hellwm_config_binds global_keybinds;
 struct hellwm_server *global_server;
 
@@ -148,7 +141,7 @@ void hellwm_config_set_decoration(lua_State *L)
 {
     if (hellwm_luaGetTable(L, (char*)hellwm_config_groups_arr[HELLWM_CONFIG_DECORATION]))
     {
-        uint8_t window_decoration_mode = tUINT8 hellwm_luaGetField(L, "window_decoration_mode", LUA_TNUMBER));
+        uint8_t window_decoration_mode = (int)hellwm_luaGetFieldInteger(L, "window_decoration_mode");
 
         global_server->default_decoration_mode = window_decoration_mode;
     }
@@ -157,7 +150,6 @@ void hellwm_config_set_decoration(lua_State *L)
         global_server->default_decoration_mode = 2; /* Server side */ 
     }
 
-    
     hellwm_log(
                 HELLWM_LOG,
                 "Decoration settings: window_decoration_mode: %d",
@@ -191,20 +183,20 @@ void hellwm_config_set_monitor(lua_State *L, struct wlr_output *output)
     wlr_output_state_set_enabled(&state, true);
     struct wlr_output_mode *mode = wlr_output_preferred_mode(output);
     
-    int32_t lx = 0, ly = 0;
+    int lx = 0, ly = 0;
 
     if (hellwm_luaGetTable(L, name))
     {
-        int32_t  width      =  tFLOAT             hellwm_luaGetField(L, "width", LUA_TNUMBER));
-        int32_t  height     =  tFLOAT             hellwm_luaGetField(L, "height", LUA_TNUMBER));
-        int32_t  hz         =  (int32_t)tFLOAT    hellwm_luaGetField(L, "hz", LUA_TNUMBER));
-        int32_t  transfrom  =  tFLOAT             hellwm_luaGetField(L, "transfrom", LUA_TNUMBER));
-        
-                 lx         = (int32_t) tFLOAT    hellwm_luaGetField(L, "x", LUA_TNUMBER));
-                 ly         = (int32_t) tFLOAT    hellwm_luaGetField(L, "y", LUA_TNUMBER));
+        int   width      = hellwm_luaGetFieldInteger(L, "width");
+        int   height     = hellwm_luaGetFieldInteger(L, "height");
+        int   hz         = hellwm_luaGetFieldInteger(L, "hz");
+        int   transfrom  = hellwm_luaGetFieldInteger(L, "transfrom");
        
-        float    scale      =  tFLOAT             hellwm_luaGetField(L, "scale", LUA_TNUMBER));
-        bool     vrr        =  tBOOLEAN           hellwm_luaGetField(L, "vrr", LUA_TBOOLEAN));
+              lx         = hellwm_luaGetFieldInteger(L, "x");
+              ly         = hellwm_luaGetFieldInteger(L, "y");
+       
+        float scale      = hellwm_luaGetFieldFloat(L, "scale");
+        bool  vrr        = hellwm_luaGetFieldBool(L, "vrr");
         
         switch (transfrom)
         {
@@ -297,14 +289,14 @@ void hellwm_config_set_keyboard(lua_State *L, struct wlr_keyboard *keyboard)
 
     if (hellwm_luaGetTable(L, (char*)hellwm_config_groups_arr[HELLWM_CONFIG_KEYBOARD]))
     {
-        char * rules   = hellwm_luaGetField(L, "rules", LUA_TSTRING);
-        char * model   = hellwm_luaGetField(L, "model", LUA_TSTRING);
-        char * layout  = hellwm_luaGetField(L, "layout", LUA_TSTRING);
-        char * variant = hellwm_luaGetField(L, "variant", LUA_TSTRING);
-        char * options = hellwm_luaGetField(L, "options", LUA_TSTRING);
+        char * rules   = hellwm_luaGetFieldString(L, "rules");
+        char * model   = hellwm_luaGetFieldString(L, "model");
+        char * layout  = hellwm_luaGetFieldString(L, "layout");
+        char * variant = hellwm_luaGetFieldString(L, "variant");
+        char * options = hellwm_luaGetFieldString(L, "options");
 
-        int delay =  tFLOAT hellwm_luaGetField(L, "delay", LUA_TNUMBER));
-        int rate = tFLOAT hellwm_luaGetField(L, "rate", LUA_TNUMBER));
+        int delay = hellwm_luaGetFieldInteger(L, "delay");
+        int rate =  hellwm_luaGetFieldInteger(L, "rate");
 
         rule_names.rules   = rules;
         rule_names.model   = model;
@@ -315,10 +307,12 @@ void hellwm_config_set_keyboard(lua_State *L, struct wlr_keyboard *keyboard)
         wlr_keyboard_set_repeat_info(keyboard,rate,delay);
 
         hellwm_log(
-                HELLWM_LOG,
-                "New Keyboard: %s, layout: %s",
+                HELLWM_DEBUG,
+                "New Keyboard: %s, layout: %s, delay: %d, rate: %d",
                 keyboard->base.name,
-                layout 
+                layout, 
+                delay,
+                rate
         );
     }
     else

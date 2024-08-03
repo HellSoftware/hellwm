@@ -43,58 +43,67 @@ int hellwm_luaGetTable(lua_State *L, char *tableName)
  * Assuming table is at top of stack,
  * we just use lua_getglobal() before calling this function
  */ 
-void *hellwm_luaGetField(lua_State *L, char *fieldName, int lua_variableType)
+char* hellwm_luaGetFieldString(lua_State *L, char *fieldName)
 {
-  void *temp;
+  char *string_val = "";
 
   lua_pushstring(L, fieldName);
   lua_gettable(L, -2);
 
-  switch (lua_variableType)
+  if (lua_isstring(L, -1))
   {
-    case LUA_TNUMBER:
-      if (lua_isnumber(L, -1))
-      {
-        float val = lua_tonumber(L,-1); 
-        temp = (void *)&val;
-      }
-      else
-      {
-        float *val = NULL; 
-        temp = (void*)&val;
-      }
-      break;
-    
-    case LUA_TBOOLEAN:
-      if (lua_isboolean(L, -1))
-      {
-        bool val = lua_toboolean(L,-1); 
-        temp = (void *)&val;
-      }
-      else
-      {
-        bool *val = false; 
-        temp = (void*)&val;
-      }
-      break;
-    
-    case LUA_TSTRING:
-      if (lua_isstring(L, -1))
-      {
-        const char *val = lua_tostring(L, -1);
-        temp = (void*)val;
-      }
-      else
-      {
-        const char *val = NULL; 
-        temp = (void*)val;
-      }
-      break;
-    default:
-      temp = NULL;
-  } 
+    string_val = lua_tostring(L, -1);
+  }
+
   lua_pop(L,1);
-  return temp;
+  return string_val;
+}
+
+bool hellwm_luaGetFieldBool(lua_State *L, char *fieldName)
+{
+  bool bool_val = 0;
+  lua_pushstring(L, fieldName);
+  lua_gettable(L, -2);
+
+   if (lua_isboolean(L, -1))
+   {
+     bool_val = lua_toboolean(L,-1); 
+   }
+
+  lua_pop(L,1);
+  return bool_val;
+}
+
+int hellwm_luaGetFieldInteger(lua_State *L, char *fieldName)
+{
+  int int_val = 0;
+
+  lua_pushstring(L, fieldName);
+  lua_gettable(L, -2);
+
+  if (lua_isnumber(L, -1))
+  {
+    int_val = lua_tonumber(L,-1); 
+  }
+  
+  lua_pop(L,1);
+  return int_val;
+}
+
+float hellwm_luaGetFieldFloat(lua_State *L, char *fieldName)
+{
+  float float_val = 0;
+
+  lua_pushstring(L, fieldName);
+  lua_gettable(L, -2);
+
+  if (lua_isnumber(L, -1))
+  {
+    float float_val = lua_tonumber(L,-1); 
+  }
+  
+  lua_pop(L,1);
+  return float_val;
 }
 
 void hellwm_luaGetTableField(lua_State *L, char *tableName, char *fieldName)
