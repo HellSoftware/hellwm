@@ -1,0 +1,5 @@
+[Desktop Entry]
+Name=HellWM
+Comment=Modular Wayland Compositor with features.
+Exec=hellwm
+Type=Application

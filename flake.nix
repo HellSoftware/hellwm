@@ -13,7 +13,7 @@
         pname = "hellwm";
         version = "0.0.1";
 
-        src = pkgs.lib.cleanSource ./src/..;
+        src = pkgs.lib.cleanSource ./.;
 
         buildInputs = with pkgs; [
           pixman
@@ -26,7 +26,9 @@
           wayland-protocols
         ];
 
-        buildPhase = "make";
+        buildPhase = ''
+          make
+        '';
 
         installPhase = ''
           mkdir -p $out/bin
@@ -36,7 +38,6 @@
         meta = with pkgs.lib; {
           description = "HellWM";
           homepage = "https://github.com/HellSoftware/HellWM";
-          license = licenses.mit;
           maintainers = [ "danihek" ];
         };
       };

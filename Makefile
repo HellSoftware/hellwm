@@ -6,6 +6,11 @@ PKG_CONFIG = pkg-config
 USR_LOCAL_BIN = /usr/local/bin
 USR_SHARE = /usr/share
 
+XWAYLAND =
+XLIBS =
+#XWAYLAND = -DXWAYLAND
+#XLIBS = xcb xcb-icccm
+
 # FLAGS
 CFLAGS = -I. -DWLR_USE_UNSTABLE -D_POSIX_C_SOURCE=200809L -DVERSION=\"$(VERSION)\" $(XWAYLAND)
 DEVCFLAGS = -g -pedantic -Wall -Wextra -Wdeclaration-after-statement -Wno-unused-parameter -Wno-sign-compare -Wshadow -Wunused-macros\
@@ -48,10 +53,10 @@ dist: clean
 install: hellwm
 	mkdir -p $(USR_LOCAL_BIN)
 	cp -f hellwm $(USR_LOCAL_BIN)
-	chmod 755 $(USR_LOCAL_BIN)/hellwm
+	chmod 755 $(USR_LOCAL_BIN)/hellwm # chmod u=rwx,g=rx,o=rx
 	mkdir -p $(USR_SHARE)/wayland-sessions
 	cp -f hellwm.desktop $(USR_SHARE)/wayland-sessions/hellwm.desktop
-	chmod 644 $(USR_SHARE)/wayland-sessions/hellwm.desktop
+	chmod 644 $(USR_SHARE)/wayland-sessions/hellwm.desktop # chmod u=rwx,g=rx,o=rx
 uninstall:
 	rm -f $(USR_LOCAL_BIN)/hellwm $(USR_SHARE)/wayland-sessions/hellwm.desktop
 
