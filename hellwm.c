@@ -52,18 +52,20 @@ struct hellwm_server
    const char *socket;
    unsigned int cursor_mode;
    double cursor_grab_x, cursor_grab_y;
+
+   /* hellwm */
    struct hellwm_toplevel *grabbed_toplevel;
+   struct hellwm_layer_surface *hellwm_layer_surface;
 
    /* wayland */
    struct wl_list outputs;
    struct wl_list toplevels;
    struct wl_list keyboards;
 
-	struct wl_display *display;
-
+   struct wl_display *display;
 
    /* wlroots */
-	struct wlr_box grab_geometry;
+   struct wlr_box grab_geometry;
    struct wlr_box output_layout_geometry;
 
    struct wlr_scene *scene;
@@ -87,7 +89,7 @@ struct hellwm_server
 
    struct wlr_output_manager_v1 *output_manager;
    struct wlr_xdg_activation_v1 *xdg_activation; 
-	struct wlr_screencopy_manager_v1 *screencopy_manager;
+   struct wlr_screencopy_manager_v1 *screencopy_manager;
    struct wlr_data_control_manager_v1 *data_control_manager;
 
 
@@ -130,34 +132,34 @@ struct hellwm_cursor
 
 struct hellwm_keyboard
 {
-	struct wl_list link;
-	struct wlr_keyboard *wlr_keyboard;
-
+   struct wl_list link;
+   struct wlr_keyboard *wlr_keyboard;
+   
    /* listeners */
-	struct wl_listener key;
-	struct wl_listener destroy;
-	struct wl_listener modifiers;
+   struct wl_listener key;
+   struct wl_listener destroy;
+   struct wl_listener modifiers;
 };
 
 struct hellwm_layer_surface
 {
-	int mapped;
+   int mapped;
    int isfloating;
    unsigned int type; /* layershell: background = 0; bottom = 1; top = 2; overlay = 3 */ 
-
-	struct wl_list link;
-
-	struct wlr_box geometry;
-	struct wlr_scene_tree *scene;
-	struct wlr_scene_tree *popups;
-
-	struct wlr_layer_surface_v1 *layer_surface;
-	struct wlr_scene_layer_surface_v1 *scene_layer;
-
+   
+   struct wl_list link;
+   
+   struct wlr_box geometry;
+   struct wlr_scene_tree *scene;
+   struct wlr_scene_tree *popups;
+   
+   struct wlr_layer_surface_v1 *layer_surface;
+   struct wlr_scene_layer_surface_v1 *scene_layer;
+   
    /* listeners */
-	struct wl_listener unmap;
-	struct wl_listener destroy;
-	struct wl_listener surface_commit;
+   struct wl_listener unmap;
+   struct wl_listener destroy;
+   struct wl_listener surface_commit;
 };
 
 struct hellwm_toplevel
@@ -197,7 +199,7 @@ struct hellwm_toplevel
 struct hellwm_output
 {
    struct wl_list link;
-   struct wl_list layers[4];
+   struct wl_list layers[4]; /* hellwm_layer_surface.link */
 
    struct wlr_box output_area;
    struct wlr_box window_area;
