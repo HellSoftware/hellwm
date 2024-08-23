@@ -1,3 +1,4 @@
+#include "xkbcommon/xkbcommon-keysyms.h"
 #include <stdio.h>
 #include <unistd.h>
 #include <stdlib.h>
@@ -64,8 +65,9 @@ struct hellwm_server
    struct wlr_box output_layout_geometry;
 
    struct wlr_scene *scene;
-   struct wlr_scene_rect *scene_rect;
    struct wlr_scene_tree *drag_icon;
+   struct wlr_scene_rect *scene_rect;
+   struct wlr_scene_output_layout *scene_output_layout;
    struct wlr_scene_tree *layer_surfaces[scene_layers_count]; 
 
    struct wlr_seat *seat;
@@ -236,6 +238,7 @@ static void handle_output_manager_apply(struct wl_listener *listener, void *data
 /* global variables*/
 struct hellwm_server server;
 
+/* functions implementations */
 void LOG(const char *format, ...)
 {
 	va_list ap;
@@ -248,24 +251,6 @@ void ERR(char *where)
 {
    perror(where);
    exit (1);
-}
-
-static int toplevel_is_rendered(struct hellwm_toplevel *toplevel, struct hellwm_output *output)
-{
-	struct wlr_surface_output *surface_output;
-	int unused_lx, unused_ly;
-
-	if (!wlr_scene_node_coords(&toplevel->scene->node, &unused_lx, &unused_ly))
-		return 0;
-
-	wl_list_for_each(surface_output, &toplevel->xdg_toplevel->base->surface->current_outputs, link)
-   {
-		if (surface_output->output == output->wlr_output)
-      {
-			return 1;
-      }
-   }
-	return 0;
 }
 
 void arrange_layers(struct hellwm_output *output)
@@ -527,6 +512,13 @@ static bool handle_keybinding(xkb_keysym_t sym)
 	   	wl_display_terminate(server.display);
 	   	break;
 
+      case XKB_KEY_Return:
+         if (fork() == 0)
+	      {
+	         execl("/bin/sh", "/bin/sh", "-c", "foot", (void *)NULL);
+	      }
+	      break;
+
 	   default:
 		   return false;
 	}
@@ -693,7 +685,6 @@ static void handle_cursor_button(struct wl_listener *listener, void *data)
 		/* Focus that client if the button was _pressed_ */
 		hellwm_focus_toplevel(toplevel, surface);
 	}
-
 }
 
 static void handle_cursor_motion_relative(struct wl_listener *listener, void *data)
@@ -796,9 +787,9 @@ static void handle_output_layout_update(struct wl_listener *listener, void *data
 
 		wlr_output_layout_get_box(server.output_layout, output->wlr_output, &output->output_area);
 		output->window_area = output->output_area;
-		wlr_scene_output_set_position(output->scene_output, output->output_area.x, output->output_area.y);
-		wlr_scene_node_set_position(&output->output_scene_rect->node, output->output_area.x, output->output_area.y);
-		wlr_scene_rect_set_size(output->output_scene_rect, output->output_area.width, output->output_area.height);
+      //wlr_scene_output_set_position(output->scene_output, output->output_area.x, output->output_area.y);
+		//wlr_scene_node_set_position(&output->output_scene_rect->node, output->output_area.x, output->output_area.y);
+		//wlr_scene_rect_set_size(output->output_scene_rect, output->output_area.width, output->output_area.height);
 
 		arrange_layers(output);
 
@@ -880,25 +871,14 @@ static void handle_output_frame(struct wl_listener *listener, void *data)
 {
 	/* This function is called every time an output is ready to display a frame,
 	 * generally at the output's refresh rate (e.g. 60Hz). */
-	struct hellwm_output *output  = wl_container_of(listener, output, output_frame);
-   struct hellwm_toplevel *toplevel;
-
-	struct wlr_output_state pending = {0};
 	struct timespec now;
+	struct wlr_scene *scene = server.scene;
+	struct hellwm_output *output = wl_container_of(listener, output, output_frame);
+	struct wlr_scene_output *scene_output = wlr_scene_get_scene_output(scene, output->wlr_output);
 
-	/* Render if no XDG clients have an outstanding resize and are visible on
-	 * this monitor. */
-	wl_list_for_each(toplevel, &server.toplevels, link)
-   {
-		if (toplevel->resize && !toplevel->isfloating && toplevel_is_rendered(toplevel, output))
-      {
-        clock_gettime(CLOCK_MONOTONIC, &now);
-        wlr_scene_output_send_frame_done(output->scene_output, &now);
-        wlr_output_state_finish(&pending);
-      }
-	}
-
-	wlr_scene_output_commit(output->scene_output, NULL);
+	wlr_scene_output_commit(scene_output, NULL);
+	clock_gettime(CLOCK_MONOTONIC, &now);
+	wlr_scene_output_send_frame_done(scene_output, &now);
 }
 
 static void handle_output_destroy(struct wl_listener *listener, void *data)
@@ -937,54 +917,64 @@ static void handle_backend_new_output(struct wl_listener *listener, void *data)
 {
 	/* This event is raised by the backend when a new output (aka a display or
 	 * monitor) becomes available. */
-	struct wlr_output *wlr_output = data;
+   struct hellwm_output *output;
+   struct wlr_output_mode *mode;
 	struct wlr_output_state state;
-	struct hellwm_output *output;
+	struct wlr_output *wlr_output = data;
+   struct wlr_scene_output *scene_output;
+   struct wlr_output_layout_output *l_output;
 
-	if (!wlr_output_init_render(wlr_output, server.allocator, server.renderer))
-   {
-      LOG("wlr_output_init_render(): false");
-   }
+	/* Configures the output created by the backend to use our allocator
+	 * and our renderer. Must be done once, before commiting the output */
+	wlr_output_init_render(wlr_output, server.allocator, server.renderer);
 
-	output = wlr_output->data = calloc(1, sizeof(*output));
-	output->wlr_output = wlr_output;
-
-	for (size_t i = 0; i < (sizeof(output->layers)/sizeof(output->layers[0])); i++)
-		wl_list_init(&output->layers[i]);
-
+	/* The output may be disabled, switch it on. */
 	wlr_output_state_init(&state);
-	/* Initialize monitor state using configured rules */
+	wlr_output_state_set_enabled(&state, true);
 
-	/* The mode is a tuple of (width, height, refresh rate), and each
-	 * monitor supports only a specific set of modes. We just pick the
-	 * monitor's preferred mode; a more sophisticated compositor would let
-	 * the user configure it. */
-	wlr_output_state_set_mode(&state, wlr_output_preferred_mode(wlr_output));
+	/* Some backends don't have modes. DRM+KMS does, and we need to set a mode
+	 * before we can use the output. The mode is a tuple of (width, height,
+	 * refresh rate), and each monitor supports only a specific set of modes. We
+	 * just pick the monitor's preferred mode, a more sophisticated compositor
+	 * would let the user configure it. */
+   mode = wlr_output_preferred_mode(wlr_output);
+	if (mode != NULL)
+		wlr_output_state_set_mode(&state, mode);
 
-	/* Set up event listeners */
-   output->output_frame.notify = handle_output_frame;
-   wl_signal_add(&wlr_output->events.frame, &output->output_frame);
-
-   output->output_destroy.notify = handle_output_destroy;
-   wl_signal_add(&wlr_output->events.destroy, &output->output_destroy);
-
-   output->output_request_state.notify = handle_output_request_state;
-   wl_signal_add(&wlr_output->events.request_state, &output->output_request_state);
-
-	wlr_output_state_set_enabled(&state, 1);
+	/* Atomically applies the new output state. */
 	wlr_output_commit_state(wlr_output, &state);
 	wlr_output_state_finish(&state);
 
+	/* Allocates and configures our state for this output */
+	output = calloc(1, sizeof(*output));
+	output->wlr_output = wlr_output;
+
+	/* Sets up a listener for the output_frame event. */
+	output->output_frame.notify = handle_output_frame;
+	wl_signal_add(&wlr_output->events.frame, &output->output_frame);
+
+	/* Sets up a listener for the state request event. */
+	output->output_request_state.notify = handle_output_request_state;
+	wl_signal_add(&wlr_output->events.request_state, &output->output_request_state);
+
+	/* Sets up a listener for the destroy event. */
+	output->output_destroy.notify = handle_output_destroy;
+	wl_signal_add(&wlr_output->events.destroy, &output->output_destroy);
+
 	wl_list_insert(&server.outputs, &output->link);
 
-	output->output_scene_rect = wlr_scene_rect_create(server.layer_surfaces[scene_layer_fs], 0, 0, (float[]){1.f,.5f,1.f,.7f});
-	wlr_scene_node_set_enabled(&server.scene_rect->node, 0);
-
-	output->scene_output = wlr_scene_output_create(server.scene, wlr_output);
-	if (output->output_area.x == -1 && output->output_area.y == -1)
-		wlr_output_layout_add_auto(server.output_layout, wlr_output);
-	else
-		wlr_output_layout_add(server.output_layout, wlr_output, output->output_area.x, output->output_area.y);
+	/* Adds this to the output layout. The add_auto function arranges outputs
+	 * from left-to-right in the order they appear. A more sophisticated
+	 * compositor would let the user configure the arrangement of outputs in the
+	 * layout.
+	 *
+	 * The output layout utility automatically adds a wl_output global to the
+	 * display, which Wayland clients can see to find out information about the
+	 * output (such as DPI, scale factor, manufacturer, etc).
+	 */
+	l_output = wlr_output_layout_add_auto(server.output_layout, wlr_output);
+	scene_output = wlr_scene_output_create(server.scene, wlr_output);
+	wlr_scene_output_layout_add_output(server.scene_output_layout, l_output, scene_output);
 }
 
 int main(int argc, char *argv[])
@@ -1008,20 +998,14 @@ int main(int argc, char *argv[])
    /* Configure a listener to be notified when new outputs are available on the
     * backend. */
    wl_list_init(&server.outputs);
+   wl_list_init(&server.toplevels);
+	wl_list_init(&server.keyboards);
 
    server.backend_new_output.notify = handle_backend_new_output; 
    wl_signal_add(&server.backend->events.new_output, &server.backend_new_output);
    server.backend_new_input.notify = handle_backend_new_input;
    wl_signal_add(&server.backend->events.new_input, &server.backend_new_input);
-   
-   server.scene = wlr_scene_create();
-   server.scene_rect = wlr_scene_rect_create(&server.scene->tree, 0, 0, (float[]){1.f,.5f,1.f,.7f});
-   for (int i = 0; i < scene_layers_count; i++)
-   	server.layer_surfaces[i] = wlr_scene_tree_create(&server.scene->tree);
-   server.drag_icon = wlr_scene_tree_create(&server.scene->tree);
-	wlr_scene_node_place_below(&server.drag_icon->node, &server.layer_surfaces[scene_layer_block]->node);
-
-
+  
    /* Autocreates a renderer, either Pixman, GLES2 or Vulkan for us. The user
     * can also specify a renderer using the WLR_RENDERER env var. 
     * The renderer is responsible for defining the various pixel formats it  
@@ -1064,6 +1048,13 @@ int main(int argc, char *argv[])
    server.output_manager_test.notify = handle_output_manager_test;
 	wl_signal_add(&server.output_manager->events.test, &server.output_manager_test);
 
+   server.scene = wlr_scene_create();
+   server.scene_output_layout = wlr_scene_attach_output_layout(server.scene, server.output_layout);
+   server.scene_rect = wlr_scene_rect_create(&server.scene->tree, 0, 0, (float[]){0.4f, 0.f, 0.f, 1.f});
+   for (int i = 0; i < scene_layers_count; i++)
+   	server.layer_surfaces[i] = wlr_scene_tree_create(&server.scene->tree);
+   server.drag_icon = wlr_scene_tree_create(&server.scene->tree);
+	wlr_scene_node_place_below(&server.drag_icon->node, &server.layer_surfaces[scene_layer_block]->node);
 
    /* cursor */
    server.cursor = wlr_cursor_create();
@@ -1106,10 +1097,6 @@ int main(int argc, char *argv[])
 		ERR("wl_display_add_socket_auto()");
    }
 
-	unsetenv("DISPLAY");
-	setenv("WAYLAND_DISPLAY", server.socket, 1);
-	setenv("XCURSOR_SIZE", "24", 1);
-
 	/* Start the backend. */
 	if (!wlr_backend_start(server.backend))
    {
@@ -1117,6 +1104,10 @@ int main(int argc, char *argv[])
 		wl_display_destroy(server.display);
 		ERR("wlr_backend_start()");
    }
+
+	unsetenv("DISPLAY");
+	setenv("WAYLAND_DISPLAY", server.socket, 1);
+	setenv("XCURSOR_SIZE", "24", 1);
 
    /* Run the Wayland event loop. This does not return until you exit the
 	 * compositor. Starting the backend rigged up all of the necessary event
