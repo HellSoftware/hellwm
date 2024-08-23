@@ -1,4 +1,3 @@
-#include "xkbcommon/xkbcommon-keysyms.h"
 #include <stdio.h>
 #include <unistd.h>
 #include <stdlib.h>
@@ -9,6 +8,7 @@
 #include <wayland-server-core.h>
 
 #include <xkbcommon/xkbcommon.h>
+#include <xkbcommon/xkbcommon-keysyms.h>
 
 #include <wlroots-0.18/wlr/backend.h>
 #include <wlroots-0.18/wlr/util/log.h>
@@ -26,21 +26,22 @@
 #include <wlroots-0.18/wlr/types/wlr_output.h>
 #include <wlroots-0.18/wlr/types/wlr_pointer.h>
 #include <wlroots-0.18/wlr/types/wlr_keyboard.h>
+#include <wlroots-0.18/wlr/types/wlr_xdg_shell.h>
 #include <wlroots-0.18/wlr/types/wlr_compositor.h>
 #include <wlroots-0.18/wlr/types/wlr_data_device.h>
 #include <wlroots-0.18/wlr/types/wlr_input_device.h>
 #include <wlroots-0.18/wlr/types/wlr_output_layout.h>
+#include <wlroots-0.18/wlr/types/wlr_subcompositor.h>
 #include <wlroots-0.18/wlr/types/wlr_xcursor_manager.h>
 
 #include <wlroots-0.18/wlr/types/wlr_screencopy_v1.h>
 #include <wlroots-0.18/wlr/types/wlr_layer_shell_v1.h>
 #include <wlroots-0.18/wlr/types/wlr_data_control_v1.h>
 #include <wlroots-0.18/wlr/types/wlr_linux_dmabuf_v1.h>
+#include <wlroots-0.18/wlr/types/wlr_xdg_activation_v1.h>
+#include <wlroots-0.18/wlr/types/wlr_fractional_scale_v1.h>
 #include <wlroots-0.18/wlr/types/wlr_linux_drm_syncobj_v1.h>
 #include <wlroots-0.18/wlr/types/wlr_output_management_v1.h>
-
-#include <wlroots-0.18/wlr/types/wlr_xdg_shell.h>
-#include <wlroots-0.18/wlr/types/wlr_xdg_activation_v1.h>
 
 /* structures */
 enum { scene_layer_bg, scene_layer_bottom, scene_layer_tile, scene_layer_float, scene_layer_top, scene_layer_fs, scene_layer_overlay, scene_layer_block, scene_layers_count };
@@ -49,18 +50,19 @@ enum hellwm_cursor_mode { CURSOR_MODE_NORMAL, CURSOR_MODE_MOVE, CURSOR_MODE_PRES
 struct hellwm_server 
 {
    const char *socket;
-
    unsigned int cursor_mode;
    double cursor_grab_x, cursor_grab_y;
-
    struct hellwm_toplevel *grabbed_toplevel;
 
+   /* wayland */
    struct wl_list outputs;
    struct wl_list toplevels;
    struct wl_list keyboards;
 
 	struct wl_display *display;
 
+
+   /* wlroots */
 	struct wlr_box grab_geometry;
    struct wlr_box output_layout_geometry;
 
@@ -75,18 +77,21 @@ struct hellwm_server
    struct wlr_session *session;
    struct wlr_backend *backend;
    struct wlr_renderer *renderer;
+   struct wlr_xdg_shell *xdg_shell;
    struct wlr_allocator *allocator;
    struct wlr_compositor *compositor;
+   struct wlr_subcompositor *subcompositor;
    struct wlr_output_layout *output_layout;
    struct wlr_xcursor_manager *cursor_manager;
+   struct wlr_data_device_manager *data_device_manager;
+
    struct wlr_output_manager_v1 *output_manager;
-
    struct wlr_xdg_activation_v1 *xdg_activation; 
-
 	struct wlr_screencopy_manager_v1 *screencopy_manager;
    struct wlr_data_control_manager_v1 *data_control_manager;
 
 
+   /* listeners */
    struct wl_listener renderer_lost;
 
    struct wl_listener cursor_axis;
@@ -95,14 +100,18 @@ struct hellwm_server
    struct wl_listener cursor_motion_relative;
    struct wl_listener cursor_motion_absolute;
 
-   struct wl_listener seat_request_set_cursor;
-   struct wl_listener seat_request_set_selection;
-
    struct wl_listener backend_new_input;
    struct wl_listener backend_new_output;
+
    struct wl_listener output_manager_test;
    struct wl_listener output_layout_update;
    struct wl_listener output_manager_apply;
+
+   struct wl_listener seat_request_set_cursor;
+   struct wl_listener seat_request_set_selection;
+
+   struct wl_listener xdg_shell_new_popup;
+   struct wl_listener xdg_shell_new_toplevel;
    struct wl_listener xdg_activation_request_activate;
 };
 
@@ -111,6 +120,7 @@ struct hellwm_cursor
    struct wlr_cursor *cursor;
    struct wlr_xcursor_manager *cursor_manager;
 
+   /* listeners */
    struct wl_listener cursor_axisnotify;
    struct wl_listener cursor_cursorframe;
    struct wl_listener cursor_buttonpress;
@@ -123,6 +133,7 @@ struct hellwm_keyboard
 	struct wl_list link;
 	struct wlr_keyboard *wlr_keyboard;
 
+   /* listeners */
 	struct wl_listener key;
 	struct wl_listener destroy;
 	struct wl_listener modifiers;
@@ -131,25 +142,29 @@ struct hellwm_keyboard
 struct hellwm_layer_surface
 {
 	int mapped;
+   int isfloating;
    unsigned int type; /* layershell: background = 0; bottom = 1; top = 2; overlay = 3 */ 
 
 	struct wl_list link;
-	struct wlr_box geometry;
 
+	struct wlr_box geometry;
+	struct wlr_scene_tree *scene;
+	struct wlr_scene_tree *popups;
+
+	struct wlr_layer_surface_v1 *layer_surface;
+	struct wlr_scene_layer_surface_v1 *scene_layer;
+
+   /* listeners */
 	struct wl_listener unmap;
 	struct wl_listener destroy;
 	struct wl_listener surface_commit;
-
-	struct wlr_scene_tree *scene;
-	struct wlr_scene_tree *popups;
-	struct wlr_layer_surface_v1 *layer_surface;
-	struct wlr_scene_layer_surface_v1 *scene_layer;
 };
 
 struct hellwm_toplevel
 {
    uint32_t resize;
-   int isfloating, isfullscreen, isurgent;
+   unsigned int border_size;
+   struct hellwm_output *output;
 
 	struct wl_list link;
 
@@ -161,20 +176,22 @@ struct hellwm_toplevel
 	struct wlr_scene_rect *border[4]; /* top, bottom, left, right */
 	struct wlr_scene_tree *scene_surface;
    
-   struct hellwm_output *output;
-
    struct wlr_xdg_toplevel *xdg_toplevel;
-	struct wlr_xdg_toplevel_decoration_v1 *decoration;
 
-	struct wl_listener map;
-	struct wl_listener unmap;
-	struct wl_listener commit;
-	struct wl_listener destroy;
-	struct wl_listener maximize;
-	struct wl_listener set_title;
-	struct wl_listener fullscreen;
-	struct wl_listener destroy_decoration;
-	struct wl_listener set_decoration_mode;
+   /* listeners */
+   struct wl_listener xdg_toplevel_map;
+   struct wl_listener xdg_toplevel_unmap;
+   struct wl_listener xdg_toplevel_commit;
+   struct wl_listener xdg_toplevel_destroy;
+	struct wl_listener xdg_toplevel_set_title;
+	struct wl_listener xdg_toplevel_set_app_id;
+	struct wl_listener xdg_toplevel_set_parent;
+	struct wl_listener xdg_toplevel_request_move;
+	struct wl_listener xdg_toplevel_request_resize;
+   struct wl_listener xdg_toplevel_request_maximize;
+	struct wl_listener xdg_toplevel_request_minimize;
+	struct wl_listener xdg_toplevel_request_fullscreen;
+	struct wl_listener xdg_toplevel_request_show_window_menu;
 };
 
 struct hellwm_output
@@ -189,6 +206,7 @@ struct hellwm_output
    struct wlr_scene_output *scene_output;
    struct wlr_scene_rect *output_scene_rect;
 
+   /* listeners */
    struct wl_listener output_frame;
    struct wl_listener output_destroy;
    struct wl_listener output_request_state;
@@ -199,15 +217,19 @@ void ERR(char *where);
 void LOG(const char *format, ...);
 
 void arrange_layers(struct hellwm_output *output);
-void handle_output_manager_test_or_apply(struct wlr_output_configuration_v1 *config, int test_or_apply);
+void hellwm_toplevel_resize(struct hellwm_toplevel *toplevel, struct wlr_box geo);
+void output_manager_test_or_apply(struct wlr_output_configuration_v1 *config, int test_or_apply);
 
-static void hellwm_focus_toplevel(struct hellwm_toplevel *toplevel, struct wlr_surface *surface);
 static void process_cursor_move(uint32_t time);
 static void process_cursor_resize(uint32_t time);
 static void process_cursor_motion(uint32_t time);
+static void hellwm_focus_toplevel(struct hellwm_toplevel *toplevel, struct wlr_surface *surface);
+static struct hellwm_toplevel *hellwm_toplevel_at_coords(double lx, double ly, struct wlr_surface **surface, double *sx, double *sy);
 
 static void hellwm_new_pointer(struct wlr_input_device *device);
 static void hellwm_new_keyboard(struct wlr_input_device *device);
+
+static void handle_renderer_lost(struct wl_listener *listener, void *data);
 
 static void handle_backend_new_input(struct wl_listener *listener, void *data);
 static void handle_backend_new_output(struct wl_listener *listener, void *data);
@@ -215,18 +237,15 @@ static void handle_backend_new_output(struct wl_listener *listener, void *data);
 static void handle_seat_set_request_cursor(struct wl_listener *listener, void *data);
 static void handle_seat_request_set_selection(struct wl_listener *listener, void *data);
 
+static void handle_keyboard_key(struct wl_listener *listener, void *data);
+static void handle_keyboard_destroy(struct wl_listener *listener, void *data);
+static void handle_keyboard_modifiers(struct wl_listener *listener, void *data);
+
 static void handle_cursor_axis(struct wl_listener *listener, void *data);
 static void handle_cursor_frame(struct wl_listener *listener, void *data);
 static void handle_cursor_button(struct wl_listener *listener, void *data);
 static void handle_cursor_motion_relative(struct wl_listener *listener, void *data);
 static void handle_cursor_motion_absolute(struct wl_listener *listener, void *data);
-
-static void handle_keyboard_key(struct wl_listener *listener, void *data);
-static void handle_keyboard_destroy(struct wl_listener *listener, void *data);
-static void handle_keyboard_modifiers(struct wl_listener *listener, void *data);
-
-static void handle_renderer_lost(struct wl_listener *listener, void *data);
-static void handle_xdg_activation_request_activate(struct wl_listener *listener, void *data);
 
 static void handle_output_frame(struct wl_listener *listener, void *data);
 static void handle_output_destroy(struct wl_listener *listener, void *data);
@@ -234,6 +253,24 @@ static void handle_output_manager_test(struct wl_listener *listener, void *data)
 static void handle_output_request_state(struct wl_listener *listener, void *data);
 static void handle_output_layout_update(struct wl_listener *listener, void *data);
 static void handle_output_manager_apply(struct wl_listener *listener, void *data);
+
+static void handle_xdg_toplevel_map(struct wl_listener *listener, void *data);
+static void handle_xdg_toplevel_unmap(struct wl_listener *listener, void *data);
+static void handle_xdg_shell_new_popup(struct wl_listener *listener, void *data);
+static void handle_xdg_toplevel_commit(struct wl_listener *listener, void *data);
+static void handle_xdg_toplevel_destroy(struct wl_listener *listener, void *data);
+static void handle_xdg_shell_new_toplevel(struct wl_listener *listener, void *data);
+static void handle_xdg_toplevel_set_title(struct wl_listener *listener, void *data);
+static void handle_xdg_toplevel_set_app_id(struct wl_listener *listener, void *data);
+static void handle_xdg_toplevel_set_parent(struct wl_listener *listener, void *data);
+static void handle_xdg_toplevel_request_move(struct wl_listener *listener, void *data);
+static void handle_xdg_toplevel_request_resize(struct wl_listener *listener, void *data);
+static void handle_xdg_toplevel_request_maximize(struct wl_listener *listener, void *data);
+static void handle_xdg_toplevel_request_minimize(struct wl_listener *listener, void *data);
+static void handle_xdg_toplevel_request_fullscreen(struct wl_listener *listener, void *data);
+static void handle_xdg_activation_request_activate(struct wl_listener *listener, void *data);
+static void handle_xdg_toplevel_request_show_window_menu(struct wl_listener *listener, void *data);
+
 
 /* global variables*/
 struct hellwm_server server;
@@ -259,8 +296,28 @@ void arrange_layers(struct hellwm_output *output)
    return;
 }
 
-static struct hellwm_toplevel *hellwm_toplevel_at_coords
-(double lx, double ly, struct wlr_surface **surface, double *sx, double *sy)
+void hellwm_toplevel_resize(struct hellwm_toplevel *toplevel, struct wlr_box geo)
+{
+	if (!toplevel->output || !toplevel->xdg_toplevel->base->surface->mapped)
+		return;
+
+	/* Update scene-graph, including borders */
+	wlr_scene_node_set_position(&toplevel->scene->node, toplevel->geometry.x, toplevel->geometry.y);
+	wlr_scene_node_set_position(&toplevel->scene_surface->node, toplevel->border_size, toplevel->border_size);
+
+	wlr_scene_rect_set_size(toplevel->border[0], toplevel->geometry.width, toplevel->border_size);
+	wlr_scene_rect_set_size(toplevel->border[1], toplevel->geometry.width, toplevel->border_size);
+	wlr_scene_rect_set_size(toplevel->border[2], toplevel->border_size, toplevel->geometry.height - 2 * toplevel->border_size);
+	wlr_scene_rect_set_size(toplevel->border[3], toplevel->border_size, toplevel->geometry.height - 2 * toplevel->border_size);
+
+	wlr_scene_node_set_position(&toplevel->border[1]->node, 0, toplevel->geometry.height - toplevel->border_size);
+	wlr_scene_node_set_position(&toplevel->border[2]->node, 0, toplevel->border_size);
+	wlr_scene_node_set_position(&toplevel->border[3]->node, toplevel->geometry.width - toplevel->border_size, toplevel->border_size);
+
+	toplevel->resize = wlr_xdg_toplevel_set_size(toplevel->xdg_toplevel, toplevel->geometry.width - 2 * toplevel->border_size, toplevel->geometry.height - 2 * toplevel->border_size);
+}
+
+static struct hellwm_toplevel *hellwm_toplevel_at_coords(double lx, double ly, struct wlr_surface **surface, double *sx, double *sy)
 {
 	/* This returns the topmost node in the scene at the given layout coords. */
    struct wlr_scene_tree *tree;
@@ -747,6 +804,107 @@ static void handle_xdg_activation_request_activate(struct wl_listener *listener,
    return;
 }
 
+static void handle_xdg_toplevel_map(struct wl_listener *listener, void *data)
+{
+   struct hellwm_toplevel *toplevel = wl_container_of(listener, toplevel, xdg_toplevel_map);
+
+	wl_list_insert(&server.toplevels, &toplevel->link);
+	hellwm_focus_toplevel(toplevel, toplevel->xdg_toplevel->base->surface);
+
+}
+
+static void handle_xdg_toplevel_unmap(struct wl_listener *listener, void *data)
+{
+   struct hellwm_toplevel *toplevel = wl_container_of(listener, toplevel, xdg_toplevel_unmap);
+
+	if (toplevel == server.grabbed_toplevel)
+   {
+      server.cursor_mode = CURSOR_MODE_NORMAL;
+	}
+	wl_list_remove(&toplevel->link);
+}
+
+static void handle_xdg_toplevel_commit(struct wl_listener *listener, void *data)
+{
+   struct hellwm_toplevel *toplevel = wl_container_of(listener, toplevel, xdg_toplevel_commit);
+
+	if (toplevel->xdg_toplevel->base->initial_commit)
+   {
+		wlr_xdg_toplevel_set_wm_capabilities(toplevel->xdg_toplevel, WLR_XDG_TOPLEVEL_WM_CAPABILITIES_FULLSCREEN);
+		wlr_xdg_toplevel_set_size(toplevel->xdg_toplevel, 0, 0);
+		return;
+	}
+
+	if (toplevel->xdg_toplevel->base->surface->mapped && toplevel->output)
+		hellwm_toplevel_resize(toplevel, toplevel->geometry);
+}
+
+static void handle_xdg_toplevel_destroy(struct wl_listener *listener, void *data) 
+{
+   struct hellwm_toplevel *toplevel = wl_container_of(listener, toplevel, xdg_toplevel_destroy);
+
+	wl_list_remove(&toplevel->xdg_toplevel_map.link);
+	wl_list_remove(&toplevel->xdg_toplevel_unmap.link);
+	wl_list_remove(&toplevel->xdg_toplevel_commit.link);
+	wl_list_remove(&toplevel->xdg_toplevel_destroy.link);
+	wl_list_remove(&toplevel->xdg_toplevel_request_move.link);
+	wl_list_remove(&toplevel->xdg_toplevel_request_resize.link);
+	wl_list_remove(&toplevel->xdg_toplevel_request_maximize.link);
+	wl_list_remove(&toplevel->xdg_toplevel_request_fullscreen.link);
+
+	free(toplevel);
+}
+
+static void handle_xdg_toplevel_set_title(struct wl_listener *listener, void *data) {}
+static void handle_xdg_toplevel_set_app_id(struct wl_listener *listener, void *data) {}
+static void handle_xdg_toplevel_set_parent(struct wl_listener *listener, void *data) {}
+static void handle_xdg_toplevel_request_move(struct wl_listener *listener, void *data) {}
+static void handle_xdg_toplevel_request_resize(struct wl_listener *listener, void *data) {}
+static void handle_xdg_toplevel_request_maximize(struct wl_listener *listener, void *data) {}
+static void handle_xdg_toplevel_request_minimize(struct wl_listener *listener, void *data) {}
+static void handle_xdg_toplevel_request_fullscreen(struct wl_listener *listener, void *data) {}
+static void handle_xdg_toplevel_request_show_window_menu(struct wl_listener *listener, void *data) {}
+
+static void handle_xdg_shell_new_toplevel(struct wl_listener *listener, void *data)
+{
+   struct wlr_xdg_toplevel *xdg_toplevel = data;
+	struct hellwm_toplevel *toplevel = calloc(1, sizeof(*toplevel));
+
+	toplevel->xdg_toplevel = xdg_toplevel;
+	toplevel->scene_surface = wlr_scene_xdg_surface_create(&server.scene->tree, xdg_toplevel->base);
+	toplevel->scene_surface->node.data = toplevel;
+	xdg_toplevel->base->data = toplevel->scene_surface;
+
+	wl_signal_add(&xdg_toplevel->base->surface->events.map, &toplevel->xdg_toplevel_map);
+	toplevel->xdg_toplevel_map.notify = handle_xdg_toplevel_map;
+
+	wl_signal_add(&xdg_toplevel->base->surface->events.unmap, &toplevel->xdg_toplevel_unmap);
+	toplevel->xdg_toplevel_unmap.notify = handle_xdg_toplevel_unmap;
+   
+	wl_signal_add(&xdg_toplevel->base->surface->events.commit, &toplevel->xdg_toplevel_commit);
+	toplevel->xdg_toplevel_commit.notify = handle_xdg_toplevel_commit;
+
+	wl_signal_add(&xdg_toplevel->events.destroy, &toplevel->xdg_toplevel_destroy);
+	toplevel->xdg_toplevel_destroy.notify = handle_xdg_toplevel_destroy;
+
+	wl_signal_add(&xdg_toplevel->events.request_move, &toplevel->xdg_toplevel_request_move);
+	toplevel->xdg_toplevel_request_move.notify = handle_xdg_toplevel_request_move;
+
+	wl_signal_add(&xdg_toplevel->events.request_resize, &toplevel->xdg_toplevel_request_resize);
+	toplevel->xdg_toplevel_request_resize.notify = handle_xdg_toplevel_request_resize;
+
+	wl_signal_add(&xdg_toplevel->events.request_maximize, &toplevel->xdg_toplevel_request_maximize);
+	toplevel->xdg_toplevel_request_maximize.notify = handle_xdg_toplevel_request_maximize;
+
+	wl_signal_add(&xdg_toplevel->events.request_fullscreen, &toplevel->xdg_toplevel_request_fullscreen);
+	toplevel->xdg_toplevel_request_fullscreen.notify = handle_xdg_toplevel_request_fullscreen;
+}
+
+static void handle_xdg_shell_new_popup(struct wl_listener *listener, void *data)
+{
+
+}
+
 static void handle_output_layout_update(struct wl_listener *listener, void *data)
 {
 	struct wlr_output_configuration_v1 *config = wlr_output_configuration_v1_create();
@@ -801,7 +959,7 @@ static void handle_output_layout_update(struct wl_listener *listener, void *data
 	wlr_output_manager_v1_set_configuration(server.output_manager, config);
 }
 
-void handle_output_manager_test_or_apply(struct wlr_output_configuration_v1 *config, int test_or_apply)
+void output_manager_test_or_apply(struct wlr_output_configuration_v1 *config, int test_or_apply)
 {
 	struct wlr_output_configuration_head_v1 *output_configuration_head;
    int succeed = 0;
@@ -858,13 +1016,13 @@ void handle_output_manager_test_or_apply(struct wlr_output_configuration_v1 *con
 static void handle_output_manager_apply(struct wl_listener *listener, void *data)
 {
    struct wlr_output_configuration_v1 *config = data;
-   handle_output_manager_test_or_apply(config, 0);
+   output_manager_test_or_apply(config, 0);
 }
 
 static void handle_output_manager_test(struct wl_listener *listener, void *data)
 {
    struct wlr_output_configuration_v1 *config = data;
-   handle_output_manager_test_or_apply(config, 1);
+   output_manager_test_or_apply(config, 1);
 }
 
 static void handle_output_frame(struct wl_listener *listener, void *data)
@@ -884,26 +1042,11 @@ static void handle_output_frame(struct wl_listener *listener, void *data)
 static void handle_output_destroy(struct wl_listener *listener, void *data)
 {
 	struct hellwm_output *output = wl_container_of(listener, output, output_destroy);
-	struct hellwm_layer_surface *layersurface, *temp;
-
-	/* m->layers[i] are intentionally not unlinked */
-	for (size_t i = 0; i < sizeof(output->layers)/sizeof(output->layers[0]); i++)
-   {
-		wl_list_for_each_safe(layersurface, temp, &output->layers[i], link)
-			wlr_layer_surface_v1_destroy(layersurface->layer_surface);
-	}
-
+   
 	wl_list_remove(&output->link);
 	wl_list_remove(&output->output_frame.link);
-	wl_list_remove(&output->output_destroy.link);
 	wl_list_remove(&output->output_request_state.link);
-
-	output->wlr_output->data = NULL;
-	wlr_output_layout_remove(server.output_layout, output->wlr_output);
-	wlr_scene_output_destroy(output->scene_output);
-
-	wlr_scene_node_destroy(&output->output_scene_rect->node);
-	free(output);
+	wl_list_remove(&output->output_destroy.link);
 }
 
 static void handle_output_request_state(struct wl_listener *listener, void *data)
@@ -1026,8 +1169,12 @@ int main(int argc, char *argv[])
    if (!server.allocator)
       ERR("wlr_allocator_autocreate()");
 
+
+   server.subcompositor = wlr_subcompositor_create(server.display);
 	server.screencopy_manager= wlr_screencopy_manager_v1_create(server.display);
-	server.data_control_manager= wlr_data_control_manager_v1_create(server.display);
+   server.data_device_manager = wlr_data_device_manager_create(server.display);
+	server.data_control_manager = wlr_data_control_manager_v1_create(server.display);
+
    server.compositor = wlr_compositor_create(server.display, 6, server.renderer);
 
    /* xdg_activation */
@@ -1035,10 +1182,12 @@ int main(int argc, char *argv[])
    server.xdg_activation_request_activate.notify = handle_xdg_activation_request_activate; 
    wl_signal_add(&server.xdg_activation->events.request_activate, &server.xdg_activation_request_activate);
 
+
    /* output layout */
    server.output_layout = wlr_output_layout_create(server.display);
    server.output_layout_update.notify = handle_output_layout_update; 
    wl_signal_add(&server.output_layout->events.change, &server.output_layout_update);
+
 
    /* output manager */
    server.output_manager = wlr_output_manager_v1_create(server.display);
@@ -1055,6 +1204,16 @@ int main(int argc, char *argv[])
    	server.layer_surfaces[i] = wlr_scene_tree_create(&server.scene->tree);
    server.drag_icon = wlr_scene_tree_create(&server.scene->tree);
 	wlr_scene_node_place_below(&server.drag_icon->node, &server.layer_surfaces[scene_layer_block]->node);
+
+
+   /* seat */
+   server.seat = wlr_seat_create(server.display, "seat0");
+   wl_signal_add(&server.seat->events.request_set_cursor, &server.seat_request_set_cursor);
+   server.seat_request_set_cursor.notify = handle_seat_set_request_cursor;
+
+   wl_signal_add(&server.seat->events.request_set_selection, &server.seat_request_set_selection);
+   server.seat_request_set_selection.notify = handle_seat_request_set_selection;
+
 
    /* cursor */
    server.cursor = wlr_cursor_create();
@@ -1077,13 +1236,13 @@ int main(int argc, char *argv[])
    server.cursor_frame.notify = handle_cursor_frame;
 
 
-   /* seat */
-   server.seat = wlr_seat_create(server.display, "seat0");
-   wl_signal_add(&server.seat->events.request_set_cursor, &server.seat_request_set_cursor);
-   server.seat_request_set_cursor.notify = handle_seat_set_request_cursor;
+   server.xdg_shell = wlr_xdg_shell_create(server.display, 6);
+	wl_signal_add(&server.xdg_shell->events.new_toplevel, &server.xdg_shell_new_toplevel);
+   server.xdg_shell_new_toplevel.notify = handle_xdg_shell_new_toplevel;
 
-   wl_signal_add(&server.seat->events.request_set_selection, &server.seat_request_set_selection);
-   server.seat_request_set_selection.notify = handle_seat_request_set_selection;
+	wl_signal_add(&server.xdg_shell->events.new_popup, &server.xdg_shell_new_popup);
+	server.xdg_shell_new_popup.notify = handle_xdg_shell_new_popup;
+
    
    /* Make sure that XClient will connect 
     * to the XWayland (if enabled)
