@@ -185,15 +185,15 @@ struct hellwm_toplevel
    struct wl_listener xdg_toplevel_unmap;
    struct wl_listener xdg_toplevel_commit;
    struct wl_listener xdg_toplevel_destroy;
-	struct wl_listener xdg_toplevel_set_title;
-	struct wl_listener xdg_toplevel_set_app_id;
-	struct wl_listener xdg_toplevel_set_parent;
-	struct wl_listener xdg_toplevel_request_move;
-	struct wl_listener xdg_toplevel_request_resize;
+   struct wl_listener xdg_toplevel_set_title;
+   struct wl_listener xdg_toplevel_set_app_id;
+   struct wl_listener xdg_toplevel_set_parent;
+   struct wl_listener xdg_toplevel_request_move;
+   struct wl_listener xdg_toplevel_request_resize;
    struct wl_listener xdg_toplevel_request_maximize;
-	struct wl_listener xdg_toplevel_request_minimize;
-	struct wl_listener xdg_toplevel_request_fullscreen;
-	struct wl_listener xdg_toplevel_request_show_window_menu;
+   struct wl_listener xdg_toplevel_request_minimize;
+   struct wl_listener xdg_toplevel_request_fullscreen;
+   struct wl_listener xdg_toplevel_request_show_window_menu;
 };
 
 struct hellwm_output
