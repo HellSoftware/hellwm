@@ -141,31 +141,10 @@ struct hellwm_keyboard
    struct wl_listener modifiers;
 };
 
-struct hellwm_layer_surface
-{
-   int mapped;
-   int isfloating;
-   unsigned int type; /* layershell: background = 0; bottom = 1; top = 2; overlay = 3 */ 
-   
-   struct wl_list link;
-   
-   struct wlr_box geometry;
-   struct wlr_scene_tree *scene;
-   struct wlr_scene_tree *popups;
-   
-   struct wlr_layer_surface_v1 *layer_surface;
-   struct wlr_scene_layer_surface_v1 *scene_layer;
-   
-   /* listeners */
-   struct wl_listener unmap;
-   struct wl_listener destroy;
-   struct wl_listener surface_commit;
-};
-
 struct hellwm_toplevel
 {
    uint32_t resize;
-   unsigned int border_size;
+   unsigned border_size;
    struct hellwm_output *output;
 
 	struct wl_list link;
@@ -199,7 +178,6 @@ struct hellwm_toplevel
 struct hellwm_output
 {
    struct wl_list link;
-   struct wl_list layers[4]; /* hellwm_layer_surface.link */
 
    struct wlr_box output_area;
    struct wlr_box window_area;
@@ -219,11 +197,9 @@ void ERR(char *where);
 void LOG(const char *format, ...);
 
 void arrange_layers(struct hellwm_output *output);
-void hellwm_toplevel_resize(struct hellwm_toplevel *toplevel, struct wlr_box geo);
 void output_manager_test_or_apply(struct wlr_output_configuration_v1 *config, int test_or_apply);
 
 static void process_cursor_move(uint32_t time);
-static void process_cursor_resize(uint32_t time);
 static void process_cursor_motion(uint32_t time);
 static void hellwm_focus_toplevel(struct hellwm_toplevel *toplevel, struct wlr_surface *surface);
 static struct hellwm_toplevel *hellwm_toplevel_at_coords(double lx, double ly, struct wlr_surface **surface, double *sx, double *sy);
@@ -266,7 +242,6 @@ static void handle_xdg_toplevel_set_title(struct wl_listener *listener, void *da
 static void handle_xdg_toplevel_set_app_id(struct wl_listener *listener, void *data);
 static void handle_xdg_toplevel_set_parent(struct wl_listener *listener, void *data);
 static void handle_xdg_toplevel_request_move(struct wl_listener *listener, void *data);
-static void handle_xdg_toplevel_request_resize(struct wl_listener *listener, void *data);
 static void handle_xdg_toplevel_request_maximize(struct wl_listener *listener, void *data);
 static void handle_xdg_toplevel_request_minimize(struct wl_listener *listener, void *data);
 static void handle_xdg_toplevel_request_fullscreen(struct wl_listener *listener, void *data);
@@ -298,7 +273,7 @@ void arrange_layers(struct hellwm_output *output)
    return;
 }
 
-void hellwm_toplevel_resize(struct hellwm_toplevel *toplevel, struct wlr_box geo)
+void hellwm_toplevel_resize(struct hellwm_toplevel *toplevel, struct wlr_box box)
 {
    if (!toplevel->output || !toplevel->xdg_toplevel->base->surface->mapped)
       return;
@@ -349,119 +324,54 @@ static struct hellwm_toplevel *hellwm_toplevel_at_coords(double lx, double ly, s
 static void hellwm_focus_toplevel(struct hellwm_toplevel *toplevel, struct wlr_surface *surface)
 {
    struct wlr_keyboard *keyboard;
-struct wlr_seat *seat = server.seat;
-struct wlr_surface *prev_surface = seat->keyboard_state.focused_surface;
+   struct wlr_seat *seat = server.seat;
+   struct wlr_surface *prev_surface = seat->keyboard_state.focused_surface;
 
-if (toplevel == NULL)
-return;
-
-if (prev_surface == surface)	/* Don't re-focus an already focused surface. */
+   if (toplevel == NULL)
    return;
-
-if (prev_surface)
-{
-/*
-* Deactivate the previously focused surface. This lets the client know
- * it no longer has focus and the client will repaint accordingly, e.g.
- * stop displaying a caret.
- */
-   if (wlr_xdg_toplevel_try_from_wlr_surface(prev_surface) != NULL) 
+   
+   if (prev_surface == surface)	/* Don't re-focus an already focused surface. */
+      return;
+   
+   if (prev_surface)
    {
-      wlr_xdg_toplevel_set_activated(wlr_xdg_toplevel_try_from_wlr_surface(prev_surface), false);
+      /*
+      * Deactivate the previously focused surface. This lets the client know
+      * it no longer has focus and the client will repaint accordingly, e.g.
+      * stop displaying a caret.
+      */
+      if (wlr_xdg_toplevel_try_from_wlr_surface(prev_surface) != NULL) 
+      {
+         wlr_xdg_toplevel_set_activated(wlr_xdg_toplevel_try_from_wlr_surface(prev_surface), false);
+      }
    }
-}
-keyboard = wlr_seat_get_keyboard(seat);
-
-/* Move the toplevel to the front */
-wlr_scene_node_raise_to_top(&toplevel->scene_surface->node);
-wl_list_remove(&toplevel->link);
-wl_list_insert(&server.toplevels, &toplevel->link);
-/* Activate the new surface */
-wlr_xdg_toplevel_set_activated(toplevel->xdg_toplevel, true);
-/*
- * Tell the seat to have the keyboard enter this surface. wlroots will keep
- * track of this and automatically send key events to the appropriate
- * clients without additional work on your part.
- */
-if (keyboard != NULL)
-{
-   wlr_seat_keyboard_notify_enter(seat, toplevel->xdg_toplevel->base->surface, keyboard->keycodes, keyboard->num_keycodes, &keyboard->modifiers);
-}
+   keyboard = wlr_seat_get_keyboard(seat);
+   
+   /* Move the toplevel to the front */
+   wlr_scene_node_raise_to_top(&toplevel->scene_surface->node);
+   wl_list_remove(&toplevel->link);
+   wl_list_insert(&server.toplevels, &toplevel->link);
+   /* Activate the new surface */
+   wlr_xdg_toplevel_set_activated(toplevel->xdg_toplevel, true);
+   /*
+    * Tell the seat to have the keyboard enter this surface. wlroots will keep
+    * track of this and automatically send key events to the appropriate
+    * clients without additional work on your part.
+    */
+   if (keyboard != NULL)
+   {
+      wlr_seat_keyboard_notify_enter(seat, toplevel->xdg_toplevel->base->surface, keyboard->keycodes, keyboard->num_keycodes, &keyboard->modifiers);
+   }
 }
 
 static void process_cursor_move(uint32_t time)
 {
    /* Move the grabbed toplevel to the new position. */
    struct hellwm_toplevel *toplevel = server.grabbed_toplevel;
-   
-   wlr_scene_node_set_position(&toplevel->scene->node, server.cursor->x - server.cursor_grab_x, server.cursor->y - server.cursor_grab_y);
-}
 
-static void process_cursor_resize(uint32_t time)
-{
-   /*
-    * Resizing the grabbed toplevel can be a little bit complicated, because we
-    * could be resizing from any corner or edge. This not only resizes the
-    * toplevel on one or two axes, but can also move the toplevel if you resize
-    * from the top or left edges (or top-left corner).
-    *
-    * Note that some shortcuts are taken here. In a more fleshed-out
-    * compositor, you'd wait for the client to prepare a buffer at the new
-    * size, then commit any movement that was prepared.
-    */
-      struct wlr_box *geo_box;
-   struct hellwm_toplevel *toplevel = server.grabbed_toplevel;
-   
-   double border_x = server.cursor->x - server.cursor_grab_x;
-   double border_y = server.cursor->y - server.cursor_grab_y;
-   
-   int new_width;
-   int new_height;
-   int new_left = server.grab_geometry.x;
-   int new_right = server.grab_geometry.x + server.grab_geometry.width;
-   int new_top = server.grab_geometry.y;
-   int new_bottom = server.grab_geometry.y + server.grab_geometry.height;
-   
-   if (toplevel->resize & WLR_EDGE_TOP)
-   {
-      new_top = border_y;
-      if (new_top >= new_bottom)
-      {
-         new_top = new_bottom - 1;
-      }
-   } else
-   if(toplevel->resize & WLR_EDGE_BOTTOM)
-   {
-      new_bottom = border_y;
-      if (new_bottom <= new_top)
-      {
-         new_bottom = new_top + 1;
-      }
-   }
-   
-   if (toplevel->resize & WLR_EDGE_LEFT)
-   {
-      new_left = border_x;
-      if (new_left >= new_right)
-      {
-         new_left = new_right - 1;
-      }
-   } else
-   if (toplevel->resize & WLR_EDGE_RIGHT)
-   {
-      new_right = border_x;
-      if (new_right <= new_left)
-      {
-         new_right = new_left + 1;
-      }
-   }
-   
-   geo_box = &toplevel->geometry;
-   wlr_scene_node_set_position(&toplevel->scene_surface->node, new_left - geo_box->x, new_top - geo_box->y);
-   
-   new_width = new_right - new_left;
-   new_height = new_bottom - new_top;
-   wlr_xdg_toplevel_set_size(toplevel->xdg_toplevel, new_width, new_height);
+	wlr_scene_node_set_position(&toplevel->scene->node,
+		server.cursor->x - server.cursor_grab_x,
+		server.cursor->y - server.cursor_grab_y);
 }
 
 static void process_cursor_motion(uint32_t time)
@@ -475,11 +385,6 @@ static void process_cursor_motion(uint32_t time)
    if (server.cursor_mode == CURSOR_MODE_MOVE)
    {
       process_cursor_move(time);
-      return;
-   } else
-   if (server.cursor_mode == CURSOR_MODE_RESIZE)
-   {
-      process_cursor_resize(time);
       return;
    }
    
@@ -738,7 +643,6 @@ static void handle_cursor_button(struct wl_listener *listener, void *data)
    
    if (event->state == WL_POINTER_BUTTON_STATE_RELEASED)
    {
-      /* If you released any buttons, we exit interactive move/resize mode. */
       server.cursor_mode = CURSOR_MODE_NORMAL;
       server.grabbed_toplevel = NULL;
    } else
@@ -834,6 +738,7 @@ static void handle_xdg_toplevel_commit(struct wl_listener *listener, void *data)
    {
       wlr_xdg_toplevel_set_wm_capabilities(toplevel->xdg_toplevel, WLR_XDG_TOPLEVEL_WM_CAPABILITIES_FULLSCREEN);
       wlr_xdg_toplevel_set_size(toplevel->xdg_toplevel, 0, 0);
+      wlr_xdg_toplevel_set_tiled(toplevel->xdg_toplevel,0u);
       return;
    }
    
@@ -857,15 +762,61 @@ static void handle_xdg_toplevel_destroy(struct wl_listener *listener, void *data
    free(toplevel);
 }
 
-static void handle_xdg_toplevel_set_title(struct wl_listener *listener, void *data) {}
+static void handle_xdg_toplevel_set_title(struct wl_listener *listener, void *data)
+{
+   struct hellwm_toplevel *toplevel = wl_container_of(listener, toplevel, xdg_toplevel_request_maximize);
+   struct wlr_xdg_toplevel *xdg_toplevel = toplevel->xdg_toplevel;
+   wlr_xdg_surface_schedule_configure(xdg_toplevel->base);
+}
+
 static void handle_xdg_toplevel_set_app_id(struct wl_listener *listener, void *data) {}
 static void handle_xdg_toplevel_set_parent(struct wl_listener *listener, void *data) {}
-static void handle_xdg_toplevel_request_move(struct wl_listener *listener, void *data) {}
-static void handle_xdg_toplevel_request_resize(struct wl_listener *listener, void *data) {}
-static void handle_xdg_toplevel_request_maximize(struct wl_listener *listener, void *data) {}
 static void handle_xdg_toplevel_request_minimize(struct wl_listener *listener, void *data) {}
-static void handle_xdg_toplevel_request_fullscreen(struct wl_listener *listener, void *data) {}
 static void handle_xdg_toplevel_request_show_window_menu(struct wl_listener *listener, void *data) {}
+
+static void handle_xdg_toplevel_request_move(struct wl_listener *listener, void *data)
+{
+   struct hellwm_toplevel *toplevel = wl_container_of(listener, toplevel, xdg_toplevel_request_move);
+   // TODO: request_move
+}
+
+static void handle_xdg_toplevel_request_resize(struct wl_listener *listener, void *data)
+{
+   struct hellwm_toplevel *toplevel = wl_container_of(listener, toplevel, xdg_toplevel_request_move);
+   struct wlr_xdg_toplevel_resize_event *event = data;
+   // TODO: request_resize
+}
+
+static void handle_xdg_toplevel_request_maximize(struct wl_listener *listener, void *data)
+{
+   struct hellwm_toplevel* toplevel = wl_container_of(listener, toplevel, xdg_toplevel_request_maximize);
+
+	if (toplevel->xdg_toplevel->current.maximized)
+   {
+		wlr_xdg_toplevel_set_maximized(toplevel->xdg_toplevel, false);
+	} else {
+      if (toplevel->xdg_toplevel->current.fullscreen)
+         wlr_xdg_toplevel_set_fullscreen(toplevel->xdg_toplevel, false);
+		wlr_xdg_toplevel_set_maximized(toplevel->xdg_toplevel, true);
+	}
+	wlr_xdg_surface_schedule_configure(toplevel->xdg_toplevel->base);
+}
+
+static void handle_xdg_toplevel_request_fullscreen(struct wl_listener *listener, void *data)
+{
+   struct hellwm_toplevel* toplevel = wl_container_of(listener, toplevel, xdg_toplevel_request_maximize);
+
+   if (toplevel->xdg_toplevel->current.fullscreen)
+   {
+      wlr_xdg_toplevel_set_fullscreen(toplevel->xdg_toplevel, false);
+   }
+   else {
+      if (toplevel->xdg_toplevel->current.maximized)
+		   wlr_xdg_toplevel_set_maximized(toplevel->xdg_toplevel, false);
+      wlr_xdg_toplevel_set_fullscreen(toplevel->xdg_toplevel, false);
+   }
+	wlr_xdg_surface_schedule_configure(toplevel->xdg_toplevel->base);
+}
 
 static void handle_xdg_shell_new_toplevel(struct wl_listener *listener, void *data)
 {
@@ -904,7 +855,6 @@ static void handle_xdg_shell_new_toplevel(struct wl_listener *listener, void *da
 
 static void handle_xdg_shell_new_popup(struct wl_listener *listener, void *data)
 {
-
 }
 
 static void handle_output_layout_update(struct wl_listener *listener, void *data)
@@ -1206,8 +1156,7 @@ int main(int argc, char *argv[])
    
    wl_signal_add(&server.seat->events.request_set_selection, &server.seat_request_set_selection);
    server.seat_request_set_selection.notify = handle_seat_request_set_selection;
-   
-   
+
    /* cursor */
    server.cursor = wlr_cursor_create();
    server.cursor_manager = wlr_xcursor_manager_create(NULL, 24);
@@ -1235,8 +1184,7 @@ int main(int argc, char *argv[])
    
    wl_signal_add(&server.xdg_shell->events.new_popup, &server.xdg_shell_new_popup);
    server.xdg_shell_new_popup.notify = handle_xdg_shell_new_popup;
-   
-   
+      
    /* Make sure that XClient will connect 
     * to the XWayland (if enabled)
     * instead of any other X server */
