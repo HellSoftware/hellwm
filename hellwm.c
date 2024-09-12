@@ -175,6 +175,22 @@ struct hellwm_toplevel
    struct wl_listener xdg_toplevel_request_show_window_menu;
 };
 
+struct hellwm_xdg_popup
+{
+   int *lx;
+   int *ly;
+
+   struct wlr_xdg_popup *wlr_popup;
+   struct hellwm_xdg_popup *parent_popup;
+   struct hellwm_surface_tree_node *scene_tree;
+    
+   struct wl_listener destroy;
+   struct wl_listener new_popup;
+   struct wl_listener surface_map;
+   struct wl_listener surface_unmap;
+   struct wl_listener surface_commit;
+};
+
 struct hellwm_output
 {
    struct wl_list link;
@@ -232,12 +248,17 @@ static void handle_output_request_state(struct wl_listener *listener, void *data
 static void handle_output_layout_update(struct wl_listener *listener, void *data);
 static void handle_output_manager_apply(struct wl_listener *listener, void *data);
 
+//static void xdg_popup_handle_destroy(struct wl_listener *listener, void *data);
+//static void xdg_popup_handle_new_popup(struct wl_listener *listener, void *data);
+//static void xdg_popup_handle_reposition(struct wl_listener *listener, void *data);
+//static void xdg_popup_handle_surface_commit(struct wl_listener *listener, void *data);
+
 static void handle_xdg_toplevel_map(struct wl_listener *listener, void *data);
 static void handle_xdg_toplevel_unmap(struct wl_listener *listener, void *data);
-static void handle_xdg_shell_new_popup(struct wl_listener *listener, void *data);
+static void handle_xdg_popup_new(struct wl_listener *listener, void *data);
 static void handle_xdg_toplevel_commit(struct wl_listener *listener, void *data);
 static void handle_xdg_toplevel_destroy(struct wl_listener *listener, void *data);
-static void handle_xdg_shell_new_toplevel(struct wl_listener *listener, void *data);
+static void handle_xdg_toplevel_new(struct wl_listener *listener, void *data);
 static void handle_xdg_toplevel_set_title(struct wl_listener *listener, void *data);
 static void handle_xdg_toplevel_set_app_id(struct wl_listener *listener, void *data);
 static void handle_xdg_toplevel_set_parent(struct wl_listener *listener, void *data);
@@ -710,6 +731,21 @@ static void handle_xdg_activation_request_activate(struct wl_listener *listener,
    return;
 }
 
+static void handle_xdg_popup_new(struct wl_listener *listener, void *data)
+{
+   struct hellwm_xdg_popup *popup = calloc(1, sizeof(popup));
+   struct wlr_xdg_popup *wlr_popup = data;
+   struct wlr_xdg_surface *xdg_surface = wlr_popup->base;
+   
+   if (!popup)
+   	return;
+}
+
+//static void xdg_popup_handle_destroy(struct wl_listener *listener, void *data){}
+//static void xdg_popup_handle_new_popup(struct wl_listener *listener, void *data){}
+//static void xdg_popup_handle_reposition(struct wl_listener *listener, void *data){}
+//static void xdg_popup_handle_surface_commit(struct wl_listener *listener, void *data){}
+
 static void handle_xdg_toplevel_map(struct wl_listener *listener, void *data)
 {
    struct hellwm_toplevel *toplevel = wl_container_of(listener, toplevel, xdg_toplevel_map);
@@ -771,14 +807,9 @@ static void handle_xdg_toplevel_set_title(struct wl_listener *listener, void *da
 
 static void handle_xdg_toplevel_set_app_id(struct wl_listener *listener, void *data) {}
 static void handle_xdg_toplevel_set_parent(struct wl_listener *listener, void *data) {}
+static void handle_xdg_toplevel_request_move(struct wl_listener *listener, void *data) {}
 static void handle_xdg_toplevel_request_minimize(struct wl_listener *listener, void *data) {}
 static void handle_xdg_toplevel_request_show_window_menu(struct wl_listener *listener, void *data) {}
-
-static void handle_xdg_toplevel_request_move(struct wl_listener *listener, void *data)
-{
-   struct hellwm_toplevel *toplevel = wl_container_of(listener, toplevel, xdg_toplevel_request_move);
-   // TODO: request_move
-}
 
 static void handle_xdg_toplevel_request_resize(struct wl_listener *listener, void *data)
 {
@@ -818,7 +849,7 @@ static void handle_xdg_toplevel_request_fullscreen(struct wl_listener *listener,
 	wlr_xdg_surface_schedule_configure(toplevel->xdg_toplevel->base);
 }
 
-static void handle_xdg_shell_new_toplevel(struct wl_listener *listener, void *data)
+static void handle_xdg_toplevel_new(struct wl_listener *listener, void *data)
 {
    struct wlr_xdg_toplevel *xdg_toplevel = data;
    struct hellwm_toplevel *toplevel = calloc(1, sizeof(*toplevel));
@@ -851,10 +882,6 @@ static void handle_xdg_shell_new_toplevel(struct wl_listener *listener, void *da
    
    wl_signal_add(&xdg_toplevel->events.request_fullscreen, &toplevel->xdg_toplevel_request_fullscreen);
    toplevel->xdg_toplevel_request_fullscreen.notify = handle_xdg_toplevel_request_fullscreen;
-}
-
-static void handle_xdg_shell_new_popup(struct wl_listener *listener, void *data)
-{
 }
 
 static void handle_output_layout_update(struct wl_listener *listener, void *data)
@@ -1180,10 +1207,10 @@ int main(int argc, char *argv[])
 
    server.xdg_shell = wlr_xdg_shell_create(server.display, 6);
    wl_signal_add(&server.xdg_shell->events.new_toplevel, &server.xdg_shell_new_toplevel);
-   server.xdg_shell_new_toplevel.notify = handle_xdg_shell_new_toplevel;
+   server.xdg_shell_new_toplevel.notify = handle_xdg_toplevel_new;
    
    wl_signal_add(&server.xdg_shell->events.new_popup, &server.xdg_shell_new_popup);
-   server.xdg_shell_new_popup.notify = handle_xdg_shell_new_popup;
+   server.xdg_shell_new_popup.notify = handle_xdg_popup_new;
       
    /* Make sure that XClient will connect 
     * to the XWayland (if enabled)
