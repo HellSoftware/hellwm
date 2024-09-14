@@ -54,6 +54,7 @@ struct hellwm_server
    double cursor_grab_x, cursor_grab_y;
 
    /* hellwm */
+   struct hellwm_output *hellwm_current_output;
    struct hellwm_toplevel *grabbed_toplevel;
    struct hellwm_layer_surface *hellwm_layer_surface;
 
@@ -92,13 +93,14 @@ struct hellwm_server
    struct wlr_screencopy_manager_v1 *screencopy_manager;
    struct wlr_data_control_manager_v1 *data_control_manager;
 
-
    /* listeners */
    struct wl_listener renderer_lost;
 
    struct wl_listener cursor_axis;
    struct wl_listener cursor_frame;
    struct wl_listener cursor_button;
+   struct wl_listener cursor_hold_begin;
+   struct wl_listener cursor_touch_frame;
    struct wl_listener cursor_motion_relative;
    struct wl_listener cursor_motion_absolute;
 
@@ -153,7 +155,6 @@ struct hellwm_toplevel
 	struct wlr_box geometry; /* layout-relative, includes border */
 	struct wlr_box prev_geometry; /* prev, layout-relative, includes border */
 
-	struct wlr_scene_tree *scene;
 	struct wlr_scene_rect *border[4]; /* top, bottom, left, right */
 	struct wlr_scene_tree *scene_surface;
    
@@ -217,7 +218,11 @@ void output_manager_test_or_apply(struct wlr_output_configuration_v1 *config, in
 
 static void process_cursor_move(uint32_t time);
 static void process_cursor_motion(uint32_t time);
-static void hellwm_focus_toplevel(struct hellwm_toplevel *toplevel, struct wlr_surface *surface);
+
+static void hellwm_toplevel_kill_active();
+static void hellwm_toplevel_focus_next(struct wl_list *toplevels);
+static void hellwm_toplevel_focus(struct hellwm_toplevel *toplevel, struct wlr_surface *surface);
+
 static struct hellwm_toplevel *hellwm_toplevel_at_coords(double lx, double ly, struct wlr_surface **surface, double *sx, double *sy);
 
 static void hellwm_new_pointer(struct wlr_input_device *device);
@@ -238,6 +243,8 @@ static void handle_keyboard_modifiers(struct wl_listener *listener, void *data);
 static void handle_cursor_axis(struct wl_listener *listener, void *data);
 static void handle_cursor_frame(struct wl_listener *listener, void *data);
 static void handle_cursor_button(struct wl_listener *listener, void *data);
+static void handle_cursor_hold_begin(struct wl_listener *listener, void *data);
+static void handle_cursor_touch_frame(struct wl_listener *listener, void *data);
 static void handle_cursor_motion_relative(struct wl_listener *listener, void *data);
 static void handle_cursor_motion_absolute(struct wl_listener *listener, void *data);
 
@@ -249,9 +256,9 @@ static void handle_output_layout_update(struct wl_listener *listener, void *data
 static void handle_output_manager_apply(struct wl_listener *listener, void *data);
 
 //static void xdg_popup_handle_destroy(struct wl_listener *listener, void *data);
-//static void xdg_popup_handle_new_popup(struct wl_listener *listener, void *data);
+static void xdg_popup_handle_new_popup(struct wl_listener *listener, void *data);
 //static void xdg_popup_handle_reposition(struct wl_listener *listener, void *data);
-//static void xdg_popup_handle_surface_commit(struct wl_listener *listener, void *data);
+static void xdg_popup_handle_surface_commit(struct wl_listener *listener, void *data);
 
 static void handle_xdg_toplevel_map(struct wl_listener *listener, void *data);
 static void handle_xdg_toplevel_unmap(struct wl_listener *listener, void *data);
@@ -300,7 +307,7 @@ void hellwm_toplevel_resize(struct hellwm_toplevel *toplevel, struct wlr_box box
       return;
 
    /* Update scene-graph, including borders */
-   wlr_scene_node_set_position(&toplevel->scene->node, toplevel->geometry.x, toplevel->geometry.y);
+   wlr_scene_node_set_position(&toplevel->scene_surface->node, toplevel->geometry.x, toplevel->geometry.y);
    wlr_scene_node_set_position(&toplevel->scene_surface->node, toplevel->border_size, toplevel->border_size);
 
    wlr_scene_rect_set_size(toplevel->border[0], toplevel->geometry.width, toplevel->border_size);
@@ -342,7 +349,7 @@ static struct hellwm_toplevel *hellwm_toplevel_at_coords(double lx, double ly, s
    return tree->node.data;
 }
 
-static void hellwm_focus_toplevel(struct hellwm_toplevel *toplevel, struct wlr_surface *surface)
+static void hellwm_toplevel_focus(struct hellwm_toplevel *toplevel, struct wlr_surface *surface)
 {
    struct wlr_keyboard *keyboard;
    struct wlr_seat *seat = server.seat;
@@ -385,12 +392,33 @@ static void hellwm_focus_toplevel(struct hellwm_toplevel *toplevel, struct wlr_s
    }
 }
 
+static void hellwm_toplevel_kill_active()
+{
+   if (wl_list_length(&server.toplevels) < 1) return;
+
+   struct wlr_seat *seat = server.seat;
+   struct wlr_surface *prev_surface = seat->keyboard_state.focused_surface;
+   struct wlr_xdg_toplevel *prev_toplevel = wlr_xdg_toplevel_try_from_wlr_surface(prev_surface);
+   struct hellwm_toplevel *next_toplevel = wl_container_of(server.toplevels.prev, next_toplevel, link);
+
+   hellwm_toplevel_focus_next(&server.toplevels);
+   wlr_xdg_toplevel_send_close(prev_toplevel);
+}
+
+static void hellwm_toplevel_focus_next(struct wl_list *toplevels)
+{
+   if (wl_list_length(toplevels) < 2)
+      return;
+   struct hellwm_toplevel *next_toplevel = wl_container_of(server.toplevels.prev, next_toplevel, link);
+   hellwm_toplevel_focus(next_toplevel, next_toplevel->xdg_toplevel->base->surface);
+}
+
 static void process_cursor_move(uint32_t time)
 {
    /* Move the grabbed toplevel to the new position. */
    struct hellwm_toplevel *toplevel = server.grabbed_toplevel;
 
-	wlr_scene_node_set_position(&toplevel->scene->node,
+	wlr_scene_node_set_position(&toplevel->scene_surface->node,
 		server.cursor->x - server.cursor_grab_x,
 		server.cursor->y - server.cursor_grab_y);
 }
@@ -434,6 +462,7 @@ static void process_cursor_motion(uint32_t time)
        */
       wlr_seat_pointer_notify_enter(seat, surface, sx, sy);
       wlr_seat_pointer_notify_motion(seat, time, sx, sy);
+      hellwm_toplevel_focus(toplevel,surface);
    } else
    {
       /* Clear pointer focus so future button events and such are not sent to
@@ -468,7 +497,7 @@ static void handle_seat_request_set_selection(struct wl_listener *listener, void
 
 static void handle_keyboard_modifiers(struct wl_listener *listener, void *data)
 {
-   /* This event is raised when a modifier key, such as shift or alt, is
+   /* This event is raised when a modifier key, such as shift or meta key, is
     * pressed. We simply communicate this to the client. */
    struct hellwm_keyboard *keyboard = wl_container_of(listener, keyboard, modifiers);
    /*
@@ -489,7 +518,7 @@ static bool handle_keybinding(xkb_keysym_t sym)
     * processing keys, rather than passing them on to the client for its own
     * processing.
     *
-    * This function assumes Alt is held down.
+    * This function assumes meta key is held down.
     */
    switch (sym)
    {
@@ -503,7 +532,15 @@ static bool handle_keybinding(xkb_keysym_t sym)
             execl("/bin/sh", "/bin/sh", "-c", "foot", (void *)NULL);
          }
          break;
+       
+      case XKB_KEY_q:
+         hellwm_toplevel_kill_active();
+         break;
    
+      case XKB_KEY_n:
+         hellwm_toplevel_focus_next(&server.toplevels);
+         break;
+
       default:
       return false;
    }
@@ -525,9 +562,9 @@ static void handle_keyboard_key(struct wl_listener *listener, void *data)
    
    bool handled = false;
    uint32_t modifiers = wlr_keyboard_get_modifiers(keyboard->wlr_keyboard);
-   if ((modifiers & WLR_MODIFIER_ALT) && event->state == WL_KEYBOARD_KEY_STATE_PRESSED)
+   if ((modifiers & WLR_MODIFIER_LOGO) && event->state == WL_KEYBOARD_KEY_STATE_PRESSED)
    {
-      /* If alt is held down and this button was _pressed_, we attempt to
+      /* If meta key is held down and this button was _pressed_, we attempt to
        * process it as a compositor keybinding. */
       for (int i = 0; i < nsyms; i++)
       {
@@ -669,7 +706,7 @@ static void handle_cursor_button(struct wl_listener *listener, void *data)
    } else
    {
       /* Focus that client if the button was _pressed_ */
-      hellwm_focus_toplevel(toplevel, surface);
+      hellwm_toplevel_focus(toplevel, surface);
    }
 }
 
@@ -741,18 +778,23 @@ static void handle_xdg_popup_new(struct wl_listener *listener, void *data)
    	return;
 }
 
+static void xdg_popup_handle_new_popup(struct wl_listener *listener, void *data)
+{
+   struct wlr_xdg_popup *popup = data;
+   wl_signal_add(&popup->base->surface->events.commit, &server.xdg_shell_new_popup);
+   server.xdg_shell_new_toplevel.notify = xdg_popup_handle_surface_commit;
+}
+
 //static void xdg_popup_handle_destroy(struct wl_listener *listener, void *data){}
-//static void xdg_popup_handle_new_popup(struct wl_listener *listener, void *data){}
 //static void xdg_popup_handle_reposition(struct wl_listener *listener, void *data){}
-//static void xdg_popup_handle_surface_commit(struct wl_listener *listener, void *data){}
+static void xdg_popup_handle_surface_commit(struct wl_listener *listener, void *data){}
 
 static void handle_xdg_toplevel_map(struct wl_listener *listener, void *data)
 {
    struct hellwm_toplevel *toplevel = wl_container_of(listener, toplevel, xdg_toplevel_map);
 
    wl_list_insert(&server.toplevels, &toplevel->link);
-   hellwm_focus_toplevel(toplevel, toplevel->xdg_toplevel->base->surface);
-
+   hellwm_toplevel_focus(toplevel, toplevel->xdg_toplevel->base->surface);
 }
 
 static void handle_xdg_toplevel_unmap(struct wl_listener *listener, void *data)
@@ -773,7 +815,7 @@ static void handle_xdg_toplevel_commit(struct wl_listener *listener, void *data)
    if (toplevel->xdg_toplevel->base->initial_commit)
    {
       wlr_xdg_toplevel_set_wm_capabilities(toplevel->xdg_toplevel, WLR_XDG_TOPLEVEL_WM_CAPABILITIES_FULLSCREEN);
-      wlr_xdg_toplevel_set_size(toplevel->xdg_toplevel, 0, 0);
+      wlr_xdg_toplevel_set_size(toplevel->xdg_toplevel, server.hellwm_current_output->wlr_output->width, server.hellwm_current_output->wlr_output->height);
       wlr_xdg_toplevel_set_tiled(toplevel->xdg_toplevel,0u);
       return;
    }
@@ -1036,7 +1078,7 @@ static void handle_backend_new_output(struct wl_listener *listener, void *data)
    struct wlr_output *wlr_output = data;
    struct wlr_scene_output *scene_output;
    struct wlr_output_layout_output *l_output;
-   
+
    /* Configures the output created by the backend to use our allocator
     * and our renderer. Must be done once, before commiting the output */
    wlr_output_init_render(wlr_output, server.allocator, server.renderer);
@@ -1088,6 +1130,8 @@ static void handle_backend_new_output(struct wl_listener *listener, void *data)
    l_output = wlr_output_layout_add_auto(server.output_layout, wlr_output);
    scene_output = wlr_scene_output_create(server.scene, wlr_output);
    wlr_scene_output_layout_add_output(server.scene_output_layout, l_output, scene_output);
+   
+   if (server.hellwm_current_output == NULL) server.hellwm_current_output = output; /* TODO: add current output variable based on focused toplevel */
 }
 
 int main(int argc, char *argv[])

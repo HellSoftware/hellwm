@@ -13,8 +13,7 @@ XLIBS =
 
 # FLAGS
 CFLAGS = -I. -DWLR_USE_UNSTABLE -D_POSIX_C_SOURCE=200809L -DVERSION=\"$(VERSION)\" $(XWAYLAND)
-DEVCFLAGS = -g -pedantic -Wall -Wextra -Wdeclaration-after-statement -Wno-unused-parameter -Wno-sign-compare -Wshadow -Wunused-macros\
-	-Werror=strict-prototypes -Werror=implicit -Werror=return-type -Werror=incompatible-pointer-types
+DEVCFLAGS = -g -pedantic -Wall -Wextra -Wno-unused-parameter -Wno-sign-compare -Wshadow -Wunused-macros -Werror=implicit -Werror=return-type -Werror=incompatible-pointer-types
 
 # CFLAGS / LDFLAGS
 PKGS      = wlroots-0.18 wayland-server xkbcommon libinput $(XLIBS)
