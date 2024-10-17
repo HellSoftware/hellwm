@@ -1,1 +1,7 @@
 result
+./logfile.log
+./cursor-shape-v1-protocol.h
+./hellwm.o
+./hellwm
+./wlr-layer-shell-unstable-v1-protocol.h
+./xdg-shell-protocol.h

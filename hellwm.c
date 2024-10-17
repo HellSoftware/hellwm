@@ -53,6 +53,8 @@ struct hellwm_server
    unsigned int cursor_mode;
    double cursor_grab_x, cursor_grab_y;
 
+   int active_workspace; //default 0
+
    /* hellwm */
    struct hellwm_output *hellwm_current_output;
    struct hellwm_toplevel *grabbed_toplevel;
@@ -212,6 +214,7 @@ struct hellwm_output
 /* functions declarations */
 void ERR(char *where);
 void LOG(const char *format, ...);
+void RUN_EXEC(char *command);
 
 void arrange_layers(struct hellwm_output *output);
 void output_manager_test_or_apply(struct wlr_output_configuration_v1 *config, int test_or_apply);
@@ -286,6 +289,10 @@ void LOG(const char *format, ...)
    va_list ap;
    va_start(ap, format);
    vfprintf(stdout, format, ap);
+
+   FILE *file = fopen("./logfile.log", "a");
+   if (file != NULL)
+      vfprintf(file, format, ap);
    va_end(ap);
 }
 
@@ -293,6 +300,14 @@ void ERR(char *where)
 {
    perror(where);
    exit (1);
+}
+
+void RUN_EXEC(char *commnad)
+{
+   if (fork() == 0)
+   {
+      execl("/bin/sh", "/bin/sh", "-c", commnad, (void *)NULL);
+   }
 }
 
 void arrange_layers(struct hellwm_output *output)
@@ -303,6 +318,7 @@ void arrange_layers(struct hellwm_output *output)
 
 void hellwm_toplevel_resize(struct hellwm_toplevel *toplevel, struct wlr_box box)
 {
+   LOG("RESIZE2");
    if (!toplevel->output || !toplevel->xdg_toplevel->base->surface->mapped)
       return;
 
@@ -527,10 +543,11 @@ static bool handle_keybinding(xkb_keysym_t sym)
          break;
    
       case XKB_KEY_Return:
-         if (fork() == 0)
-         {
-            execl("/bin/sh", "/bin/sh", "-c", "foot", (void *)NULL);
-         }
+         RUN_EXEC("foot");
+         break;
+
+      case XKB_KEY_b:
+         RUN_EXEC("firefox");
          break;
        
       case XKB_KEY_q:
@@ -562,7 +579,7 @@ static void handle_keyboard_key(struct wl_listener *listener, void *data)
    
    bool handled = false;
    uint32_t modifiers = wlr_keyboard_get_modifiers(keyboard->wlr_keyboard);
-   if ((modifiers & WLR_MODIFIER_LOGO) && event->state == WL_KEYBOARD_KEY_STATE_PRESSED)
+   if ((modifiers & WLR_MODIFIER_ALT) && event->state == WL_KEYBOARD_KEY_STATE_PRESSED)
    {
       /* If meta key is held down and this button was _pressed_, we attempt to
        * process it as a compositor keybinding. */
@@ -857,6 +874,7 @@ static void handle_xdg_toplevel_request_resize(struct wl_listener *listener, voi
 {
    struct hellwm_toplevel *toplevel = wl_container_of(listener, toplevel, xdg_toplevel_request_move);
    struct wlr_xdg_toplevel_resize_event *event = data;
+   LOG("RESIZE");
    // TODO: request_resize
 }
 
@@ -1137,7 +1155,9 @@ static void handle_backend_new_output(struct wl_listener *listener, void *data)
 int main(int argc, char *argv[])
 {
    printf("Hello World...\n"); /* https://www.reddit.com/r/ProgrammerHumor/comments/1euwm7v/helloworldfeaturegotmergedguys/ */
+   server.active_workspace = 0;
    
+   LOG("LOG");
    wlr_log_init(WLR_DEBUG, NULL);
 
    /* The Wayland display is managed by libwayland. It handles accepting  
