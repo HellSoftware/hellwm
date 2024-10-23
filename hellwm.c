@@ -25,7 +25,6 @@
 #include <wlr/types/wlr_screencopy_v1.h>
 #include <wlr/types/wlr_data_control_v1.h>
 #include <wlr/types/wlr_xcursor_manager.h>
-#include <wlr/types/wlr_output_management_v1.h>
 #include <wlr/types/wlr_xdg_shell.h>
 #include <wlr/util/log.h>
 #include <xkbcommon/xkbcommon.h>
@@ -57,10 +56,8 @@ struct hellwm_server
     
     /* wlroots */
     struct wlr_box grab_geometry;
-    struct wlr_box output_layout_geometry;
     
     struct wlr_scene *scene;
-    struct wlr_scene_rect *scene_rect;
     struct wlr_scene_output_layout *scene_layout;
     
     struct wlr_seat *seat;
@@ -75,7 +72,6 @@ struct hellwm_server
     struct wlr_output_layout *output_layout;
     struct wlr_data_device_manager *data_device_manager;
     
-    struct wlr_output_manager_v1 *output_manager;
     //struct wlr_xdg_activation_v1 *xdg_activation; 
     struct wlr_screencopy_manager_v1 *screencopy_manager;
     struct wlr_data_control_manager_v1 *data_control_manager;
@@ -92,10 +88,6 @@ struct hellwm_server
     
     struct wl_listener backend_new_input;
     struct wl_listener backend_new_output;
-    
-    struct wl_listener output_manager_test;
-    struct wl_listener output_layout_update;
-    struct wl_listener output_manager_apply;
     
     struct wl_listener request_cursor;
     struct wl_listener request_set_selection;
@@ -177,6 +169,7 @@ typedef struct
 
 struct hellwm_config_manager
 {
+    hellwm_config_monitor *monitor;
     hellwm_config_keyboard *keyboard;
 };
 
@@ -187,11 +180,10 @@ void LOG(const char *format, ...);
 void check_usage(int argc, char**argv);
 
 struct hellwm_config_manager *hellwm_config_manager_create();
+void hellwm_config_monitor_reload(struct hellwm_server *server);
 void hellwm_config_keyboard_reload(struct hellwm_server *server);
+void hellwm_config_monitor_set(hellwm_config_monitor *config, struct hellwm_output *output);
 void hellwm_config_keyboard_set(hellwm_config_keyboard *config, struct hellwm_keyboard *keyboard);
-
-void arrange_layers(struct hellwm_output *output);
-void output_manager_test_or_apply(struct hellwm_server *server, struct wlr_output_configuration_v1 *config, int test_or_apply);
 
 static struct hellwm_toplevel *desktop_toplevel_at(struct hellwm_server *server, double lx, double ly, struct wlr_surface **surface, double *sx, double *sy);
 static void focus_toplevel(struct hellwm_toplevel *toplevel, struct wlr_surface *surface);
@@ -239,10 +231,6 @@ static void server_new_xdg_toplevel(struct wl_listener *listener, void *data) ;
 static void xdg_popup_commit(struct wl_listener *listener, void *data) ;
 static void xdg_popup_destroy(struct wl_listener *listener, void *data) ;
 static void server_new_xdg_popup(struct wl_listener *listener, void *data) ;
-
-static void handle_output_layout_update(struct wl_listener *listener, void *data);
-static void handle_output_manager_apply(struct wl_listener *listener, void *data);
-static void handle_output_manager_test(struct wl_listener *listener, void *data);
 
 
 /* functions implementations */
@@ -310,8 +298,9 @@ void check_usage(int argc, char**argv)
 struct hellwm_config_manager *hellwm_config_manager_create()
 {
     struct hellwm_config_manager *config_manager = calloc(1, sizeof(struct hellwm_config_manager));
-    config_manager->keyboard = calloc(1, sizeof(hellwm_config_keyboard));
 
+    /* keyboard */
+    config_manager->keyboard = calloc(1, sizeof(hellwm_config_keyboard));
     config_manager->keyboard->repeat = 25;
     config_manager->keyboard->delay = 600;
     config_manager->keyboard->rules = NULL;
@@ -319,6 +308,14 @@ struct hellwm_config_manager *hellwm_config_manager_create()
     config_manager->keyboard->layout = "us";
     config_manager->keyboard->variant = NULL;
     config_manager->keyboard->options = NULL;
+
+    /* monitor */
+    config_manager->monitor = calloc(1, sizeof(hellwm_config_monitor));
+    config_manager->monitor->width = 0;
+    config_manager->monitor->height = 0;
+    config_manager->monitor->hz = 60;
+    config_manager->monitor->scale = 1;
+    config_manager->monitor->transfrom = 0;
 
     return config_manager;
 }
@@ -401,6 +398,7 @@ static bool handle_keybinding(struct hellwm_server *server, xkb_keysym_t sym)
             break;
 
         case XKB_KEY_k:
+            hellwm_config_monitor_reload(server);
             hellwm_config_keyboard_reload(server);
             break;
 
@@ -480,9 +478,8 @@ static void server_new_keyboard(struct hellwm_server *server, struct wlr_input_d
     keyboard->server = server;
     keyboard->wlr_keyboard = wlr_keyboard;
 
+    /* Set everything according to config */
     hellwm_config_keyboard_set(server->config_manager->keyboard, keyboard);
-    //hellwm_config_keyboard_reload(server); 
-    LOG("%s", wlr_keyboard->base.name);
 
     /* Here we set up listeners for keyboard events. */
     keyboard->modifiers.notify = keyboard_handle_modifiers;
@@ -853,35 +850,14 @@ static void server_backend_new_output(struct wl_listener *listener, void *data)
      * monitor) becomes available. */
     struct hellwm_server *server = wl_container_of(listener, server, backend_new_output);
     struct wlr_output *wlr_output = data;
-
-    /* Configures the output created by the backend to use our allocator
-     * and our renderer. Must be done once, before commiting the output */
-    wlr_output_init_render(wlr_output, server->allocator, server->renderer);
-
-    /* The output may be disabled, switch it on. */
-    struct wlr_output_state state;
-    wlr_output_state_init(&state);
-    wlr_output_state_set_enabled(&state, true);
-
-    /* Some backends don't have modes. DRM+KMS does, and we need to set a mode
-     * before we can use the output. The mode is a tuple of (width, height,
-     * refresh rate), and each monitor supports only a specific set of modes. We
-     * just pick the monitor's preferred mode, a more sophisticated compositor
-     * would let the user configure it. */
-    struct wlr_output_mode *mode = wlr_output_preferred_mode(wlr_output);
-    if (mode != NULL) 
-   {
-        wlr_output_state_set_mode(&state, mode);
-    }
-
-    /* Atomically applies the new output state. */
-    wlr_output_commit_state(wlr_output, &state);
-    wlr_output_state_finish(&state);
-
+ 
     /* Allocates and configures our state for this output */
     struct hellwm_output *output = calloc(1, sizeof(*output));
     output->wlr_output = wlr_output;
     output->server = server;
+
+    /* Set everything according to config */
+    hellwm_config_monitor_set(server->config_manager->monitor, output);
 
     /* Sets up a listener for the frame event. */
     output->frame.notify = output_frame;
@@ -1140,127 +1116,6 @@ static void server_new_xdg_popup(struct wl_listener *listener, void *data)
     wl_signal_add(&xdg_popup->events.destroy, &popup->destroy);
 }
 
-static void handle_output_layout_update(struct wl_listener *listener, void *data)
-{
-  // struct hellwm_server *server = wl_container_of(listener, server, output_layout_update);
-  // struct wlr_output_configuration_v1 *config = wlr_output_configuration_v1_create();
-  // struct wlr_output_configuration_head_v1 *output_configuration_head;
-  // struct hellwm_output *output;
-
-  // wl_list_for_each(output, &server->outputs, link) 
-  // {
-  //    if (output->wlr_output->enabled)
-  //        continue;
-  //    output_configuration_head = wlr_output_configuration_head_v1_create(config, output->wlr_output);
-  //    output_configuration_head->state.enabled = 0;
-  //    wlr_output_layout_remove(server->output_layout, output->wlr_output);
-  //    // TODO:
-  //    output->output_area = output->window_area = (struct wlr_box){0};
-  // }
-  // wl_list_for_each(output, &server->outputs, link)
-  // {
-  //    if (output->wlr_output->enabled && !wlr_output_layout_get(server->output_layout, output->wlr_output))
-  //       wlr_output_layout_add_auto(server->output_layout, output->wlr_output);
-  // }
-  // 
-  // wlr_output_layout_get_box(server->output_layout, NULL, &server->output_layout_geometry);
-  // 
-  // wlr_scene_node_set_position(&server->scene_rect->node, server->output_layout_geometry.x, server->output_layout_geometry.y);
-  // wlr_scene_rect_set_size(server->scene_rect, server->output_layout_geometry.width, server->output_layout_geometry.height);
-  // 
-  // wl_list_for_each(output, &server->outputs, link)
-  // {
-  //    if (!output->wlr_output->enabled)
-  //       continue;
-  //    
-  //    output_configuration_head = wlr_output_configuration_head_v1_create(config, output->wlr_output);
-  //    
-  //    wlr_output_layout_get_box(server->output_layout, output->wlr_output, &output->output_area);
-  //    output->window_area = output->output_area;
-  //    //wlr_scene_output_set_position(output->scene_output, output->output_area.x, output->output_area.y);
-  //    //wlr_scene_node_set_position(&output->output_scene_rect->node, output->output_area.x, output->output_area.y);
-  //    //wlr_scene_rect_set_size(output->output_scene_rect, output->output_area.width, output->output_area.height);
-  //    
-  //    arrange_layers(output);
-  //    
-  //    output_configuration_head->state.x = output->output_area.x;
-  //    output_configuration_head->state.y = output->output_area.y;
-  // }
-  // 
-  // wlr_output_manager_v1_set_configuration(server->output_manager, config);
-}
-
-void output_manager_test_or_apply(struct hellwm_server *server, struct wlr_output_configuration_v1 *config, int test_or_apply)
-{
-   struct wlr_output_configuration_head_v1 *output_configuration_head;
-   int succeed = 0;
-   
-   wl_list_for_each(output_configuration_head, &config->heads, link)
-   {
-      struct wlr_output *wlr_output = output_configuration_head->state.output;
-      struct hellwm_output *output = wlr_output->data;
-      struct wlr_output_state state;
-      
-      wlr_output_state_init(&state);
-      wlr_output_state_set_enabled(&state, output_configuration_head->state.enabled);
-      if (!output_configuration_head->state.enabled)
-      {
-         if (test_or_apply == 0) /* APPLY - server.output_manager->events.apply */
-         {
-            wlr_output_commit_state(wlr_output, &state);
-            
-            if (wlr_output->enabled && (output->output_area.x != output_configuration_head->state.x || output->output_area.y != output_configuration_head->state.y))
-               wlr_output_layout_add(server->output_layout, wlr_output, output_configuration_head->state.x, output_configuration_head->state.y);
-      
-         }
-         else /* TEST - server.output_manager->events.test */
-         {
-            wlr_output_test_state(wlr_output, &state);
-         }
-      
-         wlr_output_state_finish(&state);
-      }
-      
-      if (output_configuration_head->state.mode)
-         wlr_output_state_set_mode(&state, output_configuration_head->state.mode);
-      else
-         wlr_output_state_set_custom_mode(&state, output_configuration_head->state.custom_mode.width, output_configuration_head->state.custom_mode.height, output_configuration_head->state.custom_mode.refresh);
-      
-      wlr_output_state_set_transform(&state, output_configuration_head->state.transform);
-      wlr_output_state_set_scale(&state, output_configuration_head->state.scale);
-      wlr_output_state_set_adaptive_sync_enabled(&state, output_configuration_head->state.adaptive_sync_enabled);
-   }
-
-   if (succeed)
-      wlr_output_configuration_v1_send_succeeded(config);
-   else
-      wlr_output_configuration_v1_send_failed(config);
-   wlr_output_configuration_v1_destroy(config);
-   
-   handle_output_layout_update(NULL, NULL);
-}
-
-static void handle_output_manager_apply(struct wl_listener *listener, void *data)
-{
-   struct hellwm_server *server = wl_container_of(listener, server, output_manager_apply);
-   struct wlr_output_configuration_v1 *config = data;
-   output_manager_test_or_apply(server, config, 0);
-}
-
-static void handle_output_manager_test(struct wl_listener *listener, void *data)
-{
-   struct hellwm_server *server = wl_container_of(listener, server, output_manager_test);
-   struct wlr_output_configuration_v1 *config = data;
-   output_manager_test_or_apply(server, config, 1);
-}
-
-
-void arrange_layers(struct hellwm_output *output)
-{
-   // TODO: arrange_layers()
-   return;
-}
-
 void hellwm_config_keyboard_set(hellwm_config_keyboard *config, struct hellwm_keyboard *keyboard)
 {
     struct xkb_context *context = xkb_context_new(XKB_CONTEXT_NO_FLAGS);
@@ -1284,13 +1139,56 @@ void hellwm_config_keyboard_set(hellwm_config_keyboard *config, struct hellwm_ke
     xkb_context_unref(context);
 }
 
+void hellwm_config_monitor_set(hellwm_config_monitor *config, struct hellwm_output *output)
+{
+    /* Configures the output created by the backend to use our allocator
+     * and our renderer. Must be done once, before commiting the output */
+    wlr_output_init_render(output->wlr_output, output->server->allocator, output->server->renderer);
+
+    /* The output may be disabled, switch it on. */
+    struct wlr_output_state state;
+    wlr_output_state_init(&state);
+    wlr_output_state_set_enabled(&state, true);
+
+    /* Some backends don't have modes. DRM+KMS does, and we need to set a mode
+     * before we can use the output. The mode is a tuple of (width, height,
+     * refresh rate), and each monitor supports only a specific set of modes. We
+     * just pick the monitor's preferred mode, a more sophisticated compositor
+     * would let the user configure it. */
+    struct wlr_output_mode *mode = wlr_output_preferred_mode(output->wlr_output);
+    if (mode != NULL) 
+    {
+        wlr_output_state_set_mode(&state, mode);
+    }
+
+    wlr_output_state_set_custom_mode(&state, config->width, config->height, (config->hz * 1000)); /* Hz -> MHz */
+
+    /* Atomically applies the new output state. */
+    wlr_output_commit_state(output->wlr_output, &state);
+    wlr_output_state_finish(&state);
+
+    LOG("Monitor %s: %dx%d@%.3f\n", output->wlr_output->name, output->wlr_output->width, output->wlr_output->height, (output->wlr_output->refresh / 1000.0)); /* MHz -> Hz */
+}
+
 void hellwm_config_keyboard_reload(struct hellwm_server *server)
 {
     LOG("Reloading all keyboards\n");
     struct hellwm_keyboard *keyboard;
+
     wl_list_for_each(keyboard, &server->keyboards, link)
     {
         hellwm_config_keyboard_set(server->config_manager->keyboard, keyboard);
+    }
+}
+
+void hellwm_config_monitor_reload(struct hellwm_server *server)
+{
+    LOG("Reloading all outputs\n");
+    struct hellwm_output *output;
+
+    wl_list_for_each(output, &server->outputs, link)
+    {
+        hellwm_config_monitor_set(server->config_manager->monitor, output);
     }
 }
 
@@ -1369,7 +1267,6 @@ int main(int argc, char *argv[])
     /* scene */
     server.scene = wlr_scene_create();
     server.scene_layout = wlr_scene_attach_output_layout(server.scene, server.output_layout);
-    server.scene_rect = wlr_scene_rect_create(&server.scene->tree, 0, 0, (float[]){0.4f, 0.f, 0.f, 1.f});
 
 
     /* xdg_shell */
@@ -1378,21 +1275,6 @@ int main(int argc, char *argv[])
     wl_signal_add(&server.xdg_shell->events.new_toplevel, &server.new_xdg_toplevel);
     server.new_xdg_popup.notify = server_new_xdg_popup;
     wl_signal_add(&server.xdg_shell->events.new_popup, &server.new_xdg_popup);
-
-
-   /* xdg_activation */
-  // server.xdg_activation = wlr_xdg_activation_v1_create(server.wl_display);
-  // server.xdg_activation_request_activate.notify = handle_xdg_activation_request_activate; 
-  // wl_signal_add(&server.xdg_activation->events.request_activate, &server.xdg_activation_request_activate);
-
-
-    /* output manager */
-    server.output_manager = wlr_output_manager_v1_create(server.wl_display);
-    server.output_manager_apply.notify = handle_output_manager_apply;
-    wl_signal_add(&server.output_manager->events.apply, &server.output_manager_apply);
-    
-    server.output_manager_test.notify = handle_output_manager_test;
-    wl_signal_add(&server.output_manager->events.test, &server.output_manager_test);
 
 
     /* cursor */
@@ -1415,6 +1297,7 @@ int main(int argc, char *argv[])
 
     server.cursor_frame.notify = server_cursor_frame;
     wl_signal_add(&server.cursor->events.frame, &server.cursor_frame);
+
 
     /* seat */
     server.seat = wlr_seat_create(server.wl_display, "seat0");
