@@ -3,6 +3,7 @@
 #include <assert.h>
 #include <getopt.h>
 #include <stdbool.h>
+#include <stdint.h>
 #include <stdlib.h>
 #include <stdio.h>
 #include <time.h>
@@ -157,6 +158,7 @@ typedef struct
 typedef struct
 {
     unsigned count;
+    uint32_t modifier;
     hellwm_keybind **keybindings;
 } hellwm_config_keybindings;
 
@@ -197,7 +199,7 @@ void LOG(const char *format, ...);
 void check_usage(int argc, char**argv);
 
 struct hellwm_config_manager *hellwm_config_manager_create();
-bool hellwm_convert_string_to_xkb_keys(xkb_keysym_t *keysyms_arr, const char *keys_str, int *num_keys);
+bool hellwm_convert_string_to_xkb_keys(xkb_keysym_t **keysyms_arr, const char *keys_str, int *num_keys);
 
 void hellwm_config_monitor_reload(struct hellwm_server *server);
 void hellwm_config_keyboard_reload(struct hellwm_server *server);
@@ -322,6 +324,7 @@ struct hellwm_config_manager *hellwm_config_manager_create()
     /* keybindings */
     config_manager->keybindings = calloc(1, sizeof(hellwm_config_keybindings));
     config_manager->keybindings->count = 0;
+    config_manager->keybindings->modifier = WLR_MODIFIER_ALT;
     
     /* keyboard */
     config_manager->keyboard = calloc(1, sizeof(hellwm_config_keyboard));
@@ -413,35 +416,19 @@ static bool handle_keybinding(struct hellwm_server *server, xkb_keysym_t sym)
      * processing keys, rather than passing them on to the client for its own
      * processing.
      */
-    switch (sym)
+
+    for (int j = 0; j < server->config_manager->keybindings->count; j++)
     {
-        case XKB_KEY_Escape:
-            wl_display_terminate(server->wl_display);
-            break;
-
-        case XKB_KEY_k:
-            hellwm_config_monitor_reload(server);
-            hellwm_config_keyboard_reload(server);
-            break;
-
-        case XKB_KEY_F1:
-            /* Cycle to the next toplevel */
-            if (wl_list_length(&server->toplevels) < 2)
+        for (int k = 0; k < server->config_manager->keybindings->keybindings[j]->count; k++)
+        {
+            if (server->config_manager->keybindings->keybindings[j]->keysyms[k] == sym)
             {
-                break;
+                RUN_EXEC(server->config_manager->keybindings->keybindings[j]->content);
+                return true;
             }
-            struct hellwm_toplevel *next_toplevel = wl_container_of(server->toplevels.prev, next_toplevel, link);
-            focus_toplevel(next_toplevel, next_toplevel->xdg_toplevel->base->surface);
-            break;
-
-        case XKB_KEY_Return:
-            RUN_EXEC("foot");
-            break;
-
-        default:
-            return false;
+        }  
     }
-    return true;
+    return false;
 }
 
 static void keyboard_handle_key(struct wl_listener *listener, void *data)
@@ -462,7 +449,19 @@ static void keyboard_handle_key(struct wl_listener *listener, void *data)
     bool handled = false;
     uint32_t modifiers = wlr_keyboard_get_modifiers(keyboard->wlr_keyboard);
 
-    if ((modifiers & WLR_MODIFIER_ALT) && event->state == WL_KEYBOARD_KEY_STATE_PRESSED)
+    /* MODIFIERS 
+     *
+     *  WLR_MODIFIER_SHIFT
+     *  WLR_MODIFIER_CAPS
+     *  WLR_MODIFIER_CTRL
+     *  WLR_MODIFIER_ALT
+     *  WLR_MODIFIER_MOD2
+     *  WLR_MODIFIER_MOD3
+     *  WLR_MODIFIER_LOGO
+     *  WLR_MODIFIER_MOD5
+    */
+
+    if ((modifiers & server->config_manager->keybindings->modifier) && event->state == WL_KEYBOARD_KEY_STATE_PRESSED)
     {
         /* If alt is held down and this button was _pressed_, we attempt to process it as a compositor keybinding. */
         for (int i = 0; i < nsyms; i++)
@@ -1255,18 +1254,27 @@ void hellwm_config_manager_free(struct hellwm_config_manager *config)
     }
 }
 
-bool hellwm_convert_string_to_xkb_keys(xkb_keysym_t *keysyms_arr, const char *keys_str, int *num_keys)
+bool hellwm_convert_string_to_xkb_keys(xkb_keysym_t **keysyms_arr, const char *keys_str, int *num_keys)
 {
     char *keys_copy = strdup(keys_str);
     if (!keys_copy)
     {
         LOG("hellwm_convert_string_to_xkb_keys(): Failed to allocate memory\n");
+        *keysyms_arr = NULL;
         return false;
     }
 
     char *token = strtok(keys_copy, ",");
-    xkb_keysym_t *keysyms = malloc(sizeof(xkb_keysym_t) * strlen(keys_str));
     int count = 0;
+    
+    // Initial allocation for maximum possible keys
+    xkb_keysym_t *keysyms = malloc(sizeof(xkb_keysym_t) * 10);
+    if (!keysyms) {
+        LOG("hellwm_convert_string_to_xkb_keys(): Failed to allocate memory for keysyms\n");
+        free(keys_copy);
+        *keysyms_arr = NULL;
+        return false;
+    }
 
     struct xkb_context *ctx = xkb_context_new(XKB_CONTEXT_NO_FLAGS);
     if (!ctx)
@@ -1274,6 +1282,7 @@ bool hellwm_convert_string_to_xkb_keys(xkb_keysym_t *keysyms_arr, const char *ke
         LOG("hellwm_convert_string_to_xkb_keys(): Failed to create XKB context\n");
         free(keys_copy);
         free(keysyms);
+        *keysyms_arr = NULL;
         return false;
     }
 
@@ -1282,11 +1291,25 @@ bool hellwm_convert_string_to_xkb_keys(xkb_keysym_t *keysyms_arr, const char *ke
         xkb_keysym_t keysym = xkb_keysym_from_name(token, XKB_KEYSYM_NO_FLAGS);
         if (keysym == XKB_KEY_NoSymbol)
         {
-            LOG("hellwm_convert_string_to_xkb_keys(): Invalid keysym: %s, keys_str: \"%s\"\n",keysym, keys_str);
+            LOG("hellwm_convert_string_to_xkb_keys(): Invalid keysym: %s, keys_str: \"%s\"\n", token, keys_str);
+            free(keys_copy);
+            free(keysyms);
+            *keysyms_arr = NULL;
             return false;
-        } else {
-            keysyms[count++] = keysym;
+        } 
+        
+        if (count % 10 == 0)
+        {
+            keysyms = realloc(keysyms, sizeof(xkb_keysym_t) * (count + 10));
+            if (!keysyms) {
+                LOG("hellwm_convert_string_to_xkb_keys(): Failed to reallocate memory for keysyms\n");
+                free(keys_copy);
+                *keysyms_arr = NULL;
+                return false;
+            }
         }
+
+        keysyms[count++] = keysym;
         token = strtok(NULL, ",");
     }
 
@@ -1294,18 +1317,20 @@ bool hellwm_convert_string_to_xkb_keys(xkb_keysym_t *keysyms_arr, const char *ke
     xkb_context_unref(ctx);
 
     *num_keys = count;
-    keysyms_arr = keysyms;
+    *keysyms_arr = keysyms;
     return true;
 }
 
 void hellwm_keybind_add_to_config(hellwm_config_keybindings *config_keybindings, char *keys, void *content)
 {
-    config_keybindings->keybindings = realloc(config_keybindings->keybindings, (config_keybindings->count + 1) * sizeof(hellwm_keybind *));
-    if (config_keybindings->keybindings == NULL)
+    hellwm_keybind **temp_keybindings = realloc(config_keybindings->keybindings, (config_keybindings->count + 1) * sizeof(hellwm_keybind *));
+    if (temp_keybindings == NULL)
     {
         LOG("hellwm_keybind_add_to_config(): Failed to allocate memory for keybindings\n");
         return;
     }
+    
+    config_keybindings->keybindings = temp_keybindings;
     
     config_keybindings->keybindings[config_keybindings->count] = malloc(sizeof(hellwm_keybind));
     if (config_keybindings->keybindings[config_keybindings->count] == NULL)
@@ -1314,12 +1339,12 @@ void hellwm_keybind_add_to_config(hellwm_config_keybindings *config_keybindings,
         return;
     }
     
-    if (hellwm_convert_string_to_xkb_keys(config_keybindings->keybindings[config_keybindings->count]->keysyms, keys, &config_keybindings->keybindings[config_keybindings->count]->count))
+    if (hellwm_convert_string_to_xkb_keys(&config_keybindings->keybindings[config_keybindings->count]->keysyms, keys, &config_keybindings->keybindings[config_keybindings->count]->count))
     {
         config_keybindings->keybindings[config_keybindings->count]->content = content;
-        LOG("Keybind: %d[%s] = %s\n", config_keybindings->keybindings[config_keybindings->count]->count, keys, config_keybindings->keybindings[config_keybindings->count]->content);
-        config_keybindings->count++;
     }
+    LOG("Keybind: %d[%s] = %s\n", config_keybindings->keybindings[config_keybindings->count]->count, keys, config_keybindings->keybindings[config_keybindings->count]->content);
+    config_keybindings->count++;
     
 }
 
@@ -1338,6 +1363,9 @@ int main(int argc, char *argv[])
 
     /* config */
     server.config_manager = hellwm_config_manager_create();
+    hellwm_keybind_add_to_config(server.config_manager->keybindings, "Escape", "killall hellwm");
+    hellwm_keybind_add_to_config(server.config_manager->keybindings, "Return", "foot");
+    hellwm_keybind_add_to_config(server.config_manager->keybindings, "b", "firefox");
 
     /* lists */
     wl_list_init(&server.outputs);
