@@ -144,6 +144,22 @@ struct hellwm_keyboard
     struct wl_listener destroy;
 };
 
+
+/* keybinding */
+typedef struct
+{
+    xkb_keysym_t *keysyms;
+    void *content;
+    int count;
+} hellwm_keybind;
+
+/* keybindings config */
+typedef struct
+{
+    unsigned count;
+    hellwm_keybind **keybindings;
+} hellwm_config_keybindings;
+
 /* keyboard config */
 typedef struct
 {
@@ -171,6 +187,7 @@ struct hellwm_config_manager
 {
     hellwm_config_monitor *monitor;
     hellwm_config_keyboard *keyboard;
+    hellwm_config_keybindings *keybindings;
 };
 
 /* functions declarations */
@@ -180,10 +197,17 @@ void LOG(const char *format, ...);
 void check_usage(int argc, char**argv);
 
 struct hellwm_config_manager *hellwm_config_manager_create();
+bool hellwm_convert_string_to_xkb_keys(xkb_keysym_t *keysyms_arr, const char *keys_str, int *num_keys);
+
 void hellwm_config_monitor_reload(struct hellwm_server *server);
 void hellwm_config_keyboard_reload(struct hellwm_server *server);
 void hellwm_config_monitor_set(hellwm_config_monitor *config, struct hellwm_output *output);
 void hellwm_config_keyboard_set(hellwm_config_keyboard *config, struct hellwm_keyboard *keyboard);
+void hellwm_keybind_add_to_config(hellwm_config_keybindings *config_keybindings, char *keys, void *content);
+void hellwm_config_manager_free(struct hellwm_config_manager *config);
+void hellwm_config_monitor_free(hellwm_config_monitor *monitor);
+void hellwm_config_keyboard_free(hellwm_config_keyboard *keyboard);
+void hellwm_keybindings_free(hellwm_config_keybindings *keybindings);
 
 static struct hellwm_toplevel *desktop_toplevel_at(struct hellwm_server *server, double lx, double ly, struct wlr_surface **surface, double *sx, double *sy);
 static void focus_toplevel(struct hellwm_toplevel *toplevel, struct wlr_surface *surface);
@@ -244,10 +268,6 @@ void LOG(const char *format, ...)
 
     FILE *file = fopen("./logfile.log", "a");
 
-    va_start(ap, format);
-    vfprintf(stderr, format, ap);
-    va_end(ap);
-
     if (file != NULL)
     {
         va_start(ap, format);
@@ -299,6 +319,10 @@ struct hellwm_config_manager *hellwm_config_manager_create()
 {
     struct hellwm_config_manager *config_manager = calloc(1, sizeof(struct hellwm_config_manager));
 
+    /* keybindings */
+    config_manager->keybindings = calloc(1, sizeof(hellwm_config_keybindings));
+    config_manager->keybindings->count = 0;
+    
     /* keyboard */
     config_manager->keyboard = calloc(1, sizeof(hellwm_config_keyboard));
     config_manager->keyboard->repeat = 25;
@@ -388,8 +412,6 @@ static bool handle_keybinding(struct hellwm_server *server, xkb_keysym_t sym)
      * Here we handle compositor keybindings. This is when the compositor is
      * processing keys, rather than passing them on to the client for its own
      * processing.
-     *
-     * This function assumes Alt is held down.
      */
     switch (sym)
     {
@@ -432,24 +454,25 @@ static void keyboard_handle_key(struct wl_listener *listener, void *data)
 
     /* Translate libinput keycode -> xkbcommon */
     uint32_t keycode = event->keycode + 8;
+
     /* Get a list of keysyms based on the keymap for this keyboard */
     const xkb_keysym_t *syms;
     int nsyms = xkb_state_key_get_syms(keyboard->wlr_keyboard->xkb_state, keycode, &syms);
 
     bool handled = false;
     uint32_t modifiers = wlr_keyboard_get_modifiers(keyboard->wlr_keyboard);
+
     if ((modifiers & WLR_MODIFIER_ALT) && event->state == WL_KEYBOARD_KEY_STATE_PRESSED)
-   {
-        /* If alt is held down and this button was _pressed_, we attempt to
-         * process it as a compositor keybinding. */
+    {
+        /* If alt is held down and this button was _pressed_, we attempt to process it as a compositor keybinding. */
         for (int i = 0; i < nsyms; i++)
-      {
+        {
             handled = handle_keybinding(server, syms[i]);
         }
     }
 
     if (!handled)
-   {
+    {
         /* Otherwise, we pass it along to the client. */
         wlr_seat_set_keyboard(seat, keyboard->wlr_keyboard);
         wlr_seat_keyboard_notify_key(seat, event->time_msec, event->keycode, event->state);
@@ -1192,6 +1215,114 @@ void hellwm_config_monitor_reload(struct hellwm_server *server)
     }
 }
 
+void hellwm_keybindings_free(hellwm_config_keybindings *keybindings)
+{
+    if (keybindings == NULL) return;
+
+    for (unsigned i = 0; i < keybindings->count; i++)
+    {
+        free(keybindings->keybindings[i]);
+    }
+
+    free(keybindings->keybindings);
+    free(keybindings);
+}
+
+void hellwm_config_keyboard_free(hellwm_config_keyboard *keyboard)
+{
+    if (keyboard)
+    {
+       free(keyboard);
+    }
+}
+
+void hellwm_config_monitor_free(hellwm_config_monitor *monitor)
+{
+    if (monitor)
+    {
+        free(monitor);
+    }
+}
+
+void hellwm_config_manager_free(struct hellwm_config_manager *config)
+{
+    if (config)
+    {
+        hellwm_config_monitor_free(config->monitor);
+        hellwm_config_keyboard_free(config->keyboard);
+        hellwm_keybindings_free(config->keybindings);
+        free(config);
+    }
+}
+
+bool hellwm_convert_string_to_xkb_keys(xkb_keysym_t *keysyms_arr, const char *keys_str, int *num_keys)
+{
+    char *keys_copy = strdup(keys_str);
+    if (!keys_copy)
+    {
+        LOG("hellwm_convert_string_to_xkb_keys(): Failed to allocate memory\n");
+        return false;
+    }
+
+    char *token = strtok(keys_copy, ",");
+    xkb_keysym_t *keysyms = malloc(sizeof(xkb_keysym_t) * strlen(keys_str));
+    int count = 0;
+
+    struct xkb_context *ctx = xkb_context_new(XKB_CONTEXT_NO_FLAGS);
+    if (!ctx)
+    {
+        LOG("hellwm_convert_string_to_xkb_keys(): Failed to create XKB context\n");
+        free(keys_copy);
+        free(keysyms);
+        return false;
+    }
+
+    while (token)
+    {
+        xkb_keysym_t keysym = xkb_keysym_from_name(token, XKB_KEYSYM_NO_FLAGS);
+        if (keysym == XKB_KEY_NoSymbol)
+        {
+            LOG("hellwm_convert_string_to_xkb_keys(): Invalid keysym: %s, keys_str: \"%s\"\n",keysym, keys_str);
+            return false;
+        } else {
+            keysyms[count++] = keysym;
+        }
+        token = strtok(NULL, ",");
+    }
+
+    free(keys_copy);
+    xkb_context_unref(ctx);
+
+    *num_keys = count;
+    keysyms_arr = keysyms;
+    return true;
+}
+
+void hellwm_keybind_add_to_config(hellwm_config_keybindings *config_keybindings, char *keys, void *content)
+{
+    config_keybindings->keybindings = realloc(config_keybindings->keybindings, (config_keybindings->count + 1) * sizeof(hellwm_keybind *));
+    if (config_keybindings->keybindings == NULL)
+    {
+        LOG("hellwm_keybind_add_to_config(): Failed to allocate memory for keybindings\n");
+        return;
+    }
+    
+    config_keybindings->keybindings[config_keybindings->count] = malloc(sizeof(hellwm_keybind));
+    if (config_keybindings->keybindings[config_keybindings->count] == NULL)
+    {
+        LOG("hellwm_keybind_add_to_config(): Failed to allocate memory for new keybind\n");
+        return;
+    }
+    
+    if (hellwm_convert_string_to_xkb_keys(config_keybindings->keybindings[config_keybindings->count]->keysyms, keys, &config_keybindings->keybindings[config_keybindings->count]->count))
+    {
+        config_keybindings->keybindings[config_keybindings->count]->content = content;
+        LOG("Keybind: %d[%s] = %s\n", config_keybindings->keybindings[config_keybindings->count]->count, keys, config_keybindings->keybindings[config_keybindings->count]->content);
+        config_keybindings->count++;
+    }
+    
+}
+
 int main(int argc, char *argv[])
 {
     printf("Hello World...\n"); /* https://www.reddit.com/r/ProgrammerHumor/comments/1euwm7v/helloworldfeaturegotmergedguys/ */
@@ -1202,10 +1333,8 @@ int main(int argc, char *argv[])
     struct hellwm_server server = {0};
     char *startup_cmd = NULL;
 
-
     /* display */
     server.wl_display = wl_display_create();
-
 
     /* config */
     server.config_manager = hellwm_config_manager_create();
@@ -1214,7 +1343,6 @@ int main(int argc, char *argv[])
     wl_list_init(&server.outputs);
     wl_list_init(&server.toplevels);
     wl_list_init(&server.keyboards);
-
 
     /* backend */
     server.backend = wlr_backend_autocreate(wl_display_get_event_loop(server.wl_display), NULL);
