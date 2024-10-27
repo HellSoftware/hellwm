@@ -41,12 +41,15 @@ struct hellwm_server
 {
     uint32_t resize_edges;
     unsigned int cursor_mode;
+    unsigned mapped_functions;
     double cursor_grab_x, cursor_grab_y;
     
     /* hellwm */
+
     struct hellwm_output *output;
     struct hellwm_toplevel *grabbed_toplevel;
     struct hellwm_config_manager *config_manager;
+    struct hellwm_function_map_entry *hellwm_function_map;
     
     /* wayland */
     struct wl_list outputs;
@@ -145,13 +148,26 @@ struct hellwm_keyboard
     struct wl_listener destroy;
 };
 
+union hellwm_function
+{
+    char *as_void;
+    void (*as_func)(struct hellwm_server*);
+};
+
+struct hellwm_function_map_entry
+{
+    const char* name;
+    union hellwm_function func;
+};
 
 /* keybinding */
 typedef struct
 {
-    xkb_keysym_t *keysyms;
-    void *content;
     int count;
+    bool function;
+
+    xkb_keysym_t *keysyms;
+    union hellwm_function *content;
 } hellwm_keybind;
 
 /* keybindings config */
@@ -205,14 +221,20 @@ void hellwm_config_monitor_reload(struct hellwm_server *server);
 void hellwm_config_keyboard_reload(struct hellwm_server *server);
 void hellwm_config_monitor_set(hellwm_config_monitor *config, struct hellwm_output *output);
 void hellwm_config_keyboard_set(hellwm_config_keyboard *config, struct hellwm_keyboard *keyboard);
-void hellwm_keybind_add_to_config(hellwm_config_keybindings *config_keybindings, char *keys, void *content);
+void hellwm_keybind_add_to_config(struct hellwm_server *server, char *keys, void *content);
 void hellwm_config_manager_free(struct hellwm_config_manager *config);
 void hellwm_config_monitor_free(hellwm_config_monitor *monitor);
 void hellwm_config_keyboard_free(hellwm_config_keyboard *keyboard);
 void hellwm_keybindings_free(hellwm_config_keybindings *keybindings);
+void hellwm_function_expose(struct hellwm_server *server);
+void hellwm_function_add_to_map(struct hellwm_server *server, const char* name, void (*func)(struct hellwm_server*));
+bool hellwm_function_find(const char* name, struct hellwm_server* server, union hellwm_function *func);
 
 static struct hellwm_toplevel *desktop_toplevel_at(struct hellwm_server *server, double lx, double ly, struct wlr_surface **surface, double *sx, double *sy);
-static void focus_toplevel(struct hellwm_toplevel *toplevel, struct wlr_surface *surface);
+static void hellwm_focus_toplevel(struct hellwm_toplevel *toplevel, struct wlr_surface *surface);
+static void hellwm_focus_next_toplevel(struct hellwm_server *server);
+static void hellwm_toplevel_kill_active(struct hellwm_server *server);
+static void hellwm_server_kill(struct hellwm_server *server);
 
 static void keyboard_handle_modifiers(struct wl_listener *listener, void *data);
 static bool handle_keybinding(struct hellwm_server *server, xkb_keysym_t sym);
@@ -347,7 +369,7 @@ struct hellwm_config_manager *hellwm_config_manager_create()
     return config_manager;
 }
 
-static void focus_toplevel(struct hellwm_toplevel *toplevel, struct wlr_surface *surface)
+static void hellwm_focus_toplevel(struct hellwm_toplevel *toplevel, struct wlr_surface *surface)
 {
 /* Note: this function only deals with keyboard focus. */
     if (toplevel == NULL)
@@ -393,6 +415,30 @@ if (prev_surface)
     }
 }
 
+static void hellwm_focus_next_toplevel(struct hellwm_server *server)
+{
+    if (wl_list_length(&server->toplevels) < 2)
+    {
+        return;
+    }
+    struct hellwm_toplevel *next_toplevel = wl_container_of(server->toplevels.prev, next_toplevel, link);
+    hellwm_focus_toplevel(next_toplevel, next_toplevel->xdg_toplevel->base->surface);
+}
+
+static void hellwm_toplevel_kill_active(struct hellwm_server *server)
+{
+	if (wl_list_length(&server->toplevels) < 1) return;
+    wlr_xdg_toplevel_send_close(wlr_xdg_toplevel_try_from_wlr_surface(server->seat->keyboard_state.focused_surface));
+    hellwm_focus_next_toplevel(server);
+}
+
+static void hellwm_server_kill(struct hellwm_server *server)
+{
+    hellwm_config_manager_free(server->config_manager);
+    wl_display_terminate(server->wl_display);
+    exit(EXIT_SUCCESS);
+}
+
 static void keyboard_handle_modifiers(struct wl_listener *listener, void *data)
 {
     /* This event is raised when a modifier key, such as shift or alt, is
@@ -423,8 +469,20 @@ static bool handle_keybinding(struct hellwm_server *server, xkb_keysym_t sym)
         {
             if (server->config_manager->keybindings->keybindings[j]->keysyms[k] == sym)
             {
-                RUN_EXEC(server->config_manager->keybindings->keybindings[j]->content);
-                return true;
+                if (server->config_manager->keybindings->keybindings[j]->content)
+                {
+                    if (server->config_manager->keybindings->keybindings[j]->function)
+                    {
+                        if (server->config_manager->keybindings->keybindings[j]->content->as_func)
+                        server->config_manager->keybindings->keybindings[j]->content->as_func(server);
+                    }
+                    else
+                    {
+                        if (server->config_manager->keybindings->keybindings[j]->content->as_void)
+                        RUN_EXEC(server->config_manager->keybindings->keybindings[j]->content->as_void);
+                    }
+                    return true;
+                }
             }
         }  
     }
@@ -777,7 +835,7 @@ static void server_cursor_button(struct wl_listener *listener, void *data)
         reset_cursor_mode(server);
     } else {
         /* Focus that client if the button was _pressed_ */
-        focus_toplevel(toplevel, surface);
+        hellwm_focus_toplevel(toplevel, surface);
     }
 }
 
@@ -916,7 +974,7 @@ static void xdg_toplevel_map(struct wl_listener *listener, void *data)
 
     wl_list_insert(&toplevel->server->toplevels, &toplevel->link);
 
-    focus_toplevel(toplevel, toplevel->xdg_toplevel->base->surface);
+    hellwm_focus_toplevel(toplevel, toplevel->xdg_toplevel->base->surface);
 }
 
 static void xdg_toplevel_unmap(struct wl_listener *listener, void *data)
@@ -1221,6 +1279,7 @@ void hellwm_keybindings_free(hellwm_config_keybindings *keybindings)
     for (unsigned i = 0; i < keybindings->count; i++)
     {
         free(keybindings->keybindings[i]);
+        free(keybindings->keybindings[i]->content);
     }
 
     free(keybindings->keybindings);
@@ -1321,8 +1380,9 @@ bool hellwm_convert_string_to_xkb_keys(xkb_keysym_t **keysyms_arr, const char *k
     return true;
 }
 
-void hellwm_keybind_add_to_config(hellwm_config_keybindings *config_keybindings, char *keys, void *content)
+void hellwm_keybind_add_to_config(struct hellwm_server *server, char *keys, void *content)
 {
+    hellwm_config_keybindings *config_keybindings = server->config_manager->keybindings;
     hellwm_keybind **temp_keybindings = realloc(config_keybindings->keybindings, (config_keybindings->count + 1) * sizeof(hellwm_keybind *));
     if (temp_keybindings == NULL)
     {
@@ -1338,14 +1398,60 @@ void hellwm_keybind_add_to_config(hellwm_config_keybindings *config_keybindings,
         LOG("hellwm_keybind_add_to_config(): Failed to allocate memory for new keybind\n");
         return;
     }
-    
+
     if (hellwm_convert_string_to_xkb_keys(&config_keybindings->keybindings[config_keybindings->count]->keysyms, keys, &config_keybindings->keybindings[config_keybindings->count]->count))
     {
-        config_keybindings->keybindings[config_keybindings->count]->content = content;
+        config_keybindings->keybindings[config_keybindings->count]->content = malloc(sizeof(union hellwm_function));
+
+        if (hellwm_function_find(content, server, config_keybindings->keybindings[config_keybindings->count]->content))
+        {
+            config_keybindings->keybindings[config_keybindings->count]->function = true;
+        }
+        else
+        {
+            config_keybindings->keybindings[config_keybindings->count]->content->as_void = content;
+            config_keybindings->keybindings[config_keybindings->count]->function = false;
+        }
     }
-    LOG("Keybind: %d[%s] = %s\n", config_keybindings->keybindings[config_keybindings->count]->count, keys, config_keybindings->keybindings[config_keybindings->count]->content);
-    config_keybindings->count++;
-    
+    LOG("Keybind: %d[%s] = %s\n", config_keybindings->keybindings[config_keybindings->count]->count, keys, config_keybindings->keybindings[config_keybindings->count]->content->as_void);
+    config_keybindings->count++; 
+}
+
+void hellwm_function_add_to_map(struct hellwm_server *server, const char* name, void (*func)(struct hellwm_server*))
+{
+    if (!server->mapped_functions) server->mapped_functions = 0;
+
+    server->hellwm_function_map = realloc(server->hellwm_function_map, (server->mapped_functions + 1) * sizeof(struct hellwm_function_map_entry));
+    if (!server->hellwm_function_map)
+    {
+        LOG("hellwm_function_add_to_map(): Failed to allocate memory for function map");
+    }
+
+    server->hellwm_function_map[server->mapped_functions].name = name;
+    server->hellwm_function_map[server->mapped_functions].func.as_func= func;
+    server->mapped_functions++;
+}
+
+bool hellwm_function_find(const char* name, struct hellwm_server* server, union hellwm_function *func)
+{
+    for (size_t i = 0; i < server->mapped_functions; i++)
+    {
+        if (strcmp(name, server->hellwm_function_map[i].name) == 0)
+        {
+            if (func)
+                if (func->as_func)
+                    func->as_func = server->hellwm_function_map[i].func.as_func;
+            return true;
+        }
+    }
+    return false;
+}
+
+void hellwm_function_expose(struct hellwm_server *server)
+{
+    hellwm_function_add_to_map(server, "kill_server", hellwm_server_kill);
+    hellwm_function_add_to_map(server, "kill_active", hellwm_toplevel_kill_active);
+    hellwm_function_add_to_map(server, "focus_next", hellwm_focus_next_toplevel);
 }
 
 int main(int argc, char *argv[])
@@ -1361,12 +1467,18 @@ int main(int argc, char *argv[])
     /* display */
     server.wl_display = wl_display_create();
 
+
+    /* functions */
+    hellwm_function_expose(&server);
+
     /* config */
     server.config_manager = hellwm_config_manager_create();
-    hellwm_keybind_add_to_config(server.config_manager->keybindings, "Escape", "killall hellwm");
-    hellwm_keybind_add_to_config(server.config_manager->keybindings, "Return", "foot");
-    hellwm_keybind_add_to_config(server.config_manager->keybindings, "b", "firefox");
-
+    hellwm_keybind_add_to_config(&server, "Escape", "kill_server");
+    hellwm_keybind_add_to_config(&server, "q", "kill_active");
+    hellwm_keybind_add_to_config(&server, "c", "focus_next");
+    hellwm_keybind_add_to_config(&server, "Return", "foot");
+    hellwm_keybind_add_to_config(&server, "b", "firefox");
+    
     /* lists */
     wl_list_init(&server.outputs);
     wl_list_init(&server.toplevels);
