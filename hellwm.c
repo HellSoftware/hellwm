@@ -1413,7 +1413,7 @@ void hellwm_keybind_add_to_config(struct hellwm_server *server, char *keys, void
             config_keybindings->keybindings[config_keybindings->count]->function = false;
         }
     }
-    LOG("Keybind: %d[%s] = %s\n", config_keybindings->keybindings[config_keybindings->count]->count, keys, config_keybindings->keybindings[config_keybindings->count]->content->as_void);
+    LOG("Keybind: %d[%s] = %s\n", config_keybindings->keybindings[config_keybindings->count]->count, keys, content);
     config_keybindings->count++; 
 }
 
