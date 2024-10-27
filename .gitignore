@@ -1,5 +1,6 @@
 *result
 *.log
+.clangd
 cursor-shape-v1-protocol.h
 hellwm.o
 hellwm

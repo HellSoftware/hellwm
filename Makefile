@@ -40,7 +40,7 @@ cursor-shape-v1-protocol.h:
 		$(WAYLAND_PROTOCOLS)/staging/cursor-shape/cursor-shape-v1.xml $@
 
 clean:
-	rm -f hellwm *.o *-protocol.h
+	rm -f hellwm *.o *-protocol.h *.log
 
 # CREATE PACKAGE
 dist: clean
