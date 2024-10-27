@@ -1,3 +1,4 @@
+#include "wayland-server-protocol.h"
 #include <time.h>
 #include <stdio.h>
 #include <assert.h>
@@ -192,15 +193,15 @@ typedef struct
 
     xkb_keysym_t *keysyms;
     union hellwm_function *content;
-} hellwm_keybind;
+} hellwm_config_keybind;
 
 /* keybindings config */
 typedef struct
 {
     unsigned count;
     uint32_t modifier;
-    hellwm_keybind **keybindings;
-} hellwm_config_keybindings;
+    hellwm_config_keybind **keybindings;
+} hellwm_config_manager_keybindings;
 
 /* keyboard config */
 typedef struct
@@ -216,9 +217,11 @@ typedef struct
 
 } hellwm_config_keyboard;
 
-/* monitor config */
+/* monitor */
 typedef struct
 {
+    char *name;
+
     int hz;
     int scale;
     int width;
@@ -226,11 +229,18 @@ typedef struct
     int transfrom;
 } hellwm_config_monitor;
 
+/* monitors config */
+typedef struct
+{
+    int count;
+    hellwm_config_monitor **monitors;
+} hellwm_config_manager_monitor;
+
 struct hellwm_config_manager
 {
-    hellwm_config_monitor *monitor;
     hellwm_config_keyboard *keyboard;
-    hellwm_config_keybindings *keybindings;
+    hellwm_config_manager_monitor *monitor_manager;
+    hellwm_config_manager_keybindings *keybindings;
 };
 
 /* functions declarations */
@@ -239,20 +249,23 @@ void RUN_EXEC(char *commnad);
 void LOG(const char *format, ...);
 void check_usage(int argc, char**argv);
 
+
 void hellwm_function_expose(struct hellwm_server *server);
 struct hellwm_config_manager *hellwm_config_manager_create();
-void hellwm_config_monitor_free(hellwm_config_monitor *monitor);
-void hellwm_config_monitor_reload(struct hellwm_server *server);
 void hellwm_config_keyboard_reload(struct hellwm_server *server);
 void hellwm_config_keyboard_free(hellwm_config_keyboard *keyboard);
-void hellwm_keybindings_free(hellwm_config_keybindings *keybindings);
 void hellwm_config_manager_free(struct hellwm_config_manager *config);
-void hellwm_keybind_add_to_config(struct hellwm_server *server, char *keys, void *content);
-void hellwm_config_monitor_set(hellwm_config_monitor *config, struct hellwm_output *output);
+void hellwm_config_manager_monitor_reload(struct hellwm_server *server);
+void hellwm_config_manager_monitor_free(hellwm_config_manager_monitor *monitor);
+void hellwm_config_keybindings_free(hellwm_config_manager_keybindings *keybindings);
+void hellwm_config_keybind_add_to_config(struct hellwm_server *server, char *keys, void *content);
 void hellwm_config_keyboard_set(hellwm_config_keyboard *config, struct hellwm_keyboard *keyboard);
 bool hellwm_function_find(const char* name, struct hellwm_server* server, union hellwm_function *func);
 bool hellwm_convert_string_to_xkb_keys(xkb_keysym_t **keysyms_arr, const char *keys_str, int *num_keys);
+void hellwm_config_manager_monitor_set(hellwm_config_manager_monitor *config, struct hellwm_output *output);
 void hellwm_function_add_to_map(struct hellwm_server *server, const char* name, void (*func)(struct hellwm_server*));
+void hellwm_config_manager_monitor_add(hellwm_config_manager_monitor *monitor_manager, hellwm_config_monitor *monitor);
+void hellwm_config_manager_monitor_find_and_apply(char *name, struct wlr_output_state *state, hellwm_config_manager_monitor *monitor_manager);
 
 static void hellwm_server_kill(struct hellwm_server *server);
 static void hellwm_focus_next_toplevel(struct hellwm_server *server);
@@ -362,33 +375,63 @@ void check_usage(int argc, char**argv)
     }
 }
 
+hellwm_config_manager_monitor *hellwm_config_manager_monitor_create()
+{
+    hellwm_config_manager_monitor *monitor_manager = calloc(1, sizeof(hellwm_config_manager_monitor));
+    if (!monitor_manager)
+    {
+        LOG("hellwm_config_manager_monitor_create(): failed to allocate memory for hellwm_config_manager_monitor");
+        return NULL;
+    }
+
+    monitor_manager->monitors = NULL;
+    monitor_manager->count = 0;
+
+    return monitor_manager;
+}
+
+hellwm_config_keyboard *hellwm_config_keyboard_create()
+{
+    hellwm_config_keyboard *keyboard = calloc(1, sizeof(hellwm_config_keyboard));
+
+    if (!keyboard)
+    {
+        LOG("hellwm_config_keyboard_create(): failed to allocate memory for hellwm_config_keyboard");
+        return NULL;
+    }
+        
+    keyboard->repeat = 35;
+    keyboard->delay = 400;
+    keyboard->rules = NULL;
+    keyboard->model = NULL;
+    keyboard->layout = "us";
+    keyboard->variant = NULL;
+    keyboard->options = NULL;
+
+    return keyboard;
+}
+
+hellwm_config_manager_keybindings *hellwm_config_manager_keybindings_create()
+{
+    hellwm_config_manager_keybindings *keybindings = calloc(1, sizeof(hellwm_config_manager_keybindings));
+    keybindings->count = 0;
+    keybindings->modifier = WLR_MODIFIER_ALT; /* default modifier */
+ 
+    return keybindings;
+}
 
 struct hellwm_config_manager *hellwm_config_manager_create()
 {
     struct hellwm_config_manager *config_manager = calloc(1, sizeof(struct hellwm_config_manager));
 
     /* keybindings */
-    config_manager->keybindings = calloc(1, sizeof(hellwm_config_keybindings));
-    config_manager->keybindings->count = 0;
-    config_manager->keybindings->modifier = WLR_MODIFIER_ALT;
-    
+    config_manager->keybindings = hellwm_config_manager_keybindings_create();
+   
     /* keyboard */
-    config_manager->keyboard = calloc(1, sizeof(hellwm_config_keyboard));
-    config_manager->keyboard->repeat = 25;
-    config_manager->keyboard->delay = 600;
-    config_manager->keyboard->rules = NULL;
-    config_manager->keyboard->model = NULL;
-    config_manager->keyboard->layout = "us";
-    config_manager->keyboard->variant = NULL;
-    config_manager->keyboard->options = NULL;
+    config_manager->keyboard = hellwm_config_keyboard_create();
 
     /* monitor */
-    config_manager->monitor = calloc(1, sizeof(hellwm_config_monitor));
-    config_manager->monitor->width = 0;
-    config_manager->monitor->height = 0;
-    config_manager->monitor->hz = 60;
-    config_manager->monitor->scale = 1;
-    config_manager->monitor->transfrom = 0;
+    config_manager->monitor_manager = hellwm_config_manager_monitor_create();
 
     return config_manager;
 }
@@ -968,7 +1011,7 @@ static void server_backend_new_output(struct wl_listener *listener, void *data)
     output->server = server;
 
     /* Set everything according to config */
-    hellwm_config_monitor_set(server->config_manager->monitor, output);
+    hellwm_config_manager_monitor_set(server->config_manager->monitor_manager, output);
 
     /* Sets up a listener for the frame event. */
     output->frame.notify = output_frame;
@@ -1250,7 +1293,37 @@ void hellwm_config_keyboard_set(hellwm_config_keyboard *config, struct hellwm_ke
     xkb_context_unref(context);
 }
 
-void hellwm_config_monitor_set(hellwm_config_monitor *config, struct hellwm_output *output)
+void hellwm_config_manager_monitor_find_and_apply(char *name, struct wlr_output_state *state, hellwm_config_manager_monitor *monitor_manager)
+{
+    for (int i = 0; i < monitor_manager->count; i++)
+    {
+        if (strcmp(monitor_manager->monitors[i]->name, name))
+        {
+            wlr_output_state_set_custom_mode(state, monitor_manager->monitors[i]->width, monitor_manager->monitors[i]->height, (monitor_manager->monitors[i]->hz * 1000)); /* Hz -> MHz */
+            wlr_output_state_set_transform(state, monitor_manager->monitors[i]->transfrom);
+            wlr_output_state_set_scale(state, monitor_manager->monitors[i]->scale);
+        }
+        else
+        {
+            LOG("[%d] Not found: %s -=-=-=-=-=- %s\n", i, name, monitor_manager->monitors[i]->name);
+        }
+    }
+}
+
+void hellwm_config_manager_monitor_add(hellwm_config_manager_monitor *monitor_manager, hellwm_config_monitor *monitor)
+{
+    monitor_manager->monitors = realloc(monitor_manager->monitors, (monitor_manager->count + 1) * sizeof(hellwm_config_monitor));
+    if (!monitor_manager->monitors)
+    {
+        LOG("hellwm_config_manager_monitor_add(): failed to reallocate hellwm_config_manager_monitor");
+        return;
+    }
+
+    monitor_manager->monitors[monitor_manager->count] = monitor;
+    monitor_manager->count++;
+}
+
+void hellwm_config_manager_monitor_set(hellwm_config_manager_monitor *config, struct hellwm_output *output)
 {
     /* Configures the output created by the backend to use our allocator
      * and our renderer. Must be done once, before commiting the output */
@@ -1272,7 +1345,7 @@ void hellwm_config_monitor_set(hellwm_config_monitor *config, struct hellwm_outp
         wlr_output_state_set_mode(&state, mode);
     }
 
-    wlr_output_state_set_custom_mode(&state, config->width, config->height, (config->hz * 1000)); /* Hz -> MHz */
+    hellwm_config_manager_monitor_find_and_apply(output->wlr_output->name, &state, config);
 
     /* Atomically applies the new output state. */
     wlr_output_commit_state(output->wlr_output, &state);
@@ -1292,18 +1365,18 @@ void hellwm_config_keyboard_reload(struct hellwm_server *server)
     }
 }
 
-void hellwm_config_monitor_reload(struct hellwm_server *server)
+void hellwm_config_manager_monitor_reload(struct hellwm_server *server)
 {
     LOG("Reloading all outputs\n");
     struct hellwm_output *output;
 
     wl_list_for_each(output, &server->outputs, link)
     {
-        hellwm_config_monitor_set(server->config_manager->monitor, output);
+        hellwm_config_manager_monitor_set(server->config_manager->monitor_manager, output);
     }
 }
 
-void hellwm_keybindings_free(hellwm_config_keybindings *keybindings)
+void hellwm_config_keybindings_free(hellwm_config_manager_keybindings *keybindings)
 {
     if (keybindings == NULL) return;
 
@@ -1325,7 +1398,7 @@ void hellwm_config_keyboard_free(hellwm_config_keyboard *keyboard)
     }
 }
 
-void hellwm_config_monitor_free(hellwm_config_monitor *monitor)
+void hellwm_config_manager_monitor_free(hellwm_config_manager_monitor *monitor)
 {
     if (monitor)
     {
@@ -1337,9 +1410,9 @@ void hellwm_config_manager_free(struct hellwm_config_manager *config)
 {
     if (config)
     {
-        hellwm_config_monitor_free(config->monitor);
+        hellwm_config_manager_monitor_free(config->monitor_manager);
         hellwm_config_keyboard_free(config->keyboard);
-        hellwm_keybindings_free(config->keybindings);
+        hellwm_config_keybindings_free(config->keybindings);
         free(config);
     }
 }
@@ -1411,22 +1484,22 @@ bool hellwm_convert_string_to_xkb_keys(xkb_keysym_t **keysyms_arr, const char *k
     return true;
 }
 
-void hellwm_keybind_add_to_config(struct hellwm_server *server, char *keys, void *content)
+void hellwm_config_keybind_add_to_config(struct hellwm_server *server, char *keys, void *content)
 {
-    hellwm_config_keybindings *config_keybindings = server->config_manager->keybindings;
-    hellwm_keybind **temp_keybindings = realloc(config_keybindings->keybindings, (config_keybindings->count + 1) * sizeof(hellwm_keybind *));
+    hellwm_config_manager_keybindings *config_keybindings = server->config_manager->keybindings;
+    hellwm_config_keybind **temp_keybindings = realloc(config_keybindings->keybindings, (config_keybindings->count + 1) * sizeof(hellwm_config_keybind *));
     if (temp_keybindings == NULL)
     {
-        LOG("hellwm_keybind_add_to_config(): Failed to allocate memory for keybindings\n");
+        LOG("hellwm_config_keybind_add_to_config(): Failed to allocate memory for keybindings\n");
         return;
     }
     
     config_keybindings->keybindings = temp_keybindings;
     
-    config_keybindings->keybindings[config_keybindings->count] = malloc(sizeof(hellwm_keybind));
+    config_keybindings->keybindings[config_keybindings->count] = malloc(sizeof(hellwm_config_keybind));
     if (config_keybindings->keybindings[config_keybindings->count] == NULL)
     {
-        LOG("hellwm_keybind_add_to_config(): Failed to allocate memory for new keybind\n");
+        LOG("hellwm_config_keybind_add_to_config(): Failed to allocate memory for new keybind\n");
         return;
     }
 
@@ -1504,12 +1577,40 @@ int main(int argc, char *argv[])
 
     /* config */
     server.config_manager = hellwm_config_manager_create();
-    hellwm_keybind_add_to_config(&server, "Escape", "kill_server");
-    hellwm_keybind_add_to_config(&server, "q", "kill_active");
-    hellwm_keybind_add_to_config(&server, "c", "focus_next");
-    hellwm_keybind_add_to_config(&server, "Return", "foot");
-    hellwm_keybind_add_to_config(&server, "t", "alacritty");
-    hellwm_keybind_add_to_config(&server, "b", "firefox");
+ /* for now and test only */  hellwm_config_keybind_add_to_config(&server, "Escape", "kill_server");
+ /* for now and test only */  hellwm_config_keybind_add_to_config(&server, "q", "kill_active");
+ /* for now and test only */  hellwm_config_keybind_add_to_config(&server, "c", "focus_next");
+ /* for now and test only */  hellwm_config_keybind_add_to_config(&server, "Return", "foot");
+ /* for now and test only */  hellwm_config_keybind_add_to_config(&server, "t", "alacritty");
+ /* for now and test only */  hellwm_config_keybind_add_to_config(&server, "b", "firefox");
+
+ /* for now and test only */  hellwm_config_monitor *mon1 = calloc(1, sizeof(hellwm_config_monitor));
+ /* for now and test only */  mon1->width = 2560;
+ /* for now and test only */  mon1->height= 1440;
+ /* for now and test only */  mon1->hz = 120;
+ /* for now and test only */  mon1->transfrom = 0;
+ /* for now and test only */  mon1->scale = 1;
+ /* for now and test only */  mon1->name = "DP-2";
+
+ /* for now and test only */  hellwm_config_monitor *mon2 = calloc(1, sizeof(hellwm_config_monitor));
+ /* for now and test only */  mon2->width = 2560;
+ /* for now and test only */  mon2->height= 1440;
+ /* for now and test only */  mon2->hz = 120;
+ /* for now and test only */  mon2->transfrom = 1;
+ /* for now and test only */  mon2->scale = 1;
+ /* for now and test only */  mon2->name = "DP-1";
+ /* for now and test only */  
+ /* for now and test only */  hellwm_config_manager_monitor_add(server.config_manager->monitor_manager,mon1);
+ /* for now and test only */  hellwm_config_manager_monitor_add(server.config_manager->monitor_manager,mon2);
+ /* for now and test only */      
+ /* for now and test only */  server.config_manager->keyboard->repeat = 50;
+ /* for now and test only */  server.config_manager->keyboard->delay = 200;
+ /* for now and test only */  server.config_manager->keyboard->rules = NULL;
+ /* for now and test only */  server.config_manager->keyboard->model = NULL;
+ /* for now and test only */  server.config_manager->keyboard->layout = "pl";
+ /* for now and test only */  server.config_manager->keyboard->variant = NULL;
+ /* for now and test only */  server.config_manager->keyboard->options = NULL;
+   
     
     /* lists */
     wl_list_init(&server.outputs);
