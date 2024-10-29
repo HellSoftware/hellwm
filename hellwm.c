@@ -203,11 +203,9 @@ typedef struct
     hellwm_config_keybind **keybindings;
 } hellwm_config_manager_keybindings;
 
-/* keyboard config */
 typedef struct
 {
-    int32_t delay;
-    int32_t repeat;
+    char *name;
 
     char* rules;
     char* model;
@@ -215,9 +213,18 @@ typedef struct
     char* variant;
     char* options;
 
+    int32_t delay;
+    int32_t repeat;
+
 } hellwm_config_keyboard;
 
-/* monitor */
+typedef struct
+{
+    int count;
+    hellwm_config_keyboard **keyboards; 
+    hellwm_config_keyboard *default_keyboard;
+} hellwm_config_manager_keyboard;
+
 typedef struct
 {
     char *name;
@@ -229,7 +236,6 @@ typedef struct
     int transfrom;
 } hellwm_config_monitor;
 
-/* monitors config */
 typedef struct
 {
     int count;
@@ -238,9 +244,9 @@ typedef struct
 
 struct hellwm_config_manager
 {
-    hellwm_config_keyboard *keyboard;
-    hellwm_config_manager_monitor *monitor_manager;
     hellwm_config_manager_keybindings *keybindings;
+    hellwm_config_manager_monitor *monitor_manager;
+    hellwm_config_manager_keyboard *keyboard_manager;
 };
 
 /* functions declarations */
@@ -252,20 +258,22 @@ void check_usage(int argc, char**argv);
 
 void hellwm_function_expose(struct hellwm_server *server);
 struct hellwm_config_manager *hellwm_config_manager_create();
-void hellwm_config_keyboard_reload(struct hellwm_server *server);
-void hellwm_config_keyboard_free(hellwm_config_keyboard *keyboard);
+void hellwm_config_manager_keyboard_reload(struct hellwm_server *server);
+void hellwm_config_manager_keyboard_free(hellwm_config_manager_keyboard *keyboard);
 void hellwm_config_manager_free(struct hellwm_config_manager *config);
 void hellwm_config_manager_monitor_reload(struct hellwm_server *server);
 void hellwm_config_manager_monitor_free(hellwm_config_manager_monitor *monitor);
 void hellwm_config_keybindings_free(hellwm_config_manager_keybindings *keybindings);
 void hellwm_config_keybind_add_to_config(struct hellwm_server *server, char *keys, void *content);
-void hellwm_config_keyboard_set(hellwm_config_keyboard *config, struct hellwm_keyboard *keyboard);
+void hellwm_config_manager_keyboard_set(struct hellwm_keyboard *keyboard, hellwm_config_keyboard *config);
+void hellwm_config_manager_keyboard_add(hellwm_config_manager_keyboard *keyboard_manager, hellwm_config_keyboard *keyboard);
 bool hellwm_function_find(const char* name, struct hellwm_server* server, union hellwm_function *func);
 bool hellwm_convert_string_to_xkb_keys(xkb_keysym_t **keysyms_arr, const char *keys_str, int *num_keys);
 void hellwm_config_manager_monitor_set(hellwm_config_manager_monitor *config, struct hellwm_output *output);
 void hellwm_function_add_to_map(struct hellwm_server *server, const char* name, void (*func)(struct hellwm_server*));
 void hellwm_config_manager_monitor_add(hellwm_config_manager_monitor *monitor_manager, hellwm_config_monitor *monitor);
 void hellwm_config_manager_monitor_find_and_apply(char *name, struct wlr_output_state *state, hellwm_config_manager_monitor *monitor_manager);
+bool hellwm_config_manager_keyboard_find_and_apply(hellwm_config_manager_keyboard *keyboard_manager, struct hellwm_keyboard *keyboard);
 
 static void hellwm_server_kill(struct hellwm_server *server);
 static void hellwm_focus_next_toplevel(struct hellwm_server *server);
@@ -384,31 +392,36 @@ hellwm_config_manager_monitor *hellwm_config_manager_monitor_create()
         return NULL;
     }
 
-    monitor_manager->monitors = NULL;
     monitor_manager->count = 0;
+    monitor_manager->monitors = NULL;
 
     return monitor_manager;
 }
 
-hellwm_config_keyboard *hellwm_config_keyboard_create()
+hellwm_config_manager_keyboard *hellwm_config_manager_keyboard_create()
 {
-    hellwm_config_keyboard *keyboard = calloc(1, sizeof(hellwm_config_keyboard));
+    hellwm_config_manager_keyboard *keyboard_manager = calloc(1, sizeof(hellwm_config_manager_keyboard));
 
-    if (!keyboard)
+    if (!keyboard_manager)
     {
-        LOG("hellwm_config_keyboard_create(): failed to allocate memory for hellwm_config_keyboard");
+        LOG("hellwm_config_manager_keyboard_create(): failed to allocate memory for hellwm_config_manager_keyboard");
         return NULL;
     }
-        
-    keyboard->repeat = 35;
-    keyboard->delay = 400;
-    keyboard->rules = NULL;
-    keyboard->model = NULL;
-    keyboard->layout = "us";
-    keyboard->variant = NULL;
-    keyboard->options = NULL;
+     
+    keyboard_manager->count = 0;
+    keyboard_manager->keyboards = NULL;
 
-    return keyboard;
+    keyboard_manager->default_keyboard = calloc(1, sizeof(hellwm_config_keyboard));
+    keyboard_manager->default_keyboard->name = "default";
+    keyboard_manager->default_keyboard->layout = "us";
+    keyboard_manager->default_keyboard->repeat = 35;
+    keyboard_manager->default_keyboard->delay = 400;
+    keyboard_manager->default_keyboard->rules = NULL;
+    keyboard_manager->default_keyboard->model = NULL;
+    keyboard_manager->default_keyboard->variant = NULL;
+    keyboard_manager->default_keyboard->options = NULL;
+
+    return keyboard_manager;
 }
 
 hellwm_config_manager_keybindings *hellwm_config_manager_keybindings_create()
@@ -428,7 +441,7 @@ struct hellwm_config_manager *hellwm_config_manager_create()
     config_manager->keybindings = hellwm_config_manager_keybindings_create();
    
     /* keyboard */
-    config_manager->keyboard = hellwm_config_keyboard_create();
+    config_manager->keyboard_manager = hellwm_config_manager_keyboard_create();
 
     /* monitor */
     config_manager->monitor_manager = hellwm_config_manager_monitor_create();
@@ -633,7 +646,10 @@ static void server_new_keyboard(struct hellwm_server *server, struct wlr_input_d
     keyboard->wlr_keyboard = wlr_keyboard;
 
     /* Set everything according to config */
-    hellwm_config_keyboard_set(server->config_manager->keyboard, keyboard);
+    if (!hellwm_config_manager_keyboard_find_and_apply(server->config_manager->keyboard_manager, keyboard))
+    {
+        hellwm_config_manager_keyboard_set(keyboard, server->config_manager->keyboard_manager->default_keyboard);
+    }
 
     /* Here we set up listeners for keyboard events. */
     keyboard->modifiers.notify = keyboard_handle_modifiers;
@@ -1270,7 +1286,33 @@ static void server_new_xdg_popup(struct wl_listener *listener, void *data)
     wl_signal_add(&xdg_popup->events.destroy, &popup->destroy);
 }
 
-void hellwm_config_keyboard_set(hellwm_config_keyboard *config, struct hellwm_keyboard *keyboard)
+bool hellwm_config_manager_keyboard_find_and_apply(hellwm_config_manager_keyboard *keyboard_manager, struct hellwm_keyboard *keyboard)
+{
+    for (int i = 0; i < keyboard_manager->count; i++)
+    {
+        if (!strcmp(keyboard_manager->keyboards[i]->name, keyboard->wlr_keyboard->base.name))
+        {
+            hellwm_config_manager_keyboard_set(keyboard, keyboard_manager->keyboards[i]);
+            return true;
+        }
+    }
+    return false;
+}
+
+void hellwm_config_manager_keyboard_add(hellwm_config_manager_keyboard *keyboard_manager, hellwm_config_keyboard *keyboard)
+{
+    keyboard_manager->keyboards = realloc(keyboard_manager->keyboards, (keyboard_manager->count + 1) * sizeof(hellwm_config_keyboard));
+    if (!keyboard_manager->keyboards)
+    {
+        LOG("hellwm_config_manager_keyboard_add(): failed to reallocate hellwm_config_manager_keyboard");
+        return;
+    }
+
+    keyboard_manager->keyboards[keyboard_manager->count] = keyboard;
+    keyboard_manager->count++;
+}
+
+void hellwm_config_manager_keyboard_set(struct hellwm_keyboard *keyboard, hellwm_config_keyboard *config)
 {
     struct xkb_context *context = xkb_context_new(XKB_CONTEXT_NO_FLAGS);
 
@@ -1302,10 +1344,6 @@ void hellwm_config_manager_monitor_find_and_apply(char *name, struct wlr_output_
             wlr_output_state_set_custom_mode(state, monitor_manager->monitors[i]->width, monitor_manager->monitors[i]->height, (monitor_manager->monitors[i]->hz * 1000)); /* Hz -> MHz */
             wlr_output_state_set_transform(state, monitor_manager->monitors[i]->transfrom);
             wlr_output_state_set_scale(state, monitor_manager->monitors[i]->scale);
-        }
-        else
-        {
-            LOG("[%d] Not found: %s -=-=-=-=-=- %s\n", i, name, monitor_manager->monitors[i]->name);
         }
     }
 }
@@ -1354,14 +1392,17 @@ void hellwm_config_manager_monitor_set(hellwm_config_manager_monitor *config, st
     LOG("Monitor %s: %dx%d@%.3f\n", output->wlr_output->name, output->wlr_output->width, output->wlr_output->height, (output->wlr_output->refresh / 1000.0)); /* MHz -> Hz */
 }
 
-void hellwm_config_keyboard_reload(struct hellwm_server *server)
+void hellwm_config_manager_keyboard_reload(struct hellwm_server *server)
 {
     LOG("Reloading all keyboards\n");
     struct hellwm_keyboard *keyboard;
 
     wl_list_for_each(keyboard, &server->keyboards, link)
     {
-        hellwm_config_keyboard_set(server->config_manager->keyboard, keyboard);
+        if (!hellwm_config_manager_keyboard_find_and_apply(server->config_manager->keyboard_manager, keyboard))
+        {
+            hellwm_config_manager_keyboard_set(keyboard, server->config_manager->keyboard_manager->default_keyboard);
+        }
     }
 }
 
@@ -1390,11 +1431,13 @@ void hellwm_config_keybindings_free(hellwm_config_manager_keybindings *keybindin
     free(keybindings);
 }
 
-void hellwm_config_keyboard_free(hellwm_config_keyboard *keyboard)
+void hellwm_config_manager_keyboard_free(hellwm_config_manager_keyboard *keyboard)
 {
     if (keyboard)
     {
-       free(keyboard);
+        free(keyboard->default_keyboard);
+        free(keyboard->keyboards);
+        free(keyboard);
     }
 }
 
@@ -1410,9 +1453,9 @@ void hellwm_config_manager_free(struct hellwm_config_manager *config)
 {
     if (config)
     {
-        hellwm_config_manager_monitor_free(config->monitor_manager);
-        hellwm_config_keyboard_free(config->keyboard);
         hellwm_config_keybindings_free(config->keybindings);
+        hellwm_config_manager_monitor_free(config->monitor_manager);
+        hellwm_config_manager_keyboard_free(config->keyboard_manager);
         free(config);
     }
 }
@@ -1599,19 +1642,42 @@ int main(int argc, char *argv[])
  /* for now and test only */  mon2->transfrom = 1;
  /* for now and test only */  mon2->scale = 1;
  /* for now and test only */  mon2->name = "DP-1";
+
+ /* for now and test only */  hellwm_config_monitor *mon3 = calloc(1, sizeof(hellwm_config_monitor));
+ /* for now and test only */  mon3->width = 1920;
+ /* for now and test only */  mon3->height= 1080;
+ /* for now and test only */  mon3->hz = 60;
+ /* for now and test only */  mon3->transfrom = 0;
+ /* for now and test only */  mon3->scale = 1;
+ /* for now and test only */  mon3->name = "LVDS-1";
  /* for now and test only */  
  /* for now and test only */  hellwm_config_manager_monitor_add(server.config_manager->monitor_manager,mon1);
  /* for now and test only */  hellwm_config_manager_monitor_add(server.config_manager->monitor_manager,mon2);
+ /* for now and test only */  hellwm_config_manager_monitor_add(server.config_manager->monitor_manager,mon3);
  /* for now and test only */      
- /* for now and test only */  server.config_manager->keyboard->repeat = 50;
- /* for now and test only */  server.config_manager->keyboard->delay = 200;
- /* for now and test only */  server.config_manager->keyboard->rules = NULL;
- /* for now and test only */  server.config_manager->keyboard->model = NULL;
- /* for now and test only */  server.config_manager->keyboard->layout = "pl";
- /* for now and test only */  server.config_manager->keyboard->variant = NULL;
- /* for now and test only */  server.config_manager->keyboard->options = NULL;
-   
-    
+ /* for now and test only */   hellwm_config_keyboard *kbd1 = calloc(1, sizeof(hellwm_config_keyboard));
+ /* for now and test only */   kbd1->name = "Power Button";
+ /* for now and test only */   kbd1->repeat = 50;
+ /* for now and test only */   kbd1->delay = 200;
+ /* for now and test only */   kbd1->rules = NULL;
+ /* for now and test only */   kbd1->model = NULL;
+ /* for now and test only */   kbd1->layout = "pl";
+ /* for now and test only */   kbd1->variant = NULL;
+ /* for now and test only */   kbd1->options = NULL;
+ /* for now and test only */  
+ /* for now and test only */   hellwm_config_keyboard *kbd2 = calloc(1, sizeof(hellwm_config_keyboard));
+ /* for now and test only */   kbd2->name = "AT Translated Set 2 keyboard";
+ /* for now and test only */   kbd2->repeat = 69;
+ /* for now and test only */   kbd2->delay = 220;
+ /* for now and test only */   kbd2->rules = NULL;
+ /* for now and test only */   kbd2->model = NULL;
+ /* for now and test only */   kbd2->layout = "pl";
+ /* for now and test only */   kbd2->variant = NULL;
+ /* for now and test only */   kbd2->options = NULL;
+
+ /* for now and test only */   hellwm_config_manager_keyboard_add(server.config_manager->keyboard_manager, kbd1);
+ /* for now and test only */   hellwm_config_manager_keyboard_add(server.config_manager->keyboard_manager, kbd2);
+
     /* lists */
     wl_list_init(&server.outputs);
     wl_list_init(&server.toplevels);
