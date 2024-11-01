@@ -16,6 +16,7 @@
         src = pkgs.lib.cleanSource ./.;
 
         buildInputs = with pkgs; [
+          lua
           pixman
           wayland
           libinput

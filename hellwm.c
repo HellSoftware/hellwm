@@ -8,6 +8,10 @@
 #include <unistd.h>
 #include <stdbool.h>
 
+#include <lua.h>
+#include <lauxlib.h>
+#include <lualib.h>
+
 #include <xkbcommon/xkbcommon.h>
 #include <xkbcommon/xkbcommon-keysyms.h>
 
@@ -204,16 +208,16 @@ typedef struct
 
 typedef struct
 {
-    char *name;
+    char *  name;
 
-    char* rules;
-    char* model;
-    char* layout;
-    char* variant;
-    char* options;
+    char*   rules;
+    char*   model;
+    char*   layout;
+    char*   variant;
+    char*   options;
 
     int32_t delay;
-    int32_t repeat;
+    int32_t rate;
 
 } hellwm_config_keyboard;
 
@@ -228,11 +232,11 @@ typedef struct
 {
     char *name;
 
-    int hz;
-    int scale;
-    int width;
-    int height;
-    int transfrom;
+    int32_t hz;
+    int32_t scale;
+    int32_t width;
+    int32_t height;
+    int32_t transfrom;
 } hellwm_config_monitor;
 
 typedef struct
@@ -253,14 +257,21 @@ void ERR(char *where);
 void RUN_EXEC(char *commnad);
 void LOG(const char *format, ...);
 void check_usage(int argc, char**argv);
+void hellwm_lua_error (lua_State *L, const char *fmt, ...);
 
 struct hellwm_config_manager *hellwm_config_manager_create();
+
+int hellwm_lua_add_keyboard(lua_State *L);
+int hellwm_lua_add_monitor(lua_State *L);
+int hellwm_lua_add_keybind(lua_State *L);
 
 bool hellwm_function_find(const char* name, struct hellwm_server* server, union hellwm_function *func);
 bool hellwm_convert_string_to_xkb_keys(xkb_keysym_t **keysyms_arr, const char *keys_str, int *num_keys);
 bool hellwm_config_manager_keyboard_find_and_apply(hellwm_config_manager_keyboard *keyboard_manager, struct hellwm_keyboard *keyboard);
+void hellwm_config_manager_monitor_find_and_apply(char *name, struct wlr_output_state *state, hellwm_config_manager_monitor *monitor_manager);
 
 void hellwm_function_expose(struct hellwm_server *server);
+void hellwm_config_manager_load_from_file(char * filename);
 void hellwm_config_manager_free(struct hellwm_config_manager *config);
 void hellwm_config_manager_monitor_reload(struct hellwm_server *server);
 void hellwm_config_manager_keyboard_reload(struct hellwm_server *server);
@@ -273,8 +284,6 @@ void hellwm_config_manager_monitor_set(hellwm_config_manager_monitor *config, st
 void hellwm_function_add_to_map(struct hellwm_server *server, const char* name, void (*func)(struct hellwm_server*));
 void hellwm_config_manager_monitor_add(hellwm_config_manager_monitor *monitor_manager, hellwm_config_monitor *monitor);
 void hellwm_config_manager_keyboard_add(hellwm_config_manager_keyboard *keyboard_manager, hellwm_config_keyboard *keyboard);
-void hellwm_config_manager_monitor_find_and_apply(char *name, struct wlr_output_state *state, hellwm_config_manager_monitor *monitor_manager);
-
   
 static uint32_t hellwm_xkb_keysym_to_wlr_modifier(xkb_keysym_t sym);
 static bool handle_keybinding(struct hellwm_server *server, uint32_t modifiers, xkb_keysym_t sym);
@@ -329,6 +338,10 @@ static void server_new_xdg_popup(struct wl_listener *listener, void *data) ;
 static void server_new_xdg_toplevel(struct wl_listener *listener, void *data) ;
 
 
+/* Global Variables */
+struct hellwm_server *GLOBAL_SERVER;
+
+
 /* functions implementations */
 void LOG(const char *format, ...)
 {
@@ -347,6 +360,16 @@ void LOG(const char *format, ...)
         va_end(ap);
         fclose(file);
     }
+}
+
+void hellwm_lua_error (lua_State *L, const char *fmt, ...)
+{
+  va_list argp;
+  va_start(argp, fmt);
+  vfprintf(stderr, fmt, argp);
+  va_end(argp);
+  lua_close(L);
+  exit(EXIT_FAILURE);
 }
 
 void ERR(char *where)
@@ -417,7 +440,7 @@ hellwm_config_manager_keyboard *hellwm_config_manager_keyboard_create()
     keyboard_manager->default_keyboard = calloc(1, sizeof(hellwm_config_keyboard));
     keyboard_manager->default_keyboard->name = "default";
     keyboard_manager->default_keyboard->layout = "us";
-    keyboard_manager->default_keyboard->repeat = 35;
+    keyboard_manager->default_keyboard->rate = 35;
     keyboard_manager->default_keyboard->delay = 400;
     keyboard_manager->default_keyboard->rules = NULL;
     keyboard_manager->default_keyboard->model = NULL;
@@ -1302,6 +1325,10 @@ bool hellwm_config_manager_keyboard_find_and_apply(hellwm_config_manager_keyboar
             hellwm_config_manager_keyboard_set(keyboard, keyboard_manager->keyboards[i]);
             return true;
         }
+        else if(!strcmp(keyboard_manager->keyboards[i]->name, "default"))
+        {
+            hellwm_config_manager_keyboard_set(keyboard, keyboard_manager->default_keyboard);
+        }
     }
     return false;
 }
@@ -1334,9 +1361,9 @@ void hellwm_config_manager_keyboard_set(struct hellwm_keyboard *keyboard, hellwm
 
     struct xkb_keymap *keymap = xkb_keymap_new_from_names(context, &rule_names, XKB_KEYMAP_COMPILE_NO_FLAGS);
     wlr_keyboard_set_keymap(keyboard->wlr_keyboard, keymap);
-    wlr_keyboard_set_repeat_info(keyboard->wlr_keyboard, config->repeat, config->delay);
+    wlr_keyboard_set_repeat_info(keyboard->wlr_keyboard, config->rate, config->delay);
 
-    LOG("Keyboard %s - layout: %s, repeat: %d, delay: %d\n", keyboard->wlr_keyboard->base.name, config->layout, config->repeat, config->delay);
+    LOG("Keyboard %s - layout: %s, rate: %d, delay: %d\n", keyboard->wlr_keyboard->base.name, config->layout, config->rate, config->delay);
 
     xkb_keymap_unref(keymap);
     xkb_context_unref(context);
@@ -1465,6 +1492,180 @@ void hellwm_config_manager_free(struct hellwm_config_manager *config)
         hellwm_config_manager_keyboard_free(config->keyboard_manager);
         free(config);
     }
+}
+
+int hellwm_lua_add_keyboard(lua_State *L)
+{
+    hellwm_config_keyboard *keyboard = calloc(1, sizeof(hellwm_config_keyboard));
+    keyboard->name = NULL;
+    keyboard->layout = NULL;
+    keyboard->rate = 25;
+    keyboard->delay = 600;
+    keyboard->options = NULL;
+    keyboard->rules = NULL;
+    keyboard->variant = NULL;
+    keyboard->model = NULL;
+
+    int nargs = lua_gettop(L);
+
+    for (int i = 1; i<=nargs; i++)
+    {
+        switch (i)
+        {
+            case 1:
+                keyboard->name = (char*)lua_tostring(L, i);
+                break;
+            case 2:
+                keyboard->layout = (char *)lua_tostring(L, i);
+                break;
+            case 3:
+                keyboard->rate = (int32_t)lua_tonumber(L, i);
+                break;
+            case 4:
+                keyboard->delay = (int32_t)lua_tonumber(L, i);
+                break;
+            case 5:
+                keyboard->options = (char *)lua_tostring(L, i);
+                break;
+            case 6:
+                keyboard->rules = (char *)lua_tostring(L, i);
+                break;
+
+            case 7:
+                keyboard->variant = (char *)lua_tostring(L, i);
+                break;
+
+            case 8:
+                keyboard->model = (char *)lua_tostring(L, i);
+                break;
+
+            default:
+                LOG("Provided to much arguments to keyboard() function!");
+        }
+    }
+
+    LOG("Loaded from config - keyboard: %s, %s, %d, %d | %s, %s, %s, %s\n",
+           keyboard->name,
+           keyboard->layout,
+           keyboard->rate,
+           keyboard->delay,
+           keyboard->options,
+           keyboard->rules,
+           keyboard->variant,
+           keyboard->model
+           );
+
+    hellwm_config_manager_keyboard_add(GLOBAL_SERVER->config_manager->keyboard_manager, keyboard);
+
+    return 0;
+}
+
+int hellwm_lua_add_monitor(lua_State *L)
+{
+    hellwm_config_monitor *monitor = calloc(1, sizeof(hellwm_config_monitor));
+    monitor->name = NULL;
+    monitor->width = 0;
+    monitor->height = 0;
+    monitor->hz = 0;
+    monitor->scale = 0;
+    monitor->transfrom = 0;
+
+    int nargs = lua_gettop(L);
+
+    for (int i = 1; i<=nargs; i++)
+    {
+        switch (i)
+        {
+            case 1:
+                monitor->name = (char*)lua_tostring(L, i);
+                break;
+            case 2:
+                monitor->width = (int32_t)lua_tonumber(L, i);
+                break;
+            case 3:
+                monitor->height = (int32_t)lua_tonumber(L, i);
+                break;
+            case 4:
+                monitor->hz = (int32_t)lua_tonumber(L, i);
+                break;
+            case 5:
+                monitor->scale = (int32_t)lua_tonumber(L, i);
+                break;
+            case 6:
+                monitor->transfrom = (int32_t)lua_tonumber(L, i);
+                break;
+
+            default:
+                LOG("Provided to much arguments to monitor() function!");
+        }
+    }
+
+    LOG("Loaded from config - monitor: %s, %d, %d, %d, %d, %d\n",
+           monitor->name,
+           monitor->width,
+           monitor->height,
+           monitor->hz,
+           monitor->scale,
+           monitor->transfrom);
+
+    hellwm_config_manager_monitor_add(GLOBAL_SERVER->config_manager->monitor_manager, monitor);
+
+    return 0;
+}
+
+int hellwm_lua_add_keybind(lua_State *L)
+{
+    char *keys = NULL; 
+    char *action = NULL; 
+    int nargs = lua_gettop(L);
+
+    for (int i = 1; i<=nargs; i++)
+    {
+        switch (i)
+        {
+            case 1:
+                keys = (char*)lua_tostring(L, i);
+                break;
+            case 2:
+                action = (char*)lua_tostring(L, i);
+                break;
+
+            default:
+                LOG("Provided to much arguments to keybind() function!");
+        }
+    }
+
+    if (keys != NULL && action != NULL)
+    {
+        hellwm_config_keybind_add_to_config(GLOBAL_SERVER, keys, action);
+        LOG("Loaded from config - keybind: %s, %s\n", keys, action);
+    }
+    else
+    {
+        LOG("Could not load keybind - keybind: %s, %s\n", keys, action);
+    }
+
+    return 0;
+}
+
+void hellwm_config_manager_load_from_file(char * filename)
+{
+    lua_State *L = luaL_newstate();
+    luaL_openlibs(L);
+
+    lua_pushcfunction(L, hellwm_lua_add_monitor);
+    lua_setglobal(L, "monitor");
+
+    lua_pushcfunction(L, hellwm_lua_add_keyboard);
+    lua_setglobal(L, "keyboard");
+
+    lua_pushcfunction(L, hellwm_lua_add_keybind);
+    lua_setglobal(L, "bind");
+
+    if (luaL_loadfile(L, filename) || lua_pcall(L, 0, 0, 0))
+        hellwm_lua_error(L, "Cannot load configuration file: %s", lua_tostring(L, -1));
+
+    lua_close(L);
 }
 
 bool hellwm_convert_string_to_xkb_keys(xkb_keysym_t **keysyms_arr, const char *keys_str, int *num_keys)
@@ -1632,12 +1833,13 @@ void hellwm_function_expose(struct hellwm_server *server)
 int main(int argc, char *argv[])
 {
     printf("Hello World...\n"); /* https://www.reddit.com/r/ProgrammerHumor/comments/1euwm7v/helloworldfeaturegotmergedguys/ */
-   
+
     wlr_log_init(WLR_DEBUG, NULL);
+    char *startup_cmd = NULL;
     LOG("~HELLWM LOG~\n");
 
-    struct hellwm_server server = {0};
-    char *startup_cmd = NULL;
+    /* server */
+    struct hellwm_server server = {0}; GLOBAL_SERVER = &server;
 
     /* display */
     server.wl_display = wl_display_create();
@@ -1648,63 +1850,7 @@ int main(int argc, char *argv[])
 
     /* config */
     server.config_manager = hellwm_config_manager_create();
- /* for now and test only */  hellwm_config_keybind_add_to_config(&server, "Super_L,Escape", "kill_server");
- /* for now and test only */  hellwm_config_keybind_add_to_config(&server, "Super_L,Q", "kill_active");
- /* for now and test only */  hellwm_config_keybind_add_to_config(&server, "Super_L,c", "focus_next");
- /* for now and test only */  hellwm_config_keybind_add_to_config(&server, "Super_L,Return", "foot");
- /* for now and test only */  hellwm_config_keybind_add_to_config(&server, "Super_L,t", "alacritty");
- /* for now and test only */  hellwm_config_keybind_add_to_config(&server, "Super_L,b", "firefox");
-
- /* for now and test only */  hellwm_config_monitor *mon1 = calloc(1, sizeof(hellwm_config_monitor));
- /* for now and test only */  mon1->width = 2560;
- /* for now and test only */  mon1->height= 1440;
- /* for now and test only */  mon1->hz = 120;
- /* for now and test only */  mon1->transfrom = 0;
- /* for now and test only */  mon1->scale = 1;
- /* for now and test only */  mon1->name = "DP-1";
-
- /* for now and test only */  hellwm_config_monitor *mon2 = calloc(1, sizeof(hellwm_config_monitor));
- /* for now and test only */  mon2->width = 2560;
- /* for now and test only */  mon2->height= 1440;
- /* for now and test only */  mon2->hz = 120;
- /* for now and test only */  mon2->transfrom = 1;
- /* for now and test only */  mon2->scale = 1;
- /* for now and test only */  mon2->name = "DP-2";
-
- /* for now and test only */  hellwm_config_monitor *mon3 = calloc(1, sizeof(hellwm_config_monitor));
- /* for now and test only */  mon3->width = 1920;
- /* for now and test only */  mon3->height= 1080;
- /* for now and test only */  mon3->hz = 60;
- /* for now and test only */  mon3->transfrom = 0;
- /* for now and test only */  mon3->scale = 1;
- /* for now and test only */  mon3->name = "LVDS-1";
- /* for now and test only */  
- /* for now and test only */  hellwm_config_manager_monitor_add(server.config_manager->monitor_manager,mon3);
- /* for now and test only */  hellwm_config_manager_monitor_add(server.config_manager->monitor_manager,mon2);
- /* for now and test only */  hellwm_config_manager_monitor_add(server.config_manager->monitor_manager,mon1);
- /* for now and test only */      
- /* for now and test only */   hellwm_config_keyboard *kbd1 = calloc(1, sizeof(hellwm_config_keyboard));
- /* for now and test only */   kbd1->name = "Power Button";
- /* for now and test only */   kbd1->repeat = 50;
- /* for now and test only */   kbd1->delay = 200;
- /* for now and test only */   kbd1->rules = NULL;
- /* for now and test only */   kbd1->model = NULL;
- /* for now and test only */   kbd1->layout = "pl";
- /* for now and test only */   kbd1->variant = NULL;
- /* for now and test only */   kbd1->options = NULL;
- /* for now and test only */  
- /* for now and test only */   hellwm_config_keyboard *kbd2 = calloc(1, sizeof(hellwm_config_keyboard));
- /* for now and test only */   kbd2->name = "AT Translated Set 2 keyboard";
- /* for now and test only */   kbd2->repeat = 69;
- /* for now and test only */   kbd2->delay = 220;
- /* for now and test only */   kbd2->rules = NULL;
- /* for now and test only */   kbd2->model = NULL;
- /* for now and test only */   kbd2->layout = "pl";
- /* for now and test only */   kbd2->variant = NULL;
- /* for now and test only */   kbd2->options = NULL;
-
- /* for now and test only */   hellwm_config_manager_keyboard_add(server.config_manager->keyboard_manager, kbd1);
- /* for now and test only */   hellwm_config_manager_keyboard_add(server.config_manager->keyboard_manager, kbd2);
+    hellwm_config_manager_load_from_file("./config.lua");
 
     /* lists */
     wl_list_init(&server.outputs);
