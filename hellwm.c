@@ -272,12 +272,14 @@ void hellwm_config_manager_monitor_find_and_apply(char *name, struct wlr_output_
 
 void hellwm_function_expose(struct hellwm_server *server);
 void hellwm_config_manager_load_from_file(char * filename);
+void hellwm_config_print(struct hellwm_config_manager *config);
+void hellwm_config_manager_reload(struct hellwm_server *server);
 void hellwm_config_manager_free(struct hellwm_config_manager *config);
 void hellwm_config_manager_monitor_reload(struct hellwm_server *server);
 void hellwm_config_manager_keyboard_reload(struct hellwm_server *server);
 void hellwm_config_manager_monitor_free(hellwm_config_manager_monitor *monitor);
 void hellwm_config_manager_keyboard_free(hellwm_config_manager_keyboard *keyboard);
-void hellwm_config_keybindings_free(hellwm_config_manager_keybindings *keybindings);
+void hellwm_config_keybindings_free(hellwm_config_manager_keybindings * keybindings);
 void hellwm_config_keybind_add_to_config(struct hellwm_server *server, char *keys, void *content);
 void hellwm_config_manager_keyboard_set(struct hellwm_keyboard *keyboard, hellwm_config_keyboard *config);
 void hellwm_config_manager_monitor_set(hellwm_config_manager_monitor *config, struct hellwm_output *output);
@@ -339,7 +341,7 @@ static void server_new_xdg_toplevel(struct wl_listener *listener, void *data) ;
 
 
 /* Global Variables */
-struct hellwm_server *GLOBAL_SERVER;
+struct hellwm_server *GLOBAL_SERVER = NULL;
 
 
 /* functions implementations */
@@ -384,6 +386,21 @@ void RUN_EXEC(char *commnad)
    {
       execl("/bin/sh", "/bin/sh", "-c", commnad, (void *)NULL);
    }
+}
+
+
+void remove_spaces(char *str)
+{
+    char *dest = str;
+    while (*str)
+    {
+        if (*str != ' ')
+        {
+            *dest++ = *str;
+        }
+        str++;
+    }
+    *dest = '\0';
 }
 
 void check_usage(int argc, char**argv)
@@ -440,8 +457,8 @@ hellwm_config_manager_keyboard *hellwm_config_manager_keyboard_create()
     keyboard_manager->default_keyboard = calloc(1, sizeof(hellwm_config_keyboard));
     keyboard_manager->default_keyboard->name = "default";
     keyboard_manager->default_keyboard->layout = "us";
-    keyboard_manager->default_keyboard->rate = 35;
-    keyboard_manager->default_keyboard->delay = 400;
+    keyboard_manager->default_keyboard->rate = 25;
+    keyboard_manager->default_keyboard->delay = 600;
     keyboard_manager->default_keyboard->rules = NULL;
     keyboard_manager->default_keyboard->model = NULL;
     keyboard_manager->default_keyboard->variant = NULL;
@@ -574,6 +591,7 @@ static bool handle_keybinding(struct hellwm_server *server, uint32_t modifiers, 
      * processing keys, rather than passing them on to the client for its own
      * processing.
      */
+
     for (int j = 0; j < server->config_manager->keybindings->count; j++)
     {
         int check = 0;
@@ -1325,16 +1343,18 @@ bool hellwm_config_manager_keyboard_find_and_apply(hellwm_config_manager_keyboar
             hellwm_config_manager_keyboard_set(keyboard, keyboard_manager->keyboards[i]);
             return true;
         }
-        else if(!strcmp(keyboard_manager->keyboards[i]->name, "default"))
-        {
-            hellwm_config_manager_keyboard_set(keyboard, keyboard_manager->default_keyboard);
-        }
     }
     return false;
 }
 
 void hellwm_config_manager_keyboard_add(hellwm_config_manager_keyboard *keyboard_manager, hellwm_config_keyboard *keyboard)
 {
+    if (!strcmp(keyboard->name, "default"))
+    {
+        keyboard_manager->default_keyboard = keyboard;
+        return;
+    }
+
     keyboard_manager->keyboards = realloc(keyboard_manager->keyboards, (keyboard_manager->count + 1) * sizeof(hellwm_config_keyboard));
     if (!keyboard_manager->keyboards)
     {
@@ -1429,13 +1449,13 @@ void hellwm_config_manager_monitor_set(hellwm_config_manager_monitor *config, st
 void hellwm_config_manager_keyboard_reload(struct hellwm_server *server)
 {
     LOG("Reloading all keyboards\n");
-    struct hellwm_keyboard *keyboard;
 
+    struct hellwm_keyboard *keyboard;
     wl_list_for_each(keyboard, &server->keyboards, link)
     {
         if (!hellwm_config_manager_keyboard_find_and_apply(server->config_manager->keyboard_manager, keyboard))
         {
-            hellwm_config_manager_keyboard_set(keyboard, server->config_manager->keyboard_manager->default_keyboard);
+         //   hellwm_config_manager_keyboard_set(keyboard, server->config_manager->keyboard_manager->default_keyboard);
         }
     }
 }
@@ -1443,12 +1463,25 @@ void hellwm_config_manager_keyboard_reload(struct hellwm_server *server)
 void hellwm_config_manager_monitor_reload(struct hellwm_server *server)
 {
     LOG("Reloading all outputs\n");
-    struct hellwm_output *output;
 
+    struct hellwm_output *output;
     wl_list_for_each(output, &server->outputs, link)
     {
-        hellwm_config_manager_monitor_set(server->config_manager->monitor_manager, output);
+       // hellwm_config_manager_monitor_set(server->config_manager->monitor_manager, output);
     }
+}
+
+/* TODO: NOT WORKING - it fails ~around hellwm_config_manager_keyboard_reload(server) */
+void hellwm_config_manager_reload(struct hellwm_server *server)
+{
+    hellwm_config_keybindings_free(server->config_manager->keybindings);
+    hellwm_config_manager_monitor_free(server->config_manager->monitor_manager);
+    hellwm_config_manager_keyboard_free(server->config_manager->keyboard_manager);
+ 
+    hellwm_config_manager_monitor_reload(server);
+    hellwm_config_manager_keyboard_reload(server);
+
+    hellwm_config_manager_load_from_file("./config.lua");
 }
 
 void hellwm_config_keybindings_free(hellwm_config_manager_keybindings *keybindings)
@@ -1513,10 +1546,10 @@ int hellwm_lua_add_keyboard(lua_State *L)
         switch (i)
         {
             case 1:
-                keyboard->name = (char*)lua_tostring(L, i);
+                keyboard->name = strdup(lua_tostring(L, i));
                 break;
             case 2:
-                keyboard->layout = (char *)lua_tostring(L, i);
+                keyboard->layout = strdup(lua_tostring(L, i));
                 break;
             case 3:
                 keyboard->rate = (int32_t)lua_tonumber(L, i);
@@ -1525,18 +1558,18 @@ int hellwm_lua_add_keyboard(lua_State *L)
                 keyboard->delay = (int32_t)lua_tonumber(L, i);
                 break;
             case 5:
-                keyboard->options = (char *)lua_tostring(L, i);
+                keyboard->options = strdup(lua_tostring(L, i));
                 break;
             case 6:
-                keyboard->rules = (char *)lua_tostring(L, i);
+                keyboard->rules = strdup(lua_tostring(L, i));
                 break;
 
             case 7:
-                keyboard->variant = (char *)lua_tostring(L, i);
+                keyboard->variant = strdup(lua_tostring(L, i));
                 break;
 
             case 8:
-                keyboard->model = (char *)lua_tostring(L, i);
+                keyboard->model = strdup(lua_tostring(L, i));
                 break;
 
             default:
@@ -1544,16 +1577,16 @@ int hellwm_lua_add_keyboard(lua_State *L)
         }
     }
 
-    LOG("Loaded from config - keyboard: %s, %s, %d, %d | %s, %s, %s, %s\n",
-           keyboard->name,
-           keyboard->layout,
-           keyboard->rate,
-           keyboard->delay,
-           keyboard->options,
-           keyboard->rules,
-           keyboard->variant,
-           keyboard->model
-           );
+    //LOG("Loaded from config - keyboard: %s, %s, %d, %d | %s, %s, %s, %s\n",
+    //       keyboard->name,
+    //       keyboard->layout,
+    //       keyboard->rate,
+    //       keyboard->delay,
+    //       keyboard->options,
+    //       keyboard->rules,
+    //       keyboard->variant,
+    //       keyboard->model
+    //       );
 
     hellwm_config_manager_keyboard_add(GLOBAL_SERVER->config_manager->keyboard_manager, keyboard);
 
@@ -1563,13 +1596,6 @@ int hellwm_lua_add_keyboard(lua_State *L)
 int hellwm_lua_add_monitor(lua_State *L)
 {
     hellwm_config_monitor *monitor = calloc(1, sizeof(hellwm_config_monitor));
-    monitor->name = NULL;
-    monitor->width = 0;
-    monitor->height = 0;
-    monitor->hz = 0;
-    monitor->scale = 0;
-    monitor->transfrom = 0;
-
     int nargs = lua_gettop(L);
 
     for (int i = 1; i<=nargs; i++)
@@ -1577,7 +1603,7 @@ int hellwm_lua_add_monitor(lua_State *L)
         switch (i)
         {
             case 1:
-                monitor->name = (char*)lua_tostring(L, i);
+                monitor->name = strdup(lua_tostring(L, i));
                 break;
             case 2:
                 monitor->width = (int32_t)lua_tonumber(L, i);
@@ -1594,19 +1620,18 @@ int hellwm_lua_add_monitor(lua_State *L)
             case 6:
                 monitor->transfrom = (int32_t)lua_tonumber(L, i);
                 break;
-
             default:
                 LOG("Provided to much arguments to monitor() function!");
         }
     }
 
-    LOG("Loaded from config - monitor: %s, %d, %d, %d, %d, %d\n",
-           monitor->name,
-           monitor->width,
-           monitor->height,
-           monitor->hz,
-           monitor->scale,
-           monitor->transfrom);
+    //LOG("Loaded from config - monitor: %s, %d, %d, %d, %d, %d\n",
+    //       monitor->name,
+    //       monitor->width,
+    //       monitor->height,
+    //       monitor->hz,
+    //       monitor->scale,
+    //       monitor->transfrom);
 
     hellwm_config_manager_monitor_add(GLOBAL_SERVER->config_manager->monitor_manager, monitor);
 
@@ -1624,10 +1649,10 @@ int hellwm_lua_add_keybind(lua_State *L)
         switch (i)
         {
             case 1:
-                keys = (char*)lua_tostring(L, i);
+                keys = strdup(lua_tostring(L, i));
                 break;
             case 2:
-                action = (char*)lua_tostring(L, i);
+                action = strdup(lua_tostring(L, i));
                 break;
 
             default:
@@ -1638,11 +1663,11 @@ int hellwm_lua_add_keybind(lua_State *L)
     if (keys != NULL && action != NULL)
     {
         hellwm_config_keybind_add_to_config(GLOBAL_SERVER, keys, action);
-        LOG("Loaded from config - keybind: %s, %s\n", keys, action);
+        //LOG("Loaded from config - keybind: %s, %s\n", keys, action);
     }
     else
     {
-        LOG("Could not load keybind - keybind: %s, %s\n", keys, action);
+        //LOG("Could not load keybind - keybind: %s, %s\n", keys, action);
     }
 
     return 0;
@@ -1650,6 +1675,8 @@ int hellwm_lua_add_keybind(lua_State *L)
 
 void hellwm_config_manager_load_from_file(char * filename)
 {
+    LOG("Loading config from: %s\n", filename);
+
     lua_State *L = luaL_newstate();
     luaL_openlibs(L);
 
@@ -1666,6 +1693,8 @@ void hellwm_config_manager_load_from_file(char * filename)
         hellwm_lua_error(L, "Cannot load configuration file: %s", lua_tostring(L, -1));
 
     lua_close(L);
+
+    hellwm_config_print(GLOBAL_SERVER->config_manager);
 }
 
 bool hellwm_convert_string_to_xkb_keys(xkb_keysym_t **keysyms_arr, const char *keys_str, int *num_keys)
@@ -1702,6 +1731,7 @@ bool hellwm_convert_string_to_xkb_keys(xkb_keysym_t **keysyms_arr, const char *k
 
     while (token)
     {
+        remove_spaces(token);
         xkb_keysym_t keysym = xkb_keysym_from_name(token, XKB_KEYSYM_NO_FLAGS);
         if (keysym == XKB_KEY_NoSymbol)
         {
@@ -1789,8 +1819,94 @@ void hellwm_config_keybind_add_to_config(struct hellwm_server *server, char *key
             config_keybindings->keybindings[config_keybindings->count]->function = false;
         }
     }
-    LOG("Keybind: %d[%s] = %s\n", config_keybindings->keybindings[config_keybindings->count]->count, keys, content);
+    LOG("Keybind: [%s] = %s\n", keys, content);
     config_keybindings->count++; 
+}
+
+void hellwm_config_print(struct hellwm_config_manager *config)
+{
+    if (!config)
+        return;
+
+    LOG("\n\nstruct hellwm_config_manager* config\n{\n");
+
+    if (config->monitor_manager)
+    {
+        hellwm_config_manager_monitor *mon = config->monitor_manager;
+
+        LOG("\tstruct hellwm_config_manager_monitor* monitor_manager\n\t{\n");
+        LOG("\t\tcount = %d\n\t\thellwm_config_monitor **monitors[%d] = \n\t\t{\n",mon->count, mon->count);
+        
+        for (size_t i = 0; i<mon->count; i++)
+        {
+            LOG("\t\t\t[%d] = \n\t\t\t{\n",i);
+            LOG("\t\t\t\tname      = %s\n", mon->monitors[i]->name);
+            LOG("\t\t\t\twidth     = %d\n", mon->monitors[i]->width);
+            LOG("\t\t\t\theight    = %d\n", mon->monitors[i]->height);
+            LOG("\t\t\t\thz        = %d\n", mon->monitors[i]->hz);
+            LOG("\t\t\t\tscale     = %d\n", mon->monitors[i]->scale);
+            LOG("\t\t\t\ttransfrom = %d\n", mon->monitors[i]->transfrom);
+            LOG("\t\t\t}\n");
+        }
+        LOG("\t\t}\n\t}\n");
+    }
+
+    if (config->keyboard_manager)
+    {
+        hellwm_config_manager_keyboard *kbd = config->keyboard_manager;
+
+        LOG("\tstruct hellwm_config_manager_keyboard* keyboard_manager\n\t{\n");
+        LOG("\t\tcount = %d\n\t\thellwm_config_keyboard **keyboards[%d] = \n\t\t{\n",kbd->count, kbd->count);
+        
+        for (size_t i = 0; i<kbd->count; i++)
+        {
+            LOG("\t\t\t[%d] = \n\t\t\t{\n",i);
+            LOG("\t\t\t\tname   = %s\n", kbd->keyboards[i]->name);
+            LOG("\t\t\t\tlayout = %s\n", kbd->keyboards[i]->layout);
+            LOG("\t\t\t\tdelay  = %d\n", kbd->keyboards[i]->delay);
+            LOG("\t\t\t\trate   = %d\n", kbd->keyboards[i]->rate);
+            LOG("\t\t\t\toption = %s\n", kbd->keyboards[i]->options);
+            LOG("\t\t\t\trules  = %s\n", kbd->keyboards[i]->rules);
+            LOG("\t\t\t\tvarian = %s\n", kbd->keyboards[i]->variant);
+            LOG("\t\t\t\tmodel  = %s\n", kbd->keyboards[i]->model);
+            LOG("\t\t\t}\n");
+        }
+        LOG("\t\t}\n\t}\n");
+    }
+
+    if (config->keybindings)
+    {
+        hellwm_config_manager_keybindings *kbd = config->keybindings;
+
+        LOG("\tstruct hellwm_config_manager_keybindings* keybindings_manager\n\t{\n");
+        LOG("\t\tcount = %d\n\t\thellwm_config_keybindings **keybindings[%d] = \n\t\t{\n",kbd->count, kbd->count);
+        
+        for (size_t i = 0; i < kbd->count; i++)
+        {
+            LOG("\t\t\t[%d] = \n\t\t\t{\n",i);
+            LOG("\t\t\t\tcount        = %d\n", kbd->keybindings[i]->count);
+            LOG("\t\t\t\tfunction     = %d\n", kbd->keybindings[i]->function);
+            if (kbd->keybindings[i]->function)
+                LOG("\t\t\t\tcontent      = %p\n", kbd->keybindings[i]->content->as_func);
+            else
+                LOG("\t\t\t\tcontent      = %s\n", (char *)kbd->keybindings[i]->content->as_void);
+            LOG("\t\t\t\tkeysyms[%d]   = \n\t\t\t\t{\n", kbd->keybindings[i]->count);
+
+            for (size_t j = 0; j<kbd->keybindings[i]->count; j++)
+            {
+                char keysym[16];
+                if (xkb_keysym_get_name(kbd->keybindings[i]->keysyms[j], keysym, 16) != -1)
+                    LOG("\t\t\t\t\tkey[%d]    = %s\n", j, keysym);
+                else
+                    LOG("\t\t\t\t\tkey[%d]    = %s\n", j, NULL);
+            }
+            LOG("\t\t\t\t}\n\t\t\t}\n");
+        }
+        LOG("\t\t}\n\t}\n");
+    }
+ 
+
+    LOG("}\n");
 }
 
 void hellwm_function_add_to_map(struct hellwm_server *server, const char* name, void (*func)(struct hellwm_server*))
@@ -1826,8 +1942,9 @@ bool hellwm_function_find(const char* name, struct hellwm_server* server, union 
 void hellwm_function_expose(struct hellwm_server *server)
 {
     hellwm_function_add_to_map(server, "kill_server", hellwm_server_kill);
-    hellwm_function_add_to_map(server, "kill_active", hellwm_toplevel_kill_active);
     hellwm_function_add_to_map(server, "focus_next", hellwm_focus_next_toplevel);
+    hellwm_function_add_to_map(server, "kill_active", hellwm_toplevel_kill_active);
+    hellwm_function_add_to_map(server, "reload_config", hellwm_config_manager_reload);
 }
 
 int main(int argc, char *argv[])
@@ -1839,34 +1956,35 @@ int main(int argc, char *argv[])
     LOG("~HELLWM LOG~\n");
 
     /* server */
-    struct hellwm_server server = {0}; GLOBAL_SERVER = &server;
-
-    /* display */
-    server.wl_display = wl_display_create();
-    server.event_loop = wl_display_get_event_loop(server.wl_display);
+    struct hellwm_server *server = calloc(1, sizeof(struct hellwm_server));
+    GLOBAL_SERVER = server;
 
     /* functions */
-    hellwm_function_expose(&server);
+    hellwm_function_expose(server);
 
     /* config */
-    server.config_manager = hellwm_config_manager_create();
+    server->config_manager = hellwm_config_manager_create();
     hellwm_config_manager_load_from_file("./config.lua");
 
+    /* display */
+    server->wl_display = wl_display_create();
+    server->event_loop = wl_display_get_event_loop(server->wl_display);
+   
     /* lists */
-    wl_list_init(&server.outputs);
-    wl_list_init(&server.toplevels);
-    wl_list_init(&server.keyboards);
+    wl_list_init(&server->outputs);
+    wl_list_init(&server->toplevels);
+    wl_list_init(&server->keyboards);
 
     /* backend */
-    server.backend = wlr_backend_autocreate(server.event_loop, &server.session);
+    server->backend = wlr_backend_autocreate(server->event_loop, &server->session);
 
-    server.backend_new_output.notify = server_backend_new_output;
-    wl_signal_add(&server.backend->events.new_output, &server.backend_new_output);
+    server->backend_new_output.notify = server_backend_new_output;
+    wl_signal_add(&server->backend->events.new_output, &server->backend_new_output);
 
-    server.backend_new_input.notify = server_backend_new_input;
-    wl_signal_add(&server.backend->events.new_input, &server.backend_new_input);
+    server->backend_new_input.notify = server_backend_new_input;
+    wl_signal_add(&server->backend->events.new_input, &server->backend_new_input);
 
-    if (server.backend == NULL)
+    if (server->backend == NULL)
     {
         wlr_log(WLR_ERROR, "failed to create wlr_backend");
         ERR("main(): failed to create wlr_backend");
@@ -1874,104 +1992,104 @@ int main(int argc, char *argv[])
 
 
     /* renderer */
-    server.renderer = wlr_renderer_autocreate(server.backend);
-    wl_signal_add(&server.renderer->events.lost, &server.renderer_lost);
-    server.renderer_lost.notify = handle_renderer_lost;
+    server->renderer = wlr_renderer_autocreate(server->backend);
+    wl_signal_add(&server->renderer->events.lost, &server->renderer_lost);
+    server->renderer_lost.notify = handle_renderer_lost;
  
-    if (server.renderer == NULL)
+    if (server->renderer == NULL)
     {
         wlr_log(WLR_ERROR, "failed to create wlr_renderer");
         ERR("main(): failed to create wlr_renderer");
     }
-    wlr_renderer_init_wl_display(server.renderer, server.wl_display);
+    wlr_renderer_init_wl_display(server->renderer, server->wl_display);
 
 
     /* allocator */ 
-    server.allocator = wlr_allocator_autocreate(server.backend, server.renderer);
-    if (server.allocator == NULL)
+    server->allocator = wlr_allocator_autocreate(server->backend, server->renderer);
+    if (server->allocator == NULL)
     {
         wlr_log(WLR_ERROR, "failed to create wlr_allocator");
         ERR("main(): failed to create wlr_allocator");
     }
 
 
-    server.compositor = wlr_compositor_create(server.wl_display, 6, server.renderer);
-    server.subcompositor = wlr_subcompositor_create(server.wl_display);
-    wlr_screencopy_manager_v1_create(server.wl_display);
-    wlr_data_device_manager_create(server.wl_display);
-    wlr_data_control_manager_v1_create(server.wl_display);
-    wlr_export_dmabuf_manager_v1_create(server.wl_display);
-    wlr_primary_selection_v1_device_manager_create(server.wl_display);
-    wlr_viewporter_create(server.wl_display);
-    wlr_single_pixel_buffer_manager_v1_create(server.wl_display);
-    wlr_fractional_scale_manager_v1_create(server.wl_display, 1);
-    wlr_presentation_create(server.wl_display, server.backend);
-    wlr_alpha_modifier_v1_create(server.wl_display);
+    server->compositor = wlr_compositor_create(server->wl_display, 6, server->renderer);
+    server->subcompositor = wlr_subcompositor_create(server->wl_display);
+    wlr_screencopy_manager_v1_create(server->wl_display);
+    wlr_data_device_manager_create(server->wl_display);
+    wlr_data_control_manager_v1_create(server->wl_display);
+    wlr_export_dmabuf_manager_v1_create(server->wl_display);
+    wlr_primary_selection_v1_device_manager_create(server->wl_display);
+    wlr_viewporter_create(server->wl_display);
+    wlr_single_pixel_buffer_manager_v1_create(server->wl_display);
+    wlr_fractional_scale_manager_v1_create(server->wl_display, 1);
+    wlr_presentation_create(server->wl_display, server->backend);
+    wlr_alpha_modifier_v1_create(server->wl_display);
 
 
     /* output layout */
-    server.output_layout = wlr_output_layout_create(server.wl_display);
-    wlr_xdg_output_manager_v1_create(server.wl_display, server.output_layout);
+    server->output_layout = wlr_output_layout_create(server->wl_display);
+    wlr_xdg_output_manager_v1_create(server->wl_display, server->output_layout);
 
 
     /* scene */
-    server.scene = wlr_scene_create();
-    server.scene_layout = wlr_scene_attach_output_layout(server.scene, server.output_layout);
+    server->scene = wlr_scene_create();
+    server->scene_layout = wlr_scene_attach_output_layout(server->scene, server->output_layout);
 
 
     /* xdg_shell */
-    server.xdg_shell = wlr_xdg_shell_create(server.wl_display, 6);
-    server.new_xdg_toplevel.notify = server_new_xdg_toplevel;
-    wl_signal_add(&server.xdg_shell->events.new_toplevel, &server.new_xdg_toplevel);
-    server.new_xdg_popup.notify = server_new_xdg_popup;
-    wl_signal_add(&server.xdg_shell->events.new_popup, &server.new_xdg_popup);
+    server->xdg_shell = wlr_xdg_shell_create(server->wl_display, 6);
+    server->new_xdg_toplevel.notify = server_new_xdg_toplevel;
+    wl_signal_add(&server->xdg_shell->events.new_toplevel, &server->new_xdg_toplevel);
+    server->new_xdg_popup.notify = server_new_xdg_popup;
+    wl_signal_add(&server->xdg_shell->events.new_popup, &server->new_xdg_popup);
 
 
     /* cursor */
-    server.cursor = wlr_cursor_create();
-    wlr_cursor_attach_output_layout(server.cursor, server.output_layout);
-    server.cursor_mgr = wlr_xcursor_manager_create(NULL, 24);
-    server.cursor_mode = hellwm_CURSOR_PASSTHROUGH;
+    server->cursor = wlr_cursor_create();
+    wlr_cursor_attach_output_layout(server->cursor, server->output_layout);
+    server->cursor_mgr = wlr_xcursor_manager_create(NULL, 24);
+    server->cursor_mode = hellwm_CURSOR_PASSTHROUGH;
 
-    server.cursor_motion.notify = server_cursor_motion;
-    wl_signal_add(&server.cursor->events.motion, &server.cursor_motion);
+    server->cursor_motion.notify = server_cursor_motion;
+    wl_signal_add(&server->cursor->events.motion, &server->cursor_motion);
 
-    server.cursor_motion_absolute.notify = server_cursor_motion_absolute;
-    wl_signal_add(&server.cursor->events.motion_absolute, &server.cursor_motion_absolute);
+    server->cursor_motion_absolute.notify = server_cursor_motion_absolute;
+    wl_signal_add(&server->cursor->events.motion_absolute, &server->cursor_motion_absolute);
 
-    server.cursor_button.notify = server_cursor_button;
-    wl_signal_add(&server.cursor->events.button, &server.cursor_button);
+    server->cursor_button.notify = server_cursor_button;
+    wl_signal_add(&server->cursor->events.button, &server->cursor_button);
 
-    server.cursor_axis.notify = server_cursor_axis;
-    wl_signal_add(&server.cursor->events.axis, &server.cursor_axis);
+    server->cursor_axis.notify = server_cursor_axis;
+    wl_signal_add(&server->cursor->events.axis, &server->cursor_axis);
 
-    server.cursor_frame.notify = server_cursor_frame;
-    wl_signal_add(&server.cursor->events.frame, &server.cursor_frame);
+    server->cursor_frame.notify = server_cursor_frame;
+    wl_signal_add(&server->cursor->events.frame, &server->cursor_frame);
 
 
     /* seat */
-    server.seat = wlr_seat_create(server.wl_display, "seat0");
+    server->seat = wlr_seat_create(server->wl_display, "seat0");
    
-    server.request_cursor.notify = seat_request_cursor;
-    wl_signal_add(&server.seat->events.request_set_cursor, &server.request_cursor);
+    server->request_cursor.notify = seat_request_cursor;
+    wl_signal_add(&server->seat->events.request_set_cursor, &server->request_cursor);
 
-    server.request_set_selection.notify = seat_request_set_selection;
-    wl_signal_add(&server.seat->events.request_set_selection, &server.request_set_selection);
+    server->request_set_selection.notify = seat_request_set_selection;
+    wl_signal_add(&server->seat->events.request_set_selection, &server->request_set_selection);
 
 
     /* Add a Unix socket to the Wayland display. */
-    const char *socket = wl_display_add_socket_auto(server.wl_display);
+    const char *socket = wl_display_add_socket_auto(server->wl_display);
     if (!socket)
     {
-        wlr_backend_destroy(server.backend);
+        wlr_backend_destroy(server->backend);
         ERR("main(): failed to create socket");
     }
 
     /* Start the backend. This will enumerate outputs and inputs, become the DRM master, etc */
-    if (!wlr_backend_start(server.backend))
+    if (!wlr_backend_start(server->backend))
     {
-        wlr_backend_destroy(server.backend);
-        wl_display_destroy(server.wl_display);
+        wlr_backend_destroy(server->backend);
+        wl_display_destroy(server->wl_display);
         ERR("main(): failed to start backend");
     }
 
@@ -1992,11 +2110,11 @@ int main(int argc, char *argv[])
      * loop configuration to listen to libinput events, DRM events, generate
      * frame events at the refresh rate, and so on. */
     wlr_log(WLR_INFO, "Running Wayland compositor on WAYLAND_DISPLAY=%s", socket);
-    wl_display_run(server.wl_display);
+    wl_display_run(server->wl_display);
 
 
-    /* Once wl_display_run returns, we destroy all clients then shut down the server. */
-    hellwm_server_kill(&server);
+    /* Once wl_display_run returns, we destroy all clients then shut down the server-> */
+    hellwm_server_kill(server);
 
     return 0;
 }
