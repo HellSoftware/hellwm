@@ -1,3 +1,4 @@
+#include "sys/types.h"
 #include "wayland-server-protocol.h"
 #include <time.h>
 #include <stdio.h>
@@ -60,15 +61,18 @@ enum hellwm_cursor_mode
 
 struct hellwm_server 
 {
-    int drm_fd;
     uint32_t resize_edges;
-    unsigned int cursor_mode;
+
+    int active_workspace;
+    int available_workspaces; /* just count of this array bellow: **workspaces; */
+
+    unsigned cursor_mode;
     unsigned mapped_functions;
     double cursor_grab_x, cursor_grab_y;
     
     /* hellwm */
-
     struct hellwm_output *output;
+    struct hellwm_workspace **workspaces;
     struct hellwm_toplevel *grabbed_toplevel;
     struct hellwm_config_manager *config_manager;
     struct hellwm_function_map_entry *hellwm_function_map;
@@ -136,8 +140,15 @@ struct hellwm_output
     struct wl_listener destroy;
 };
 
+struct hellwm_workspace
+{
+    int id;
+    struct wl_list toplevels;
+};
+
 struct hellwm_toplevel
 {
+    int workspace;
     struct wl_list link;
 
     struct hellwm_server *server;
@@ -253,7 +264,7 @@ struct hellwm_config_manager
 };
 
 /* functions declarations */
-void ERR(char *where);
+void ERR(const char *format, ...);
 void RUN_EXEC(char *commnad);
 void LOG(const char *format, ...);
 void check_usage(int argc, char**argv);
@@ -265,24 +276,34 @@ int hellwm_lua_add_keyboard(lua_State *L);
 int hellwm_lua_add_monitor(lua_State *L);
 int hellwm_lua_add_keybind(lua_State *L);
 
+void hellwm_config_print(struct hellwm_config_manager *config);
 bool hellwm_function_find(const char* name, struct hellwm_server* server, union hellwm_function *func);
 bool hellwm_convert_string_to_xkb_keys(xkb_keysym_t **keysyms_arr, const char *keys_str, int *num_keys);
 bool hellwm_config_manager_keyboard_find_and_apply(hellwm_config_manager_keyboard *keyboard_manager, struct hellwm_keyboard *keyboard);
-void hellwm_config_manager_monitor_find_and_apply(char *name, struct wlr_output_state *state, hellwm_config_manager_monitor *monitor_manager);
 
 void hellwm_function_expose(struct hellwm_server *server);
 void hellwm_config_manager_load_from_file(char * filename);
-void hellwm_config_print(struct hellwm_config_manager *config);
-void hellwm_config_manager_reload(struct hellwm_server *server);
+void hellwm_config_manager_monitor_find_and_apply(char *name, struct wlr_output_state *state, hellwm_config_manager_monitor *monitor_manager);
+
+static int hellwm_workspace_get_next_id(struct hellwm_server *server);
+static void hellwm_workspace_change(struct hellwm_server *server, int workspace);
+static void hellwm_workspace_destroy(struct hellwm_server *server, int workspace);
+static void hellwm_workspace_create(struct hellwm_server *server, int workspace_id);
+static struct hellwm_workspace *hellwm_workspace_find(struct hellwm_server *server, int id);
+
 void hellwm_config_manager_free(struct hellwm_config_manager *config);
-void hellwm_config_manager_monitor_reload(struct hellwm_server *server);
-void hellwm_config_manager_keyboard_reload(struct hellwm_server *server);
 void hellwm_config_manager_monitor_free(hellwm_config_manager_monitor *monitor);
 void hellwm_config_manager_keyboard_free(hellwm_config_manager_keyboard *keyboard);
 void hellwm_config_keybindings_free(hellwm_config_manager_keybindings * keybindings);
-void hellwm_config_keybind_add_to_config(struct hellwm_server *server, char *keys, void *content);
+
+void hellwm_config_manager_reload(struct hellwm_server *server);
+void hellwm_config_manager_monitor_reload(struct hellwm_server *server);
+void hellwm_config_manager_keyboard_reload(struct hellwm_server *server);
+
 void hellwm_config_manager_keyboard_set(struct hellwm_keyboard *keyboard, hellwm_config_keyboard *config);
 void hellwm_config_manager_monitor_set(hellwm_config_manager_monitor *config, struct hellwm_output *output);
+
+void hellwm_config_keybind_add_to_config(struct hellwm_server *server, char *keys, void *content);
 void hellwm_function_add_to_map(struct hellwm_server *server, const char* name, void (*func)(struct hellwm_server*));
 void hellwm_config_manager_monitor_add(hellwm_config_manager_monitor *monitor_manager, hellwm_config_monitor *monitor);
 void hellwm_config_manager_keyboard_add(hellwm_config_manager_keyboard *keyboard_manager, hellwm_config_keyboard *keyboard);
@@ -364,6 +385,26 @@ void LOG(const char *format, ...)
     }
 }
 
+void ERR(const char *format, ...)
+{
+    va_list ap;
+
+    va_start(ap, format);
+    vfprintf(stdout, format, ap);
+    va_end(ap);
+
+    FILE *file = fopen("./logfile.log", "a");
+
+    if (file != NULL)
+    {
+        va_start(ap, format);
+        vfprintf(file, format, ap);
+        va_end(ap);
+        fclose(file);
+    }
+    exit(EXIT_FAILURE);
+}
+
 void hellwm_lua_error (lua_State *L, const char *fmt, ...)
 {
   va_list argp;
@@ -372,12 +413,6 @@ void hellwm_lua_error (lua_State *L, const char *fmt, ...)
   va_end(argp);
   lua_close(L);
   exit(EXIT_FAILURE);
-}
-
-void ERR(char *where)
-{
-   perror(where);
-   exit (1);
 }
 
 void RUN_EXEC(char *commnad)
@@ -431,7 +466,7 @@ hellwm_config_manager_monitor *hellwm_config_manager_monitor_create()
     hellwm_config_manager_monitor *monitor_manager = calloc(1, sizeof(hellwm_config_manager_monitor));
     if (!monitor_manager)
     {
-        LOG("hellwm_config_manager_monitor_create(): failed to allocate memory for hellwm_config_manager_monitor");
+        LOG("hellwm_config_manager_monitor_create()%s:%d: failed to allocate memory for hellwm_config_manager_monitor\n",__func__, __LINE__);
         return NULL;
     }
 
@@ -447,7 +482,7 @@ hellwm_config_manager_keyboard *hellwm_config_manager_keyboard_create()
 
     if (!keyboard_manager)
     {
-        LOG("hellwm_config_manager_keyboard_create(): failed to allocate memory for hellwm_config_manager_keyboard");
+        LOG("%s:%d failed to allocate memory for hellwm_config_manager_keyboard\n",__func__, __LINE__);
         return NULL;
     }
      
@@ -1044,13 +1079,13 @@ static void handle_renderer_lost(struct wl_listener *listener, void *data)
    struct wlr_renderer *old_renderer = server->renderer;
    struct wlr_allocator *old_allocator = server->allocator;
    
-   LOG("Renderer lost, retrying...");
+   LOG("Renderer lost, retrying...\n");
    
    if (!(server->renderer = wlr_renderer_autocreate(server->backend)))
-      ERR("handle_renderer_lost(): wlr_renderer_autocreate()");
+      ERR("%s:%d\n",__func__, __LINE__);
    
    if (!(server->allocator = wlr_allocator_autocreate(server->backend, server->renderer)))
-      ERR("handle_renderer_lost(): wlr_allocator_autocreate()");
+      ERR("%s:%d\n",__func__, __LINE__);
    
    wl_signal_add(&server->renderer->events.lost, &server->renderer_lost);
    wlr_compositor_set_renderer(server->compositor, server->renderer);
@@ -1076,6 +1111,8 @@ static void server_backend_new_output(struct wl_listener *listener, void *data)
 
     /* Set everything according to config */
     hellwm_config_manager_monitor_set(server->config_manager->monitor_manager, output);
+
+    hellwm_workspace_create(server, hellwm_workspace_get_next_id(server));    
 
     /* Sets up a listener for the frame event. */
     output->frame.notify = output_frame;
@@ -1109,9 +1146,7 @@ static void xdg_toplevel_map(struct wl_listener *listener, void *data)
 {
     /* Called when the surface is mapped, or ready to display on-screen. */
     struct hellwm_toplevel *toplevel = wl_container_of(listener, toplevel, map);
-
-    wl_list_insert(&toplevel->server->toplevels, &toplevel->link);
-
+    wl_list_insert(&toplevel->server->toplevels, &toplevel->link); 
     hellwm_focus_toplevel(toplevel, toplevel->xdg_toplevel->base->surface);
 }
 
@@ -1135,11 +1170,18 @@ static void xdg_toplevel_commit(struct wl_listener *listener, void *data)
     struct hellwm_toplevel *toplevel = wl_container_of(listener, toplevel, commit);
 
     if (toplevel->xdg_toplevel->base->initial_commit) 
-   {
+    {
         /* When an xdg_surface performs an initial commit, the compositor must
-         * reply with a configure so the client can map the surface. hellwm
-         * configures the xdg_toplevel with 0,0 size to let the client pick the
-         * dimensions itself. */
+        * reply with a configure so the client can map the surface. hellwm
+        * configures the xdg_toplevel with 0,0 size to let the client pick the
+        * dimensions itself. */
+        struct hellwm_workspace *workspace = hellwm_workspace_find(toplevel->server, toplevel->server->active_workspace);
+        if (workspace)
+        {
+            //wl_list_insert(&workspace->toplevels, &toplevel->link);
+            toplevel->workspace = toplevel->server->active_workspace;
+            //LOG("%s added to workspace: %d  -=-=- LIST LENGTH: %d\n", toplevel->xdg_toplevel->title, toplevel->server->active_workspace, wl_list_length(&workspace->toplevels));
+        }
         wlr_xdg_toplevel_set_size(toplevel->xdg_toplevel, 0, 0);
     }
 }
@@ -1358,7 +1400,7 @@ void hellwm_config_manager_keyboard_add(hellwm_config_manager_keyboard *keyboard
     keyboard_manager->keyboards = realloc(keyboard_manager->keyboards, (keyboard_manager->count + 1) * sizeof(hellwm_config_keyboard));
     if (!keyboard_manager->keyboards)
     {
-        LOG("hellwm_config_manager_keyboard_add(): failed to reallocate hellwm_config_manager_keyboard");
+        LOG("%s:%d failed to reallocate hellwm_config_manager_keyboard\n",__func__, __LINE__);
         return;
     }
 
@@ -1407,7 +1449,7 @@ void hellwm_config_manager_monitor_add(hellwm_config_manager_monitor *monitor_ma
     monitor_manager->monitors = realloc(monitor_manager->monitors, (monitor_manager->count + 1) * sizeof(hellwm_config_monitor));
     if (!monitor_manager->monitors)
     {
-        LOG("hellwm_config_manager_monitor_add(): failed to reallocate hellwm_config_manager_monitor");
+        LOG("%s:%d failed to reallocate hellwm_config_manager_monitor\n",__func__, __LINE__);
         return;
     }
 
@@ -1573,7 +1615,7 @@ int hellwm_lua_add_keyboard(lua_State *L)
                 break;
 
             default:
-                LOG("Provided to much arguments to keyboard() function!");
+                LOG("Provided to much arguments to keyboard() function!\n");
         }
     }
 
@@ -1621,7 +1663,7 @@ int hellwm_lua_add_monitor(lua_State *L)
                 monitor->transfrom = (int32_t)lua_tonumber(L, i);
                 break;
             default:
-                LOG("Provided to much arguments to monitor() function!");
+                LOG("Provided to much arguments to monitor() function!\n");
         }
     }
 
@@ -1656,7 +1698,7 @@ int hellwm_lua_add_keybind(lua_State *L)
                 break;
 
             default:
-                LOG("Provided to much arguments to keybind() function!");
+                LOG("Provided to much arguments to keybind() function!\n");
         }
     }
 
@@ -1702,7 +1744,7 @@ bool hellwm_convert_string_to_xkb_keys(xkb_keysym_t **keysyms_arr, const char *k
     char *keys_copy = strdup(keys_str);
     if (!keys_copy)
     {
-        LOG("hellwm_convert_string_to_xkb_keys(): Failed to allocate memory\n");
+        LOG("hellwm_convert_string_to_xkb_keys(%s:%d): Failed to allocate memory\n",__func__, __LINE__);
         *keysyms_arr = NULL;
         return false;
     }
@@ -1713,7 +1755,7 @@ bool hellwm_convert_string_to_xkb_keys(xkb_keysym_t **keysyms_arr, const char *k
     // Initial allocation for maximum possible keys
     xkb_keysym_t *keysyms = malloc(sizeof(xkb_keysym_t) * 10);
     if (!keysyms) {
-        LOG("hellwm_convert_string_to_xkb_keys(): Failed to allocate memory for keysyms\n");
+        LOG("%s:%d Failed to allocate memory for keysyms\n",__func__, __LINE__);
         free(keys_copy);
         *keysyms_arr = NULL;
         return false;
@@ -1722,7 +1764,7 @@ bool hellwm_convert_string_to_xkb_keys(xkb_keysym_t **keysyms_arr, const char *k
     struct xkb_context *ctx = xkb_context_new(XKB_CONTEXT_NO_FLAGS);
     if (!ctx)
     {
-        LOG("hellwm_convert_string_to_xkb_keys(): Failed to create XKB context\n");
+        LOG("%s:%d Failed to create XKB context\n",__func__, __LINE__);
         free(keys_copy);
         free(keysyms);
         *keysyms_arr = NULL;
@@ -1735,7 +1777,7 @@ bool hellwm_convert_string_to_xkb_keys(xkb_keysym_t **keysyms_arr, const char *k
         xkb_keysym_t keysym = xkb_keysym_from_name(token, XKB_KEYSYM_NO_FLAGS);
         if (keysym == XKB_KEY_NoSymbol)
         {
-            LOG("hellwm_convert_string_to_xkb_keys(): Invalid keysym: %s, keys_str: \"%s\"\n", token, keys_str);
+            LOG("%s:%d Invalid keysym: %s, keys_str: \"%s\"\n",__func__, __LINE__, token, keys_str);
             free(keys_copy);
             free(keysyms);
             *keysyms_arr = NULL;
@@ -1746,7 +1788,7 @@ bool hellwm_convert_string_to_xkb_keys(xkb_keysym_t **keysyms_arr, const char *k
         {
             keysyms = realloc(keysyms, sizeof(xkb_keysym_t) * (count + 10));
             if (!keysyms) {
-                LOG("hellwm_convert_string_to_xkb_keys(): Failed to reallocate memory for keysyms\n");
+                LOG("%s:%d Failed to reallocate memory for keysyms\n",__func__, __LINE__);
                 free(keys_copy);
                 *keysyms_arr = NULL;
                 return false;
@@ -1792,7 +1834,7 @@ void hellwm_config_keybind_add_to_config(struct hellwm_server *server, char *key
     hellwm_config_keybind **temp_keybindings = realloc(config_keybindings->keybindings, (config_keybindings->count + 1) * sizeof(hellwm_config_keybind *));
     if (temp_keybindings == NULL)
     {
-        LOG("hellwm_config_keybind_add_to_config(): Failed to allocate memory for keybindings\n");
+        LOG("%s:%d Failed to allocate memory for keybindings\n",__func__, __LINE__);
         return;
     }
     
@@ -1801,7 +1843,7 @@ void hellwm_config_keybind_add_to_config(struct hellwm_server *server, char *key
     config_keybindings->keybindings[config_keybindings->count] = malloc(sizeof(hellwm_config_keybind));
     if (config_keybindings->keybindings[config_keybindings->count] == NULL)
     {
-        LOG("hellwm_config_keybind_add_to_config(): Failed to allocate memory for new keybind\n");
+        LOG("%s:%d Failed to allocate memory for new keybind\n",__func__, __LINE__);
         return;
     }
 
@@ -1916,7 +1958,7 @@ void hellwm_function_add_to_map(struct hellwm_server *server, const char* name, 
     server->hellwm_function_map = realloc(server->hellwm_function_map, (server->mapped_functions + 1) * sizeof(struct hellwm_function_map_entry));
     if (!server->hellwm_function_map)
     {
-        LOG("hellwm_function_add_to_map(): Failed to allocate memory for function map");
+        LOG("%s:%d Failed to allocate memory for function map\n",__func__, __LINE__);
     }
 
     server->hellwm_function_map[server->mapped_functions].name = name;
@@ -1939,12 +1981,108 @@ bool hellwm_function_find(const char* name, struct hellwm_server* server, union 
     return false;
 }
 
+void temp1(struct hellwm_server *server)
+{
+    hellwm_workspace_change(server, 1);
+}
+
+void temp2(struct hellwm_server *server)
+{
+    hellwm_workspace_change(server, 2);
+}
+
+void temp3(struct hellwm_server *server)
+{
+    hellwm_workspace_change(server, 3);
+}
+
 void hellwm_function_expose(struct hellwm_server *server)
 {
-    hellwm_function_add_to_map(server, "kill_server", hellwm_server_kill);
-    hellwm_function_add_to_map(server, "focus_next", hellwm_focus_next_toplevel);
-    hellwm_function_add_to_map(server, "kill_active", hellwm_toplevel_kill_active);
+    hellwm_function_add_to_map(server, "kill_server",   hellwm_server_kill);
+    hellwm_function_add_to_map(server, "focus_next",    hellwm_focus_next_toplevel);
+    hellwm_function_add_to_map(server, "kill_active",   hellwm_toplevel_kill_active);
     hellwm_function_add_to_map(server, "reload_config", hellwm_config_manager_reload);
+
+    hellwm_function_add_to_map(server, "ch1", temp1);
+    hellwm_function_add_to_map(server, "ch2", temp2);
+    hellwm_function_add_to_map(server, "ch3", temp3);
+}
+
+static void hellwm_workspace_create(struct hellwm_server *server, int workspace_id)
+{
+    LOG("WORKSPACES: %d\n", server->available_workspaces);
+
+    server->workspaces = realloc(server->workspaces, (server->available_workspaces + 1) * sizeof(struct hellwm_workspace*));
+    if (server->workspaces == NULL)
+    {
+        LOG("%s:%s Failed to allocate memory for workspaces\n", __func__, __LINE__);
+        return;
+    }
+
+    server->workspaces[server->available_workspaces] = malloc(sizeof(struct hellwm_workspace));
+    if (server->workspaces[server->available_workspaces] == NULL)
+    {
+        LOG("%s:%s Failed to allocate memory for a new workspace\n", __func__, __LINE__);
+        return;
+    }
+    server->workspaces[server->available_workspaces]->id = workspace_id;
+    
+    wl_list_init(&server->workspaces[server->available_workspaces]->toplevels);
+    server->available_workspaces++;
+
+    hellwm_workspace_change(server, workspace_id);
+
+    hellwm_workspace_destroy(server, -1);
+}
+
+static void hellwm_workspace_destroy(struct hellwm_server *server, int workspace_id)
+{
+    
+}
+
+/* Change workspace by it's id */
+static void hellwm_workspace_change(struct hellwm_server *server, int workspace_id)
+{
+    struct hellwm_workspace *workspace = hellwm_workspace_find(server, workspace_id);
+    if (workspace == NULL)
+    {
+        LOG("Creating new workspace: %d\n", workspace_id);
+        hellwm_workspace_create(server, workspace_id);
+        return;
+    }
+    else
+    {
+        struct hellwm_toplevel *toplevel;
+        wl_list_for_each(toplevel, &server->toplevels, link)
+        {
+            if (toplevel->workspace != workspace_id)
+                wlr_scene_node_set_enabled(&toplevel->scene_tree->node, false);
+            else
+                wlr_scene_node_set_enabled(&toplevel->scene_tree->node, true);
+        }
+    }
+
+    LOG("Changed Workspace from %d to %d\n", server->active_workspace, workspace_id);
+    server->active_workspace = workspace_id;
+}
+
+/* Return next id based on count of workspaces */
+static int hellwm_workspace_get_next_id(struct hellwm_server *server)
+{
+    return server->available_workspaces + 1;
+}
+
+/* Returns workspace with provided id, if it's not exist return NULL */
+static struct hellwm_workspace *hellwm_workspace_find(struct hellwm_server *server, int id)
+{
+    for (size_t i = 0; i<server->available_workspaces; i++)
+    {
+        if (server->workspaces[i]->id == id)
+        {
+            return server->workspaces[id];
+        }
+    }
+    return NULL;
 }
 
 int main(int argc, char *argv[])
@@ -1965,6 +2103,10 @@ int main(int argc, char *argv[])
     /* config */
     server->config_manager = hellwm_config_manager_create();
     hellwm_config_manager_load_from_file("./config.lua");
+    
+    /* workspaces */
+    server->active_workspace = 0;
+    server->available_workspaces = 0;
 
     /* display */
     server->wl_display = wl_display_create();
@@ -1987,7 +2129,7 @@ int main(int argc, char *argv[])
     if (server->backend == NULL)
     {
         wlr_log(WLR_ERROR, "failed to create wlr_backend");
-        ERR("main(): failed to create wlr_backend");
+        ERR("%s:%d failed to create wlr_backend\n",__func__, __LINE__);
     }
 
 
@@ -1999,7 +2141,7 @@ int main(int argc, char *argv[])
     if (server->renderer == NULL)
     {
         wlr_log(WLR_ERROR, "failed to create wlr_renderer");
-        ERR("main(): failed to create wlr_renderer");
+        ERR("%s:%d failed to create wlr_renderer\n",__func__, __LINE__);
     }
     wlr_renderer_init_wl_display(server->renderer, server->wl_display);
 
@@ -2009,7 +2151,7 @@ int main(int argc, char *argv[])
     if (server->allocator == NULL)
     {
         wlr_log(WLR_ERROR, "failed to create wlr_allocator");
-        ERR("main(): failed to create wlr_allocator");
+        ERR("%s:%d failed to create wlr_allocator\n",__func__, __LINE__);
     }
 
 
@@ -2082,7 +2224,7 @@ int main(int argc, char *argv[])
     if (!socket)
     {
         wlr_backend_destroy(server->backend);
-        ERR("main(): failed to create socket");
+        ERR("%s:%d failed to create socket\n",__func__, __LINE__);
     }
 
     /* Start the backend. This will enumerate outputs and inputs, become the DRM master, etc */
@@ -2090,7 +2232,7 @@ int main(int argc, char *argv[])
     {
         wlr_backend_destroy(server->backend);
         wl_display_destroy(server->wl_display);
-        ERR("main(): failed to start backend");
+        ERR("%s:%d failed to start backend\n",__func__, __LINE__);
     }
 
 
@@ -2103,7 +2245,6 @@ int main(int argc, char *argv[])
             execl("/bin/sh", "/bin/sh", "-c", startup_cmd, (void *)NULL);
         }
     }
-
 
     /* Run the Wayland event loop. This does not return until you exit the
      * compositor. Starting the backend rigged up all of the necessary event

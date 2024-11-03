@@ -17,3 +17,7 @@ bind("Super_L, t", "alacritty")
 bind("Super_L, b", "firefox")
 bind("Super_L, Return", "foot")
 bind("Super_L, r", "reload_config")
+
+bind("Super_L, 1", "ch1")
+bind("Super_L, 2", "ch2")
+bind("Super_L, 3", "ch3")
