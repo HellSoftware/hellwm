@@ -1,5 +1,6 @@
 #include "sys/types.h"
 #include "wayland-server-protocol.h"
+#include <string.h>
 #include <time.h>
 #include <stdio.h>
 #include <assert.h>
@@ -61,7 +62,9 @@ enum hellwm_cursor_mode
 
 struct hellwm_server 
 {
+
     uint32_t resize_edges;
+
     unsigned cursor_mode;
     unsigned mapped_functions;
     double cursor_grab_x, cursor_grab_y;
@@ -69,13 +72,14 @@ struct hellwm_server
     /* hellwm */
     struct hellwm_output *output;
     struct hellwm_workspace *active_workspace;
+    //struct hellwm_workspace **workspaces;
     struct hellwm_toplevel *grabbed_toplevel;
     struct hellwm_config_manager *config_manager;
     struct hellwm_function_map_entry *hellwm_function_map;
     
     /* wayland */
     struct wl_list outputs;
-    struct wl_list toplevels;
+    //struct wl_list toplevels;
     struct wl_list keyboards;
     struct wl_list workspaces;
     
@@ -285,10 +289,11 @@ void hellwm_config_manager_load_from_file(char * filename);
 void hellwm_config_manager_monitor_find_and_apply(char *name, struct wlr_output_state *state, hellwm_config_manager_monitor *monitor_manager);
 
 static int hellwm_workspace_get_next_id(struct hellwm_server *server);
+static void hellwm_workspace_destroy(struct hellwm_workspace *workspace);
 static void hellwm_workspace_change(struct hellwm_server *server, int workspace);
-static void hellwm_workspace_destroy(struct hellwm_server *server, int workspace);
 static void hellwm_workspace_create(struct hellwm_server *server, int workspace_id);
 static struct hellwm_workspace *hellwm_workspace_find(struct hellwm_server *server, int id);
+static void hellwm_workspace_add_toplevel(struct hellwm_workspace *workspace, struct hellwm_toplevel *toplevel);
 
 void hellwm_config_manager_free(struct hellwm_config_manager *config);
 void hellwm_config_manager_monitor_free(hellwm_config_manager_monitor *monitor);
@@ -527,7 +532,7 @@ struct hellwm_config_manager *hellwm_config_manager_create()
 
 static void hellwm_focus_toplevel(struct hellwm_toplevel *toplevel, struct wlr_surface *surface)
 {
-/* Note: this function only deals with keyboard focus. */
+    /* Note: this function only deals with keyboard focus. */
     if (toplevel == NULL)
     {
         return;
@@ -537,11 +542,11 @@ static void hellwm_focus_toplevel(struct hellwm_toplevel *toplevel, struct wlr_s
     struct wlr_surface *prev_surface = seat->keyboard_state.focused_surface;
     if (prev_surface == surface)
     {
-    /* Don't re-focus an already focused surface. */
+        /* Don't re-focus an already focused surface. */
         return;
     }
-if (prev_surface)
-   {
+    if (prev_surface)
+    {
         /*
          * Deactivate the previously focused surface. This lets the client know
          * it no longer has focus and the client will repaint accordingly, e.g.
@@ -549,7 +554,7 @@ if (prev_surface)
          */
         struct wlr_xdg_toplevel *prev_toplevel = wlr_xdg_toplevel_try_from_wlr_surface(prev_surface);
         if (prev_toplevel != NULL)
-      {
+        {
             wlr_xdg_toplevel_set_activated(prev_toplevel, false);
         }
     }
@@ -557,7 +562,8 @@ if (prev_surface)
     /* Move the toplevel to the front */
     wlr_scene_node_raise_to_top(&toplevel->scene_tree->node);
     wl_list_remove(&toplevel->link);
-    wl_list_insert(&server->toplevels, &toplevel->link);
+
+    wl_list_insert(&server->active_workspace->toplevels, &toplevel->link);
     /* Activate the new surface */
     wlr_xdg_toplevel_set_activated(toplevel->xdg_toplevel, true);
     /*
@@ -566,25 +572,32 @@ if (prev_surface)
      * clients without additional work on your part.
      */
     if (keyboard != NULL)
-   {
+    {
         wlr_seat_keyboard_notify_enter(seat, toplevel->xdg_toplevel->base->surface, keyboard->keycodes, keyboard->num_keycodes, &keyboard->modifiers);
     }
 }
 
 static void hellwm_focus_next_toplevel(struct hellwm_server *server)
 {
-    if (wl_list_length(&server->toplevels) < 2)
+    /* TODO: */ return;
+
+    if (wl_list_length(&server->active_workspace->toplevels) < 2)
     {
         return;
     }
-    struct hellwm_toplevel *next_toplevel = wl_container_of(server->toplevels.prev, next_toplevel, link);
+    struct hellwm_toplevel *next_toplevel = wl_container_of(server->active_workspace->toplevels.prev, next_toplevel, link);
     hellwm_focus_toplevel(next_toplevel, next_toplevel->xdg_toplevel->base->surface);
 }
 
 static void hellwm_toplevel_kill_active(struct hellwm_server *server)
 {
-	if (wl_list_length(&server->toplevels) < 1) return;
-    wlr_xdg_toplevel_send_close(wlr_xdg_toplevel_try_from_wlr_surface(server->seat->keyboard_state.focused_surface));
+    /* TODO: */
+    if (!server->active_workspace) return;
+    if (wl_list_length(&server->active_workspace->toplevels) < 1) return;
+    struct wlr_xdg_toplevel *toplevel = wlr_xdg_toplevel_try_from_wlr_surface(server->seat->keyboard_state.focused_surface);
+    if (!toplevel)
+        return;
+    wlr_xdg_toplevel_send_close(toplevel);
     hellwm_focus_next_toplevel(server);
 }
 
@@ -1110,7 +1123,6 @@ static void server_backend_new_output(struct wl_listener *listener, void *data)
 
     /* Set everything according to config */
     hellwm_config_manager_monitor_set(server->config_manager->monitor_manager, output);
-
     hellwm_workspace_create(server, hellwm_workspace_get_next_id(server));    
 
     /* Sets up a listener for the frame event. */
@@ -1145,7 +1157,7 @@ static void xdg_toplevel_map(struct wl_listener *listener, void *data)
 {
     /* Called when the surface is mapped, or ready to display on-screen. */
     struct hellwm_toplevel *toplevel = wl_container_of(listener, toplevel, map);
-    wl_list_insert(&toplevel->server->toplevels, &toplevel->link); 
+    wl_list_insert(&toplevel->server->active_workspace->toplevels, &toplevel->link); 
     hellwm_focus_toplevel(toplevel, toplevel->xdg_toplevel->base->surface);
 }
 
@@ -1175,12 +1187,7 @@ static void xdg_toplevel_commit(struct wl_listener *listener, void *data)
         * configures the xdg_toplevel with 0,0 size to let the client pick the
         * dimensions itself. */
         
-        if (toplevel->server->active_workspace)
-        {
-            wl_list_insert(&toplevel->server->active_workspace->toplevels, &toplevel->link);
-            toplevel->workspace = toplevel->server->active_workspace->id;
-            //LOG("%s added to workspace: %d  -=-=- LIST LENGTH: %d\n", toplevel->xdg_toplevel->title, toplevel->server->active_workspace, wl_list_length(&workspace->toplevels));
-        }
+        hellwm_workspace_add_toplevel(toplevel->server->active_workspace, toplevel);
         wlr_xdg_toplevel_set_size(toplevel->xdg_toplevel, 0, 0);
     }
 }
@@ -2010,48 +2017,81 @@ void hellwm_function_expose(struct hellwm_server *server)
 static void hellwm_workspace_create(struct hellwm_server *server, int workspace_id)
 {
     struct hellwm_workspace *workspace = calloc(1, sizeof(struct hellwm_workspace));
-    if (workspace == NULL)
+    if (!workspace)
     {
-        LOG("%s:%s Failed to allocate memory for a new workspace\n", __func__, __LINE__);
-        return;
+        LOG("%s:%s Cannot allocate memory for new workspace\n", __func__, __LINE__);
     }
     
-    workspace->id = workspace_id;
-    wl_list_init(&workspace->toplevels);
     wl_list_insert(&server->workspaces, &workspace->link);
+    wl_list_init(&workspace->toplevels);
+    workspace->id = workspace_id;
 
+    LOG("Creating new workspace: %d\n", workspace_id);
     hellwm_workspace_change(server, workspace_id);
-    hellwm_workspace_destroy(server, -1);
 }
 
-static void hellwm_workspace_destroy(struct hellwm_server *server, int workspace_id)
+static void hellwm_workspace_destroy(struct hellwm_workspace *workspace)
 {
-    
+    //wl_list_remove(&workspace->link);
+}
+
+static void hellwm_workspace_add_toplevel(struct hellwm_workspace *workspace, struct hellwm_toplevel *toplevel)
+{
+    wl_list_insert(&workspace->toplevels, &toplevel->link);
+    toplevel->workspace = workspace->id;
+
+    LOG("%s added to workspace: %d\n", toplevel->xdg_toplevel->title, workspace->id);
 }
 
 /* Change workspace by it's id */
 static void hellwm_workspace_change(struct hellwm_server *server, int workspace_id)
 {
     struct hellwm_workspace *workspace = hellwm_workspace_find(server, workspace_id);
+    struct hellwm_workspace *prev_workspace = server->active_workspace;
+
     if (workspace == NULL)
     {
-        LOG("Creating new workspace: %d\n", workspace_id);
+        //if (server->active_workspace->id == workspace_id) return;
         hellwm_workspace_create(server, workspace_id);
-        return;
     }
-    else
+
+    /* Enable toplevels */
+    if (workspace)
     {
-        struct hellwm_toplevel *toplevel;
-        wl_list_for_each(toplevel, &server->toplevels, link)
+        LOG("TOPLEVEL_LIST: %d\n", wl_list_length(&workspace->toplevels));
+        if (wl_list_length(&workspace->toplevels) == 0)
         {
-            if (toplevel->workspace != workspace_id)
-                wlr_scene_node_set_enabled(&toplevel->scene_tree->node, false);
-            else
-                wlr_scene_node_set_enabled(&toplevel->scene_tree->node, true);
         }
-        server->active_workspace = workspace;
-        LOG("Changed Workspace from %d to %d\n", server->active_workspace->id, workspace_id);
+        else
+        {
+            struct hellwm_toplevel *toplevel;
+            wl_list_for_each(toplevel, &workspace->toplevels, link)
+            {
+                wlr_scene_node_set_enabled(&toplevel->scene_tree->node, true);
+            }
+        }
     }
+
+    /* Disable toplevels */
+    if (prev_workspace)
+    {
+        LOG("PREV_TOPLEVEL_LIST: %d\n", wl_list_length(&prev_workspace->toplevels));
+        if (wl_list_length(&prev_workspace->toplevels) == 0)
+        {
+            hellwm_workspace_destroy(prev_workspace);
+        }
+        else
+        {
+            struct hellwm_toplevel *toplevel;
+            wl_list_for_each(toplevel, &prev_workspace->toplevels, link)
+            {
+                wlr_scene_node_set_enabled(&toplevel->scene_tree->node, false);
+            }
+        }
+    }
+
+    LOG("Changed Workspace from %d to %d\n", server->active_workspace, workspace_id);
+    server->active_workspace = workspace;
 }
 
 /* Return next id based on count of workspaces */
@@ -2093,16 +2133,13 @@ int main(int argc, char *argv[])
     server->config_manager = hellwm_config_manager_create();
     hellwm_config_manager_load_from_file("./config.lua");
     
-    /* workspaces */
-    server->active_workspace = NULL;
-
     /* display */
     server->wl_display = wl_display_create();
     server->event_loop = wl_display_get_event_loop(server->wl_display);
    
     /* lists */
     wl_list_init(&server->outputs);
-    wl_list_init(&server->toplevels);
+    //wl_list_init(&server->toplevels);
     wl_list_init(&server->keyboards);
     wl_list_init(&server->workspaces);
 
