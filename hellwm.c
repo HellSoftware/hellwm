@@ -145,6 +145,7 @@ struct hellwm_workspace
     
     struct wl_list link;
     struct wl_list toplevels;
+    struct hellwm_toplevel *last_focused;
 };
 
 struct hellwm_toplevel
@@ -317,7 +318,7 @@ static struct hellwm_toplevel *desktop_toplevel_at(struct hellwm_server *server,
 static void hellwm_server_kill(struct hellwm_server *server);
 static void hellwm_focus_next_toplevel(struct hellwm_server *server);
 static void hellwm_toplevel_kill_active(struct hellwm_server *server);
-static void hellwm_focus_toplevel(struct hellwm_toplevel *toplevel, struct wlr_surface *surface);
+static void hellwm_focus_toplevel(struct hellwm_toplevel *toplevel);
 
 static void keyboard_handle_key(struct wl_listener *listener, void *data);
 static void keyboard_handle_destroy(struct wl_listener *listener, void *data);
@@ -528,8 +529,9 @@ struct hellwm_config_manager *hellwm_config_manager_create()
     return config_manager;
 }
 
-static void hellwm_focus_toplevel(struct hellwm_toplevel *toplevel, struct wlr_surface *surface)
+static void hellwm_focus_toplevel(struct hellwm_toplevel *toplevel)
 {
+    struct wlr_surface *surface = toplevel->xdg_toplevel->base->surface;
     /* Note: this function only deals with keyboard focus. */
     if (toplevel == NULL)
     {
@@ -559,9 +561,11 @@ static void hellwm_focus_toplevel(struct hellwm_toplevel *toplevel, struct wlr_s
     struct wlr_keyboard *keyboard = wlr_seat_get_keyboard(seat);
     /* Move the toplevel to the front */
     wlr_scene_node_raise_to_top(&toplevel->scene_tree->node);
-    wl_list_remove(&toplevel->link);
 
+    wl_list_remove(&toplevel->link);
     wl_list_insert(&server->active_workspace->toplevels, &toplevel->link);
+    server->active_workspace->last_focused = toplevel;
+
     /* Activate the new surface */
     wlr_xdg_toplevel_set_activated(toplevel->xdg_toplevel, true);
     /*
@@ -577,19 +581,16 @@ static void hellwm_focus_toplevel(struct hellwm_toplevel *toplevel, struct wlr_s
 
 static void hellwm_focus_next_toplevel(struct hellwm_server *server)
 {
-    /* TODO: */ return;
-
     if (wl_list_length(&server->active_workspace->toplevels) < 2)
     {
         return;
     }
     struct hellwm_toplevel *next_toplevel = wl_container_of(server->active_workspace->toplevels.prev, next_toplevel, link);
-    hellwm_focus_toplevel(next_toplevel, next_toplevel->xdg_toplevel->base->surface);
+    hellwm_focus_toplevel(next_toplevel);
 }
 
 static void hellwm_toplevel_kill_active(struct hellwm_server *server)
 {
-    /* TODO: */
     if (!server->active_workspace) return;
     if (wl_list_length(&server->active_workspace->toplevels) < 1) return;
     struct wlr_xdg_toplevel *toplevel = wlr_xdg_toplevel_try_from_wlr_surface(server->seat->keyboard_state.focused_surface);
@@ -1018,7 +1019,7 @@ static void server_cursor_button(struct wl_listener *listener, void *data)
         reset_cursor_mode(server);
     } else {
         /* Focus that client if the button was _pressed_ */
-        hellwm_focus_toplevel(toplevel, surface);
+        hellwm_focus_toplevel(toplevel);
     }
 }
 
@@ -1156,7 +1157,7 @@ static void xdg_toplevel_map(struct wl_listener *listener, void *data)
     /* Called when the surface is mapped, or ready to display on-screen. */
     struct hellwm_toplevel *toplevel = wl_container_of(listener, toplevel, map);
     hellwm_workspace_add_toplevel(toplevel->server->active_workspace, toplevel);
-    hellwm_focus_toplevel(toplevel, toplevel->xdg_toplevel->base->surface);
+    hellwm_focus_toplevel(toplevel);
 }
 
 static void xdg_toplevel_unmap(struct wl_listener *listener, void *data)
@@ -2087,6 +2088,8 @@ static void hellwm_workspace_change(struct hellwm_server *server, int workspace_
         }
     }
     server->active_workspace = workspace;
+    if (server->active_workspace->last_focused != NULL)
+        hellwm_focus_toplevel(server->active_workspace->last_focused);
 }
 
 /* Return next id based on count of workspaces */
