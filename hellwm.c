@@ -197,11 +197,18 @@ struct hellwm_keyboard
     struct wl_listener modifiers;
 };
 
+struct hellwm_config_keybind_workspace
+{
+    int workspace_id;
+    int binary_workspace_val;
+    bool binary_workspaces_enabled;
+};
+
 union hellwm_function
 {
-    int workspace_id;                       /* If keybind is for changing workspaces */
-    char *as_void;                          /* If keybind is just executing some command */
-    void (*as_func)(struct hellwm_server*); /* If keybind is running mapped function */
+    char *as_void;                                    /* If keybind is just executing some command */
+    void (*as_func)(struct hellwm_server*);           /* If keybind is running mapped function */
+    struct hellwm_config_keybind_workspace workspace;  /* If keybind is meant for changing workspaces */
 };
 
 struct hellwm_function_map_entry
@@ -297,11 +304,22 @@ void hellwm_function_expose(struct hellwm_server *server);
 void hellwm_config_manager_load_from_file(char * filename);
 void hellwm_config_manager_monitor_find_and_apply(char *name, struct wlr_output_state *state, hellwm_config_manager_monitor *monitor_manager);
 
+/* returns number of active workspaces + 1 */
 static int hellwm_workspace_get_next_id(struct hellwm_server *server);
+
+/* destroy workspace */
 static void hellwm_workspace_destroy(struct hellwm_workspace *workspace);
+
+/* changes workspace to provided id, if not exist create from function hellwm_workspace_create() */
 static void hellwm_workspace_change(struct hellwm_server *server, int workspace);
+
+/* creates workspace from provided id */
 static void hellwm_workspace_create(struct hellwm_server *server, int workspace_id);
+
+/* find workspace by id, if function cannot find workspace returns NULL */
 static struct hellwm_workspace *hellwm_workspace_find(struct hellwm_server *server, int id);
+
+/* add toplevel to specific workspace */
 static void hellwm_workspace_add_toplevel(struct hellwm_workspace *workspace, struct hellwm_toplevel *toplevel);
 
 void hellwm_config_manager_free(struct hellwm_config_manager *config);
@@ -318,7 +336,7 @@ void hellwm_config_manager_monitor_set(hellwm_config_manager_monitor *config, st
 
 void hellwm_config_keybind_add_allocate(hellwm_config_manager_keybindings *config_keybindings);
 void hellwm_config_keybind_add_function_or_cmd_to_config(struct hellwm_server *server, char *keys, void *content);
-void hellwm_config_keybind_add_workspace_to_config(struct hellwm_server *server, char *keys, int32_t workspace_id);
+void hellwm_config_keybind_add_workspace_to_config(struct hellwm_server *server, char *keys, struct hellwm_config_keybind_workspace workspace);
 void hellwm_function_add_to_map(struct hellwm_server *server, const char* name, void (*func)(struct hellwm_server*));
 void hellwm_config_manager_monitor_add(hellwm_config_manager_monitor *monitor_manager, hellwm_config_monitor *monitor);
 void hellwm_config_manager_keyboard_add(hellwm_config_manager_keyboard *keyboard_manager, hellwm_config_keyboard *keyboard);
@@ -650,36 +668,44 @@ static bool handle_keybinding(struct hellwm_server *server, uint32_t modifiers, 
      * processing.
      */
 
-    for (int j = 0; j < server->config_manager->keybindings->count; j++)
+    hellwm_config_manager_keybindings *keybindings = server->config_manager->keybindings;
+
+    for (int j = 0; j < keybindings->count; j++)
     {
         int check = 0;
-        for (int k = 0; k < server->config_manager->keybindings->keybindings[j]->count-1; k++)
+        for (int k = 0; k < keybindings->keybindings[j]->count-1; k++)
         {
-            if (hellwm_xkb_keysym_to_wlr_modifier(server->config_manager->keybindings->keybindings[j]->keysyms[k]) & modifiers)
+            if (hellwm_xkb_keysym_to_wlr_modifier(keybindings->keybindings[j]->keysyms[k]) & modifiers)
             {
                 check++;
             }
         }
-        if (server->config_manager->keybindings->keybindings[j]->keysyms[server->config_manager->keybindings->keybindings[j]->count-1] == sym)
+        if (keybindings->keybindings[j]->keysyms[keybindings->keybindings[j]->count-1] == sym)
         {
             check++;
         }
-        if (server->config_manager->keybindings->keybindings[j]->content && check == server->config_manager->keybindings->keybindings[j]->count)
+        if (keybindings->keybindings[j]->content && check == keybindings->keybindings[j]->count)
         {
-            switch (server->config_manager->keybindings->keybindings[j]->type)
+            switch (keybindings->keybindings[j]->type)
             {
                 case HELLWM_KEYBIND_FUNCTION:
-                    if (server->config_manager->keybindings->keybindings[j]->content->as_func)
-                        server->config_manager->keybindings->keybindings[j]->content->as_func(server);
+                    if (keybindings->keybindings[j]->content->as_func)
+                        keybindings->keybindings[j]->content->as_func(server);
                     break;
 
                 case HELLWM_KEYBIND_WORKSPACE:
-                    hellwm_workspace_change(server, server->config_manager->keybindings->keybindings[j]->content->workspace_id);
+                    if (keybindings->keybindings[j]->content->workspace.binary_workspaces_enabled)
+                    {
+                    }
+                    else
+                    {
+                        hellwm_workspace_change(server, keybindings->keybindings[j]->content->workspace.workspace_id);
+                    }
                     break;
 
                 case HELLWM_KEYBIND_COMMAND:
-                    if (server->config_manager->keybindings->keybindings[j]->content->as_void)
-                        RUN_EXEC(server->config_manager->keybindings->keybindings[j]->content->as_void);
+                    if (keybindings->keybindings[j]->content->as_void)
+                        RUN_EXEC(keybindings->keybindings[j]->content->as_void);
                     break;
 
                 default:
@@ -1144,7 +1170,7 @@ static void server_backend_new_output(struct wl_listener *listener, void *data)
 
     /* Set everything according to config */
     hellwm_config_manager_monitor_set(server->config_manager->monitor_manager, output);
-    hellwm_workspace_create(server, hellwm_workspace_get_next_id(server));    
+    hellwm_workspace_create(server, hellwm_workspace_get_next_id(server));
 
     /* Sets up a listener for the frame event. */
     output->frame.notify = output_frame;
@@ -1648,11 +1674,9 @@ int hellwm_lua_add_keyboard(lua_State *L)
             case 6:
                 keyboard->rules = strdup(lua_tostring(L, i));
                 break;
-
             case 7:
                 keyboard->variant = strdup(lua_tostring(L, i));
                 break;
-
             case 8:
                 keyboard->model = strdup(lua_tostring(L, i));
                 break;
@@ -1662,19 +1686,7 @@ int hellwm_lua_add_keyboard(lua_State *L)
         }
     }
 
-    //LOG("Loaded from config - keyboard: %s, %s, %d, %d | %s, %s, %s, %s\n",
-    //       keyboard->name,
-    //       keyboard->layout,
-    //       keyboard->rate,
-    //       keyboard->delay,
-    //       keyboard->options,
-    //       keyboard->rules,
-    //       keyboard->variant,
-    //       keyboard->model
-    //       );
-
     hellwm_config_manager_keyboard_add(GLOBAL_SERVER->config_manager->keyboard_manager, keyboard);
-
     return 0;
 }
 
@@ -1726,6 +1738,10 @@ int hellwm_lua_add_keybind(lua_State *L)
     char *keys = NULL; 
     char *action = NULL; 
     int nargs = lua_gettop(L);
+    struct hellwm_config_keybind_workspace workspace;
+    workspace.workspace_id = -1;
+    workspace.binary_workspace_val = -1;
+    workspace.binary_workspaces_enabled = false;
 
     for (int i = 1; i<=nargs; i++)
     {
@@ -1740,10 +1756,14 @@ int hellwm_lua_add_keybind(lua_State *L)
             case 3:
                 if (!strcmp(action, "workspace"))
                 {
-                    int32_t workspace_id = (int32_t)lua_tonumber(L, i);
-                    hellwm_config_keybind_add_workspace_to_config(GLOBAL_SERVER, keys, workspace_id);
-                    return 0;
+                    workspace.workspace_id = (int)lua_tonumber(L, i);
                 }
+                break;
+            case 4:
+                workspace.binary_workspaces_enabled = (bool)lua_toboolean(L, i);
+                break;
+            case 5:
+                workspace.binary_workspace_val = (int)lua_tonumber(L, i);
                 break;
 
             default:
@@ -1751,6 +1771,11 @@ int hellwm_lua_add_keybind(lua_State *L)
         }
     }
 
+    if (workspace.workspace_id != -1 && keys != NULL)
+    {
+        hellwm_config_keybind_add_workspace_to_config(GLOBAL_SERVER, keys, workspace);
+        return 0;
+    }
     if (keys != NULL && action != NULL)
     {
         hellwm_config_keybind_add_function_or_cmd_to_config(GLOBAL_SERVER, keys, action);
@@ -1914,7 +1939,7 @@ void hellwm_config_keybind_add_function_or_cmd_to_config(struct hellwm_server *s
     config_keybindings->count++; 
 }
 
-void hellwm_config_keybind_add_workspace_to_config(struct hellwm_server *server, char *keys, int32_t workspace_id)
+void hellwm_config_keybind_add_workspace_to_config(struct hellwm_server *server, char *keys, struct hellwm_config_keybind_workspace workspace)
 {
     hellwm_config_manager_keybindings *config_keybindings = server->config_manager->keybindings;
     hellwm_config_keybind_add_allocate(server->config_manager->keybindings); 
@@ -1923,9 +1948,12 @@ void hellwm_config_keybind_add_workspace_to_config(struct hellwm_server *server,
     {
         config_keybindings->keybindings[config_keybindings->count]->content = malloc(sizeof(union hellwm_function));
         config_keybindings->keybindings[config_keybindings->count]->type = HELLWM_KEYBIND_WORKSPACE;
-        config_keybindings->keybindings[config_keybindings->count]->content->workspace_id = workspace_id;
+
+        config_keybindings->keybindings[config_keybindings->count]->content->workspace.workspace_id = workspace.workspace_id;
+        config_keybindings->keybindings[config_keybindings->count]->content->workspace.binary_workspace_val = workspace.binary_workspace_val;
+        config_keybindings->keybindings[config_keybindings->count]->content->workspace.binary_workspaces_enabled = workspace.binary_workspaces_enabled;
     }
-    LOG("Keybind: [%s] = workspace: %d", keys, workspace_id);
+    LOG("Keybind: [%s] = workspace: %d \t - bw: %d bw_val: %d\n", keys, workspace.workspace_id, workspace.binary_workspaces_enabled, workspace.binary_workspace_val);
     config_keybindings->count++; 
 }
 
@@ -2002,11 +2030,15 @@ void hellwm_config_print(struct hellwm_config_manager *config)
                     break;
 
                 case HELLWM_KEYBIND_WORKSPACE:
-                    LOG("\t\t\t\tworkspace = %d\n", kbd->keybindings[i]->content->workspace_id);
+                    LOG("\t\t\t\tworkspace    = \n\t\t\t\t{\n", kbd->keybindings[i]->content->workspace.workspace_id);
+                    LOG("\t\t\t\t\tworkspace_id              = %d\n", kbd->keybindings[i]->content->workspace.workspace_id);
+                    LOG("\t\t\t\t\tbinary_workspaces_enabled = %d\n", kbd->keybindings[i]->content->workspace.binary_workspaces_enabled);
+                    LOG("\t\t\t\t\tbinary_workspace_val      = %d\n", kbd->keybindings[i]->content->workspace.binary_workspace_val);
+                    LOG("\t\t\t\t}\n");
                     break;
 
                 case HELLWM_KEYBIND_COMMAND:
-                    LOG("\t\t\t\tcontent   = %s\n", (char *)kbd->keybindings[i]->content->as_void);
+                    LOG("\t\t\t\tcontent      = %s\n", (char *)kbd->keybindings[i]->content->as_void);
                     break;
 
                 default:
@@ -2062,31 +2094,12 @@ bool hellwm_function_find(const char* name, struct hellwm_server* server, union 
     return false;
 }
 
-void temp1(struct hellwm_server *server)
-{
-    hellwm_workspace_change(server, 1);
-}
-
-void temp2(struct hellwm_server *server)
-{
-    hellwm_workspace_change(server, 2);
-}
-
-void temp3(struct hellwm_server *server)
-{
-    hellwm_workspace_change(server, 3);
-}
-
 void hellwm_function_expose(struct hellwm_server *server)
 {
     hellwm_function_add_to_map(server, "kill_server",   hellwm_server_kill);
     hellwm_function_add_to_map(server, "focus_next",    hellwm_focus_next_toplevel);
     hellwm_function_add_to_map(server, "kill_active",   hellwm_toplevel_kill_active);
     hellwm_function_add_to_map(server, "reload_config", hellwm_config_manager_reload);
-
-    hellwm_function_add_to_map(server, "ch1", temp1);
-    hellwm_function_add_to_map(server, "ch2", temp2);
-    hellwm_function_add_to_map(server, "ch3", temp3);
 }
 
 static void hellwm_workspace_create(struct hellwm_server *server, int workspace_id)

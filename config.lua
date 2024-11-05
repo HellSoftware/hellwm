@@ -38,9 +38,9 @@ bind("Super_L, r", "reload_config")
 bind("Super_L, Escape", "kill_server")
 
     -- you can bind workspace like this
-bind("Super_L, 1", "workspace", 1)
-bind("Super_L, 2", "workspace", 2)
-bind("Super_L, 3", "workspace", 3)
+bind("Super_L, 1", "workspace", 1, true, 1)
+bind("Super_L, 2", "workspace", 2, true, 2)
+bind("Super_L, 3", "workspace", 3, true, 4)
 bind("Super_L, 4", "workspace", 4)
 bind("Super_L, 5", "workspace", 5)
 bind("Super_L, 6", "workspace", 6)
