@@ -7,6 +7,6 @@ Still under development, open for contributions and ideas that will make this pr
 
 ## TODO:
 - [ ] tiling
-- [ ] workspaces
+- [x] workspaces
 - [ ] wlr-layer-shell
 - [ ] xwayland
