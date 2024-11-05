@@ -55,9 +55,16 @@
 /* structures */
 enum hellwm_cursor_mode
 {
-    hellwm_CURSOR_MOVE,
-    hellwm_CURSOR_RESIZE,
-    hellwm_CURSOR_PASSTHROUGH,
+    HELLWM_CURSOR_MOVE,
+    HELLWM_CURSOR_RESIZE,
+    HELLWM_CURSOR_PASSTHROUGH,
+};
+
+enum hellwm_keybind_type
+{
+    HELLWM_KEYBIND_COMMAND,
+    HELLWM_KEYBIND_FUNCTION,
+    HELLWM_KEYBIND_WORKSPACE,
 };
 
 struct hellwm_server 
@@ -192,8 +199,9 @@ struct hellwm_keyboard
 
 union hellwm_function
 {
-    char *as_void;
-    void (*as_func)(struct hellwm_server*);
+    int workspace_id;                       /* If keybind is for changing workspaces */
+    char *as_void;                          /* If keybind is just executing some command */
+    void (*as_func)(struct hellwm_server*); /* If keybind is running mapped function */
 };
 
 struct hellwm_function_map_entry
@@ -206,9 +214,8 @@ struct hellwm_function_map_entry
 typedef struct
 {
     int count;
-    bool function;
-
     xkb_keysym_t *keysyms;
+    enum hellwm_keybind_type type;
     union hellwm_function *content;
 } hellwm_config_keybind;
 
@@ -309,7 +316,9 @@ void hellwm_config_manager_keyboard_reload(struct hellwm_server *server);
 void hellwm_config_manager_keyboard_set(struct hellwm_keyboard *keyboard, hellwm_config_keyboard *config);
 void hellwm_config_manager_monitor_set(hellwm_config_manager_monitor *config, struct hellwm_output *output);
 
-void hellwm_config_keybind_add_to_config(struct hellwm_server *server, char *keys, void *content);
+void hellwm_config_keybind_add_allocate(hellwm_config_manager_keybindings *config_keybindings);
+void hellwm_config_keybind_add_function_or_cmd_to_config(struct hellwm_server *server, char *keys, void *content);
+void hellwm_config_keybind_add_workspace_to_config(struct hellwm_server *server, char *keys, int32_t workspace_id);
 void hellwm_function_add_to_map(struct hellwm_server *server, const char* name, void (*func)(struct hellwm_server*));
 void hellwm_config_manager_monitor_add(hellwm_config_manager_monitor *monitor_manager, hellwm_config_monitor *monitor);
 void hellwm_config_manager_keyboard_add(hellwm_config_manager_keyboard *keyboard_manager, hellwm_config_keyboard *keyboard);
@@ -657,15 +666,25 @@ static bool handle_keybinding(struct hellwm_server *server, uint32_t modifiers, 
         }
         if (server->config_manager->keybindings->keybindings[j]->content && check == server->config_manager->keybindings->keybindings[j]->count)
         {
-            if (server->config_manager->keybindings->keybindings[j]->function)
+            switch (server->config_manager->keybindings->keybindings[j]->type)
             {
-                if (server->config_manager->keybindings->keybindings[j]->content->as_func)
-                server->config_manager->keybindings->keybindings[j]->content->as_func(server);
-            }
-            else
-            {
-                if (server->config_manager->keybindings->keybindings[j]->content->as_void)
-                RUN_EXEC(server->config_manager->keybindings->keybindings[j]->content->as_void);
+                case HELLWM_KEYBIND_FUNCTION:
+                    if (server->config_manager->keybindings->keybindings[j]->content->as_func)
+                        server->config_manager->keybindings->keybindings[j]->content->as_func(server);
+                    break;
+
+                case HELLWM_KEYBIND_WORKSPACE:
+                    hellwm_workspace_change(server, server->config_manager->keybindings->keybindings[j]->content->workspace_id);
+                    break;
+
+                case HELLWM_KEYBIND_COMMAND:
+                    if (server->config_manager->keybindings->keybindings[j]->content->as_void)
+                        RUN_EXEC(server->config_manager->keybindings->keybindings[j]->content->as_void);
+                    break;
+
+                default:
+                    LOG("%s:%s Wrong keybind type: %d", __func__, __LINE__, server->config_manager->keybindings->keybindings[j]->type);
+            
             }
             return true;
         }
@@ -858,7 +877,7 @@ static struct hellwm_toplevel *desktop_toplevel_at(struct hellwm_server *server,
 static void reset_cursor_mode(struct hellwm_server *server)
 {
     /* Reset the cursor mode to passthrough. */
-    server->cursor_mode = hellwm_CURSOR_PASSTHROUGH;
+    server->cursor_mode = HELLWM_CURSOR_PASSTHROUGH;
     server->grabbed_toplevel = NULL;
 }
 
@@ -932,11 +951,11 @@ static void process_cursor_resize(struct hellwm_server *server, uint32_t time)
 static void process_cursor_motion(struct hellwm_server *server, uint32_t time) 
 {
     /* If the mode is non-passthrough, delegate to those functions. */
-    if (server->cursor_mode == hellwm_CURSOR_MOVE) 
+    if (server->cursor_mode == HELLWM_CURSOR_MOVE) 
    {
         process_cursor_move(server, time);
         return;
-    } else if (server->cursor_mode == hellwm_CURSOR_RESIZE) 
+    } else if (server->cursor_mode == HELLWM_CURSOR_RESIZE) 
    {
         process_cursor_resize(server, time);
         return;
@@ -1225,7 +1244,7 @@ static void begin_interactive(struct hellwm_toplevel *toplevel, enum hellwm_curs
     server->grabbed_toplevel = toplevel;
     server->cursor_mode = mode;
 
-    if (mode == hellwm_CURSOR_MOVE) 
+    if (mode == HELLWM_CURSOR_MOVE) 
    {
         server->cursor_grab_x = server->cursor->x - toplevel->scene_tree->node.x;
         server->cursor_grab_y = server->cursor->y - toplevel->scene_tree->node.y;
@@ -1254,7 +1273,7 @@ static void xdg_toplevel_request_move(struct wl_listener *listener, void *data)
      * provided serial against a list of button press serials sent to this
      * client, to prevent the client from requesting this whenever they want. */
     struct hellwm_toplevel *toplevel = wl_container_of(listener, toplevel, request_move);
-    begin_interactive(toplevel, hellwm_CURSOR_MOVE, 0);
+    begin_interactive(toplevel, HELLWM_CURSOR_MOVE, 0);
 }
 
 static void xdg_toplevel_request_resize(struct wl_listener *listener, void *data) 
@@ -1266,7 +1285,7 @@ static void xdg_toplevel_request_resize(struct wl_listener *listener, void *data
      * client, to prevent the client from requesting this whenever they want. */
     struct wlr_xdg_toplevel_resize_event *event = data;
     struct hellwm_toplevel *toplevel = wl_container_of(listener, toplevel, request_resize);
-    begin_interactive(toplevel, hellwm_CURSOR_RESIZE, event->edges);
+    begin_interactive(toplevel, HELLWM_CURSOR_RESIZE, event->edges);
 }
 
 static void xdg_toplevel_request_maximize(struct wl_listener *listener, void *data) 
@@ -1718,6 +1737,14 @@ int hellwm_lua_add_keybind(lua_State *L)
             case 2:
                 action = strdup(lua_tostring(L, i));
                 break;
+            case 3:
+                if (!strcmp(action, "workspace"))
+                {
+                    int32_t workspace_id = (int32_t)lua_tonumber(L, i);
+                    hellwm_config_keybind_add_workspace_to_config(GLOBAL_SERVER, keys, workspace_id);
+                    return 0;
+                }
+                break;
 
             default:
                 LOG("Provided to much arguments to keybind() function!\n");
@@ -1726,7 +1753,7 @@ int hellwm_lua_add_keybind(lua_State *L)
 
     if (keys != NULL && action != NULL)
     {
-        hellwm_config_keybind_add_to_config(GLOBAL_SERVER, keys, action);
+        hellwm_config_keybind_add_function_or_cmd_to_config(GLOBAL_SERVER, keys, action);
         return 0;
     }
     return 1;
@@ -1845,9 +1872,8 @@ static uint32_t hellwm_xkb_keysym_to_wlr_modifier(xkb_keysym_t sym)
     }
 }
 
-void hellwm_config_keybind_add_to_config(struct hellwm_server *server, char *keys, void *content)
+void hellwm_config_keybind_add_allocate(hellwm_config_manager_keybindings *config_keybindings)
 {
-    hellwm_config_manager_keybindings *config_keybindings = server->config_manager->keybindings;
     hellwm_config_keybind **temp_keybindings = realloc(config_keybindings->keybindings, (config_keybindings->count + 1) * sizeof(hellwm_config_keybind *));
     if (temp_keybindings == NULL)
     {
@@ -1863,6 +1889,12 @@ void hellwm_config_keybind_add_to_config(struct hellwm_server *server, char *key
         LOG("%s:%d Failed to allocate memory for new keybind\n",__func__, __LINE__);
         return;
     }
+}
+
+void hellwm_config_keybind_add_function_or_cmd_to_config(struct hellwm_server *server, char *keys, void *content)
+{
+    hellwm_config_manager_keybindings *config_keybindings = server->config_manager->keybindings;
+    hellwm_config_keybind_add_allocate(server->config_manager->keybindings); 
 
     if (hellwm_convert_string_to_xkb_keys(&config_keybindings->keybindings[config_keybindings->count]->keysyms, keys, &config_keybindings->keybindings[config_keybindings->count]->count))
     {
@@ -1870,15 +1902,30 @@ void hellwm_config_keybind_add_to_config(struct hellwm_server *server, char *key
 
         if (hellwm_function_find(content, server, config_keybindings->keybindings[config_keybindings->count]->content))
         {
-            config_keybindings->keybindings[config_keybindings->count]->function = true;
+            config_keybindings->keybindings[config_keybindings->count]->type = HELLWM_KEYBIND_FUNCTION;
         }
         else
         {
             config_keybindings->keybindings[config_keybindings->count]->content->as_void = content;
-            config_keybindings->keybindings[config_keybindings->count]->function = false;
+            config_keybindings->keybindings[config_keybindings->count]->type = HELLWM_KEYBIND_COMMAND;
         }
     }
     LOG("Keybind: [%s] = %s\n", keys, content);
+    config_keybindings->count++; 
+}
+
+void hellwm_config_keybind_add_workspace_to_config(struct hellwm_server *server, char *keys, int32_t workspace_id)
+{
+    hellwm_config_manager_keybindings *config_keybindings = server->config_manager->keybindings;
+    hellwm_config_keybind_add_allocate(server->config_manager->keybindings); 
+
+    if (hellwm_convert_string_to_xkb_keys(&config_keybindings->keybindings[config_keybindings->count]->keysyms, keys, &config_keybindings->keybindings[config_keybindings->count]->count))
+    {
+        config_keybindings->keybindings[config_keybindings->count]->content = malloc(sizeof(union hellwm_function));
+        config_keybindings->keybindings[config_keybindings->count]->type = HELLWM_KEYBIND_WORKSPACE;
+        config_keybindings->keybindings[config_keybindings->count]->content->workspace_id = workspace_id;
+    }
+    LOG("Keybind: [%s] = workspace: %d", keys, workspace_id);
     config_keybindings->count++; 
 }
 
@@ -1946,11 +1993,26 @@ void hellwm_config_print(struct hellwm_config_manager *config)
         {
             LOG("\t\t\t[%d] = \n\t\t\t{\n",i);
             LOG("\t\t\t\tcount        = %d\n", kbd->keybindings[i]->count);
-            LOG("\t\t\t\tfunction     = %d\n", kbd->keybindings[i]->function);
-            if (kbd->keybindings[i]->function)
-                LOG("\t\t\t\tcontent      = %p\n", kbd->keybindings[i]->content->as_func);
-            else
-                LOG("\t\t\t\tcontent      = %s\n", (char *)kbd->keybindings[i]->content->as_void);
+            LOG("\t\t\t\ttype         = %d\n", kbd->keybindings[i]->type);
+
+            switch (kbd->keybindings[i]->type)
+            {
+                case HELLWM_KEYBIND_FUNCTION:
+                    LOG("\t\t\t\tfunction  = %p\n", kbd->keybindings[i]->content->as_func);
+                    break;
+
+                case HELLWM_KEYBIND_WORKSPACE:
+                    LOG("\t\t\t\tworkspace = %d\n", kbd->keybindings[i]->content->workspace_id);
+                    break;
+
+                case HELLWM_KEYBIND_COMMAND:
+                    LOG("\t\t\t\tcontent   = %s\n", (char *)kbd->keybindings[i]->content->as_void);
+                    break;
+
+                default:
+                    LOG("%s:%s Wrong keybind type: %d", __func__, __LINE__, kbd->keybindings[i]->type);
+            
+            }
             LOG("\t\t\t\tkeysyms[%d]   = \n\t\t\t\t{\n", kbd->keybindings[i]->count);
 
             for (size_t j = 0; j<kbd->keybindings[i]->count; j++)
@@ -2230,7 +2292,7 @@ int main(int argc, char *argv[])
     server->cursor = wlr_cursor_create();
     wlr_cursor_attach_output_layout(server->cursor, server->output_layout);
     server->cursor_mgr = wlr_xcursor_manager_create(NULL, 24);
-    server->cursor_mode = hellwm_CURSOR_PASSTHROUGH;
+    server->cursor_mode = HELLWM_CURSOR_PASSTHROUGH;
 
     server->cursor_motion.notify = server_cursor_motion;
     wl_signal_add(&server->cursor->events.motion, &server->cursor_motion);
