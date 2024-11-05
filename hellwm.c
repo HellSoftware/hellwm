@@ -243,8 +243,11 @@ typedef struct
 {
     char *name;
 
+    bool vrr;
+    bool enabled;
+
+    float scale;
     int32_t hz;
-    int32_t scale;
     int32_t width;
     int32_t height;
     int32_t transfrom;
@@ -1437,9 +1440,17 @@ void hellwm_config_manager_monitor_find_and_apply(char *name, struct wlr_output_
     {
         if (!strcmp(monitor_manager->monitors[i]->name, name))
         {
-            wlr_output_state_set_custom_mode(state, monitor_manager->monitors[i]->width, monitor_manager->monitors[i]->height, (monitor_manager->monitors[i]->hz * 1000)); /* Hz -> MHz */
-            wlr_output_state_set_transform(state, monitor_manager->monitors[i]->transfrom);
-            wlr_output_state_set_scale(state, monitor_manager->monitors[i]->scale);
+            if (monitor_manager->monitors[i]->enabled)
+            {
+                wlr_output_state_set_custom_mode(state, monitor_manager->monitors[i]->width, monitor_manager->monitors[i]->height, (monitor_manager->monitors[i]->hz * 1000)); /* Hz -> MHz */
+                wlr_output_state_set_adaptive_sync_enabled(state, monitor_manager->monitors[i]->vrr);
+                wlr_output_state_set_transform(state, monitor_manager->monitors[i]->transfrom);
+                wlr_output_state_set_scale(state, monitor_manager->monitors[i]->scale);
+            }
+            else
+            {
+                wlr_output_state_set_enabled(state, monitor_manager->monitors[i]->enabled);
+            }
         }
     }
 }
@@ -1485,7 +1496,16 @@ void hellwm_config_manager_monitor_set(hellwm_config_manager_monitor *config, st
     wlr_output_commit_state(output->wlr_output, &state);
     wlr_output_state_finish(&state);
 
-    LOG("Monitor %s: %dx%d@%.3f\n", output->wlr_output->name, output->wlr_output->width, output->wlr_output->height, (output->wlr_output->refresh / 1000.0)); /* MHz -> Hz */
+    LOG("Monitor %s: enabled: %d | %dx%d@%.3f vrr: %d scale %.2f transform %d\n",
+            output->wlr_output->name,
+            output->wlr_output->enabled,
+            output->wlr_output->width,
+            output->wlr_output->height,
+            (output->wlr_output->refresh / 1000.0), /* MHz -> Hz */
+            output->wlr_output->adaptive_sync_supported,
+            output->wlr_output->scale,
+            output->wlr_output->transform
+            ); 
 }
 
 void hellwm_config_manager_keyboard_reload(struct hellwm_server *server)
@@ -1648,32 +1668,30 @@ int hellwm_lua_add_monitor(lua_State *L)
                 monitor->name = strdup(lua_tostring(L, i));
                 break;
             case 2:
-                monitor->width = (int32_t)lua_tonumber(L, i);
+                monitor->enabled = (bool)lua_toboolean(L, i);
                 break;
             case 3:
-                monitor->height = (int32_t)lua_tonumber(L, i);
+                monitor->width = (int32_t)lua_tonumber(L, i);
                 break;
             case 4:
-                monitor->hz = (int32_t)lua_tonumber(L, i);
+                monitor->height = (int32_t)lua_tonumber(L, i);
                 break;
             case 5:
-                monitor->scale = (int32_t)lua_tonumber(L, i);
+                monitor->hz = (int32_t)lua_tonumber(L, i);
                 break;
             case 6:
+                monitor->vrr = (bool)lua_tonumber(L, i);
+                break;
+            case 7:
+                monitor->scale = (float)lua_tonumber(L, i);
+                break;
+            case 8:
                 monitor->transfrom = (int32_t)lua_tonumber(L, i);
                 break;
             default:
                 LOG("Provided to much arguments to monitor() function!\n");
         }
     }
-
-    //LOG("Loaded from config - monitor: %s, %d, %d, %d, %d, %d\n",
-    //       monitor->name,
-    //       monitor->width,
-    //       monitor->height,
-    //       monitor->hz,
-    //       monitor->scale,
-    //       monitor->transfrom);
 
     hellwm_config_manager_monitor_add(GLOBAL_SERVER->config_manager->monitor_manager, monitor);
 
@@ -1705,14 +1723,9 @@ int hellwm_lua_add_keybind(lua_State *L)
     if (keys != NULL && action != NULL)
     {
         hellwm_config_keybind_add_to_config(GLOBAL_SERVER, keys, action);
-        //LOG("Loaded from config - keybind: %s, %s\n", keys, action);
+        return 0;
     }
-    else
-    {
-        //LOG("Could not load keybind - keybind: %s, %s\n", keys, action);
-    }
-
-    return 0;
+    return 1;
 }
 
 void hellwm_config_manager_load_from_file(char * filename)
@@ -1883,10 +1896,12 @@ void hellwm_config_print(struct hellwm_config_manager *config)
         {
             LOG("\t\t\t[%d] = \n\t\t\t{\n",i);
             LOG("\t\t\t\tname      = %s\n", mon->monitors[i]->name);
+            LOG("\t\t\t\tenabled   = %d\n", mon->monitors[i]->enabled);
             LOG("\t\t\t\twidth     = %d\n", mon->monitors[i]->width);
             LOG("\t\t\t\theight    = %d\n", mon->monitors[i]->height);
             LOG("\t\t\t\thz        = %d\n", mon->monitors[i]->hz);
-            LOG("\t\t\t\tscale     = %d\n", mon->monitors[i]->scale);
+            LOG("\t\t\t\tvrr       = %d\n", mon->monitors[i]->vrr);
+            LOG("\t\t\t\tscale     = %f\n", mon->monitors[i]->scale);
             LOG("\t\t\t\ttransfrom = %d\n", mon->monitors[i]->transfrom);
             LOG("\t\t\t}\n");
         }
