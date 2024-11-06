@@ -78,10 +78,11 @@ struct hellwm_server
     
     /* hellwm */
     struct hellwm_output *output;
-    struct hellwm_workspace *active_workspace;
     struct hellwm_toplevel *grabbed_toplevel;
+    struct hellwm_workspace *active_workspace;
     struct hellwm_config_manager *config_manager;
     struct hellwm_function_map_entry *hellwm_function_map;
+    struct hellwm_binary_workspaces_manager *binary_workspaces_manager;
     
     /* wayland */
     struct wl_list outputs;
@@ -202,6 +203,8 @@ struct hellwm_config_keybind_workspace
     int workspace_id;
     int binary_workspace_val;
     bool binary_workspaces_enabled;
+
+    bool pressed;
 };
 
 union hellwm_function
@@ -275,6 +278,15 @@ typedef struct
     hellwm_config_monitor **monitors;
 } hellwm_config_manager_monitor;
 
+struct hellwm_binary_workspaces_manager
+{
+    int workspace_sum;
+    bool binary_started;
+
+    int keybinds_count;
+    hellwm_config_keybind **keybinds;
+};
+
 struct hellwm_config_manager
 {
     hellwm_config_manager_keybindings *keybindings;
@@ -319,6 +331,8 @@ static void hellwm_workspace_create(struct hellwm_server *server, int workspace_
 /* find workspace by id, if function cannot find workspace returns NULL */
 static struct hellwm_workspace *hellwm_workspace_find(struct hellwm_server *server, int id);
 
+static void hellwm_binary_workspaces_manager_add_keybind(struct hellwm_binary_workspaces_manager *manager, hellwm_config_keybind *keybind);
+
 /* add toplevel to specific workspace */
 static void hellwm_workspace_add_toplevel(struct hellwm_workspace *workspace, struct hellwm_toplevel *toplevel);
 
@@ -342,6 +356,7 @@ void hellwm_config_manager_monitor_add(hellwm_config_manager_monitor *monitor_ma
 void hellwm_config_manager_keyboard_add(hellwm_config_manager_keyboard *keyboard_manager, hellwm_config_keyboard *keyboard);
   
 static uint32_t hellwm_xkb_keysym_to_wlr_modifier(xkb_keysym_t sym);
+static bool handle_keybinding_binary_workspaces(struct hellwm_server *server, xkb_keysym_t sym);
 static bool handle_keybinding(struct hellwm_server *server, uint32_t modifiers, xkb_keysym_t sym);
 static struct hellwm_toplevel *desktop_toplevel_at(struct hellwm_server *server, double lx, double ly, struct wlr_surface **surface, double *sx, double *sy);
 
@@ -696,6 +711,11 @@ static bool handle_keybinding(struct hellwm_server *server, uint32_t modifiers, 
                 case HELLWM_KEYBIND_WORKSPACE:
                     if (keybindings->keybindings[j]->content->workspace.binary_workspaces_enabled)
                     {
+                        if (!server->binary_workspaces_manager->binary_started)
+                            server->binary_workspaces_manager->binary_started = true;
+
+                        keybindings->keybindings[j]->content->workspace.pressed = true;
+                        server->binary_workspaces_manager->workspace_sum += keybindings->keybindings[j]->content->workspace.binary_workspace_val;
                     }
                     else
                     {
@@ -715,6 +735,40 @@ static bool handle_keybinding(struct hellwm_server *server, uint32_t modifiers, 
             return true;
         }
     }
+    return false;
+}
+
+static bool handle_keybinding_binary_workspaces(struct hellwm_server *server, xkb_keysym_t sym) 
+{
+    hellwm_config_keybind **keybinds = server->binary_workspaces_manager->keybinds;
+    bool change_workspace = false;
+
+    for (int i = 0; i < server->binary_workspaces_manager->keybinds_count; i++)
+    {
+        if (keybinds[i]->content->workspace.pressed && keybinds[i]->type == HELLWM_KEYBIND_WORKSPACE)
+        {
+            for (int j = 0; j < keybinds[i]->count; j++)
+            {
+                if (keybinds[i]->keysyms[j] == sym)
+                {
+                    if (hellwm_xkb_keysym_to_wlr_modifier(sym) == 0)
+                    {
+                        keybinds[i]->content->workspace.pressed = false;
+                        change_workspace = true;
+                    }
+                }
+            }
+        } 
+    }
+
+    if (change_workspace)
+    {
+        server->binary_workspaces_manager->binary_started = false;
+        hellwm_workspace_change(server, server->binary_workspaces_manager->workspace_sum);
+        server->binary_workspaces_manager->workspace_sum = 0;
+        true;
+    }
+    
     return false;
 }
 
@@ -754,6 +808,15 @@ static void keyboard_handle_key(struct wl_listener *listener, void *data)
         for (int i = 0; i < nsyms; i++)
         {
             handled = handle_keybinding(server, modifiers, syms[i]);
+        }
+    }
+
+    if (event->state == WL_KEYBOARD_KEY_STATE_RELEASED && server->binary_workspaces_manager->binary_started)
+    {
+        for (int i = 0; i < nsyms; i++)
+        {
+            if (handle_keybinding_binary_workspaces(server, syms[i]))
+                break;
         }
     }
 
@@ -1949,9 +2012,12 @@ void hellwm_config_keybind_add_workspace_to_config(struct hellwm_server *server,
         config_keybindings->keybindings[config_keybindings->count]->content = malloc(sizeof(union hellwm_function));
         config_keybindings->keybindings[config_keybindings->count]->type = HELLWM_KEYBIND_WORKSPACE;
 
+        config_keybindings->keybindings[config_keybindings->count]->content->workspace.pressed = false;
         config_keybindings->keybindings[config_keybindings->count]->content->workspace.workspace_id = workspace.workspace_id;
         config_keybindings->keybindings[config_keybindings->count]->content->workspace.binary_workspace_val = workspace.binary_workspace_val;
         config_keybindings->keybindings[config_keybindings->count]->content->workspace.binary_workspaces_enabled = workspace.binary_workspaces_enabled;
+
+        hellwm_binary_workspaces_manager_add_keybind(server->binary_workspaces_manager, config_keybindings->keybindings[config_keybindings->count]);
     }
     LOG("Keybind: [%s] = workspace: %d \t - bw: %d bw_val: %d\n", keys, workspace.workspace_id, workspace.binary_workspaces_enabled, workspace.binary_workspace_val);
     config_keybindings->count++; 
@@ -2202,6 +2268,16 @@ static struct hellwm_workspace *hellwm_workspace_find(struct hellwm_server *serv
     return NULL;
 }
 
+static void hellwm_binary_workspaces_manager_add_keybind(struct hellwm_binary_workspaces_manager *manager, hellwm_config_keybind *keybind)
+{
+    manager->keybinds = realloc(manager->keybinds, (manager->keybinds_count + 1) * sizeof(hellwm_config_keybind*));
+    if (!manager->keybinds)
+        LOG("%s:%s failed to reallocate keybinds for binary_workspaces_manager\n", __func__, __LINE__);
+
+    manager->keybinds[manager->keybinds_count] = keybind;
+    manager->keybinds_count++;
+}
+
 int main(int argc, char *argv[])
 {
     printf("Hello World...\n"); /* https://www.reddit.com/r/ProgrammerHumor/comments/1euwm7v/helloworldfeaturegotmergedguys/ */
@@ -2217,6 +2293,13 @@ int main(int argc, char *argv[])
     /* functions */
     hellwm_function_expose(server);
 
+    /* binary workspaces manager */
+    server->binary_workspaces_manager = calloc(1, sizeof(struct hellwm_binary_workspaces_manager));
+    server->binary_workspaces_manager->binary_started = false;
+    server->binary_workspaces_manager->keybinds_count = 0;
+    server->binary_workspaces_manager->workspace_sum = 0;
+    server->binary_workspaces_manager->keybinds = NULL;
+
     /* config */
     server->config_manager = hellwm_config_manager_create();
     hellwm_config_manager_load_from_file("./config.lua");
@@ -2227,7 +2310,6 @@ int main(int argc, char *argv[])
    
     /* lists */
     wl_list_init(&server->outputs);
-    //wl_list_init(&server->toplevels);
     wl_list_init(&server->keyboards);
     wl_list_init(&server->workspaces);
 

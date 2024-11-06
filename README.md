@@ -7,6 +7,10 @@ Still under development, open for contributions and ideas that will make this pr
 
 ## TODO:
 - [ ] tiling
-- [x] workspaces
-- [ ] wlr-layer-shell
 - [ ] xwayland
+- [ ] wlr-layer-shell
+
+## DONE:
+- [x] config
+- [x] workspaces
+- [x] binary workspaces
