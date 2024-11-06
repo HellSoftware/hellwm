@@ -40,11 +40,13 @@
 #include <wlr/types/wlr_output_layout.h>
 #include <wlr/types/wlr_subcompositor.h>
 #include <wlr/types/wlr_xcursor_manager.h>
+#include <wlr/types/wlr_server_decoration.h>
 
 #include <wlr/types/wlr_screencopy_v1.h>
 #include <wlr/types/wlr_xdg_output_v1.h>
 #include <wlr/types/wlr_data_control_v1.h>
 #include <wlr/types/wlr_export_dmabuf_v1.h>
+#include <wlr/types/wlr_xdg_decoration_v1.h>
 #include <wlr/types/wlr_alpha_modifier_v1.h>
 #include <wlr/types/wlr_presentation_time.h>
 #include <wlr/types/wlr_fractional_scale_v1.h>
@@ -107,7 +109,9 @@ struct hellwm_server
     struct wlr_output_layout *output_layout;
     struct wlr_subcompositor *subcompositor;
     struct wlr_scene_output_layout *scene_layout;
-    
+    struct wlr_server_decoration_manager *wlr_server_decoration_manager;
+
+    struct wlr_xdg_decoration_manager_v1 *xdg_decoration_manager;
     //struct wlr_xdg_activation_v1 *xdg_activation; 
     
     /* listeners */
@@ -128,6 +132,8 @@ struct hellwm_server
     
     struct wl_listener new_xdg_popup;
     struct wl_listener new_xdg_toplevel;
+
+    struct wl_listener xdg_decoration_new_toplevel_decoration;
     //struct wl_listener xdg_activation_request_activate;
 };
 
@@ -402,6 +408,8 @@ static void xdg_toplevel_request_move(struct wl_listener *listener, void *data) 
 static void xdg_toplevel_request_resize(struct wl_listener *listener, void *data) ;
 static void xdg_toplevel_request_maximize(struct wl_listener *listener, void *data) ;
 static void xdg_toplevel_request_fullscreen(struct wl_listener *listener, void *data) ;
+
+static void xdg_decoration_new_toplevel_decoration(struct wl_listener *listener, void *data);
 
 static void xdg_popup_commit(struct wl_listener *listener, void *data) ;
 static void xdg_popup_destroy(struct wl_listener *listener, void *data) ;
@@ -1297,7 +1305,9 @@ static void xdg_toplevel_commit(struct wl_listener *listener, void *data)
         * configures the xdg_toplevel with 0,0 size to let the client pick the
         * dimensions itself. */
         
+        wlr_xdg_toplevel_set_wm_capabilities(toplevel->xdg_toplevel, WLR_XDG_TOPLEVEL_WM_CAPABILITIES_FULLSCREEN);
         wlr_xdg_toplevel_set_size(toplevel->xdg_toplevel, 0, 0);
+        return;
     }
 }
 
@@ -1437,6 +1447,12 @@ static void server_new_xdg_toplevel(struct wl_listener *listener, void *data)
     wl_signal_add(&xdg_toplevel->events.request_maximize, &toplevel->request_maximize);
     toplevel->request_fullscreen.notify = xdg_toplevel_request_fullscreen;
     wl_signal_add(&xdg_toplevel->events.request_fullscreen, &toplevel->request_fullscreen);
+}
+
+static void xdg_decoration_new_toplevel_decoration(struct wl_listener *listener, void *data)
+{
+	struct wlr_xdg_toplevel_decoration_v1 *decoration = data;
+    wlr_xdg_toplevel_decoration_v1_set_mode(decoration, WLR_XDG_TOPLEVEL_DECORATION_V1_MODE_SERVER_SIDE);
 }
 
 static void xdg_popup_commit(struct wl_listener *listener, void *data) 
@@ -2381,6 +2397,17 @@ int main(int argc, char *argv[])
     wl_signal_add(&server->xdg_shell->events.new_toplevel, &server->new_xdg_toplevel);
     server->new_xdg_popup.notify = server_new_xdg_popup;
     wl_signal_add(&server->xdg_shell->events.new_popup, &server->new_xdg_popup);
+
+
+    /* wlr_server_decoration */
+	server->wlr_server_decoration_manager = wlr_server_decoration_manager_create(server->wl_display);
+    wlr_server_decoration_manager_set_default_mode(server->wlr_server_decoration_manager, WLR_SERVER_DECORATION_MANAGER_MODE_SERVER);
+
+
+    /* wlr_xdg_decoration_v1 */
+    server->xdg_decoration_manager = wlr_xdg_decoration_manager_v1_create(server->wl_display);
+    server->xdg_decoration_new_toplevel_decoration.notify = xdg_decoration_new_toplevel_decoration;
+    wl_signal_add(&server->xdg_decoration_manager->events.new_toplevel_decoration, &server->xdg_decoration_new_toplevel_decoration);
 
 
     /* cursor */
