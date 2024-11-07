@@ -44,6 +44,7 @@
 
 #include <wlr/types/wlr_screencopy_v1.h>
 #include <wlr/types/wlr_xdg_output_v1.h>
+#include <wlr/types/wlr_layer_shell_v1.h>
 #include <wlr/types/wlr_data_control_v1.h>
 #include <wlr/types/wlr_export_dmabuf_v1.h>
 #include <wlr/types/wlr_xdg_decoration_v1.h>
@@ -69,6 +70,18 @@ enum hellwm_keybind_type
     HELLWM_KEYBIND_WORKSPACE,
 };
 
+enum HWM_LAYER
+{
+    HWM_LS_BACKGROUND,
+    HWM_LS_BOTTOM,
+    HWM_NORMAL,
+    HWM_LS_TOP,
+    HWM_LS_OVERLAY,
+    HWM_POPUPS,
+    HWM_LS_COUNT,
+    HWM_NONE = HWM_LS_COUNT,
+};
+
 struct hellwm_server 
 {
 
@@ -79,7 +92,7 @@ struct hellwm_server
     double cursor_grab_x, cursor_grab_y;
     
     /* hellwm */
-    struct hellwm_output *output;
+    struct hellwm_output *active_output;
     struct hellwm_toplevel *grabbed_toplevel;
     struct hellwm_workspace *active_workspace;
     struct hellwm_config_manager *config_manager;
@@ -93,7 +106,7 @@ struct hellwm_server
     
     struct wl_display *wl_display;
     struct wl_event_loop *event_loop;
-    
+ 
     /* wlroots */
     struct wlr_seat *seat;
     struct wlr_scene *scene;
@@ -111,6 +124,7 @@ struct hellwm_server
     struct wlr_scene_output_layout *scene_layout;
     struct wlr_server_decoration_manager *wlr_server_decoration_manager;
 
+    struct wlr_layer_shell_v1 *layer_shell;
     struct wlr_xdg_decoration_manager_v1 *xdg_decoration_manager;
     //struct wlr_xdg_activation_v1 *xdg_activation; 
     
@@ -133,6 +147,7 @@ struct hellwm_server
     struct wl_listener new_xdg_popup;
     struct wl_listener new_xdg_toplevel;
 
+    struct wl_listener layer_shell_new_surface;
     struct wl_listener xdg_decoration_new_toplevel_decoration;
     //struct wl_listener xdg_activation_request_activate;
 };
@@ -140,17 +155,18 @@ struct hellwm_server
 struct hellwm_output
 {
     struct wl_list link;
+    struct wl_list layers[4];
 
     struct hellwm_server *server;
 
-    struct wlr_box output_area;
-    struct wlr_box window_area;
+    struct wlr_box usable_area;
     struct wlr_output *wlr_output;
+    struct wlr_scene_tree *layers_tree[HWM_LS_COUNT];
 
     /* listeners */
     struct wl_listener frame;
-    struct wl_listener request_state;
     struct wl_listener destroy;
+    struct wl_listener request_state;
 };
 
 struct hellwm_workspace
@@ -159,6 +175,7 @@ struct hellwm_workspace
     
     struct wl_list link;
     struct wl_list toplevels;
+    struct hellwm_output *output;
     struct hellwm_toplevel *last_focused;
 };
 
@@ -188,6 +205,23 @@ struct hellwm_popup
     struct wlr_xdg_popup *xdg_popup;
 
     /* listeners */
+    struct wl_listener commit;
+    struct wl_listener destroy;
+};
+
+
+struct hellwm_layer
+{
+    uint32_t layer; // enum zwlr_layer_shell_v1_layer
+
+    struct wl_list link;
+
+    struct hellwm_output *output;
+    struct hellwm_toplevel *toplevel;
+    struct wlr_layer_surface_v1 *layer_surface;
+
+    struct wl_listener map;
+    struct wl_listener unmap;
     struct wl_listener commit;
     struct wl_listener destroy;
 };
@@ -300,11 +334,13 @@ struct hellwm_config_manager
     hellwm_config_manager_keyboard *keyboard_manager;
 };
 
+
 /* functions declarations */
 void ERR(const char *format, ...);
 void RUN_EXEC(char *commnad);
 void LOG(const char *format, ...);
 void check_usage(int argc, char**argv);
+enum HWM_LAYER HWM_LAYER_FROM_LAYER_SHELL_LAYER(uint32_t layer);
 void hellwm_lua_error (lua_State *L, const char *fmt, ...);
 
 struct hellwm_config_manager *hellwm_config_manager_create();
@@ -514,6 +550,25 @@ void check_usage(int argc, char**argv)
     {
         printf("Usage: %s [-s startup command]\n", argv[0]);
         exit(0);
+    }
+}
+
+enum HWM_LAYER HWM_LAYER_FROM_LAYER_SHELL_LAYER(uint32_t layer)
+{
+    switch (layer)
+    {
+        case ZWLR_LAYER_SHELL_V1_LAYER_BACKGROUND:
+            return HWM_LS_BACKGROUND;
+        case ZWLR_LAYER_SHELL_V1_LAYER_BOTTOM:
+            return HWM_LS_BOTTOM;
+        case ZWLR_LAYER_SHELL_V1_LAYER_TOP:
+            return HWM_LS_TOP;
+        case ZWLR_LAYER_SHELL_V1_LAYER_OVERLAY:
+            return HWM_LS_OVERLAY;
+            break;
+        default:
+            LOG("No matching layer for layer_shell %d", layer);
+            return HWM_NONE;
     }
 }
 
@@ -1269,6 +1324,9 @@ static void server_backend_new_output(struct wl_listener *listener, void *data)
     struct wlr_output_layout_output *l_output = wlr_output_layout_add_auto(server->output_layout, wlr_output);
     struct wlr_scene_output *scene_output = wlr_scene_output_create(server->scene, wlr_output);
     wlr_scene_output_layout_add_output(server->scene_layout, l_output, scene_output);
+
+    server->active_output = output;
+    /* TODO: wlr_scene_output_set_position(); */
 }
 
 static void xdg_toplevel_map(struct wl_listener *listener, void *data) 
@@ -1277,6 +1335,14 @@ static void xdg_toplevel_map(struct wl_listener *listener, void *data)
     struct hellwm_toplevel *toplevel = wl_container_of(listener, toplevel, map);
     hellwm_workspace_add_toplevel(toplevel->server->active_workspace, toplevel);
     hellwm_focus_toplevel(toplevel);
+
+    /* something funny */
+    //const float bg_color[4] = {0.7f, 0.0f, 0.0f, 6.0f};
+    // struct wlr_scene_rect *background_rect;
+    // background_rect = wlr_scene_rect_create(toplevel->scene_tree, 2560, 1440, bg_color);
+    // wlr_scene_node_set_enabled(&background_rect->node, true);
+    // wlr_scene_node_raise_to_top(&background_rect->node);
+
 }
 
 static void xdg_toplevel_unmap(struct wl_listener *listener, void *data)
@@ -2294,6 +2360,364 @@ static void hellwm_binary_workspaces_manager_add_keybind(struct hellwm_binary_wo
     manager->keybinds_count++;
 }
 
+static void apply_exclusive(struct wlr_box *usable_area, uint32_t anchor, int32_t exclusive,
+                            int32_t margin_top, int32_t margin_bottom,
+                            int32_t margin_left, int32_t margin_right)
+{
+    if (exclusive <= 0)
+        return;
+
+    struct{
+        uint32_t anchors;
+        int *positive_axis;
+        int *negative_axis;
+        int margin;
+    } edges[] = {
+        {
+            .anchors = ZWLR_LAYER_SURFACE_V1_ANCHOR_LEFT
+                | ZWLR_LAYER_SURFACE_V1_ANCHOR_RIGHT
+                | ZWLR_LAYER_SURFACE_V1_ANCHOR_TOP,
+            .positive_axis = &usable_area->y,
+            .negative_axis = &usable_area->height,
+            .margin        = margin_top,
+        },
+        {
+            .anchors = ZWLR_LAYER_SURFACE_V1_ANCHOR_LEFT
+                | ZWLR_LAYER_SURFACE_V1_ANCHOR_RIGHT
+                | ZWLR_LAYER_SURFACE_V1_ANCHOR_BOTTOM,
+            .positive_axis = NULL,
+            .negative_axis = &usable_area->height,
+            .margin        = margin_bottom,
+        },
+        {
+            .anchors = ZWLR_LAYER_SURFACE_V1_ANCHOR_LEFT
+                | ZWLR_LAYER_SURFACE_V1_ANCHOR_TOP
+                | ZWLR_LAYER_SURFACE_V1_ANCHOR_BOTTOM,
+            .positive_axis = &usable_area->x,
+            .negative_axis = &usable_area->width,
+            .margin        = margin_left,
+        },
+        {
+            .anchors = ZWLR_LAYER_SURFACE_V1_ANCHOR_RIGHT
+                | ZWLR_LAYER_SURFACE_V1_ANCHOR_TOP
+                | ZWLR_LAYER_SURFACE_V1_ANCHOR_BOTTOM,
+            .positive_axis = NULL,
+            .negative_axis = &usable_area->width,
+            .margin        = margin_right,
+        },
+    };
+
+    size_t nedges = sizeof(edges) / sizeof(edges[0]);
+    for (size_t i = 0; i < nedges; ++i)
+    {
+        if ((anchor & edges[i].anchors) == edges[i].anchors && exclusive + edges[i].margin > 0)
+        {
+            if (edges[i].positive_axis)
+            {
+                *edges[i].positive_axis += exclusive + edges[i].margin;
+            }
+            if (edges[i].negative_axis)
+            {
+                *edges[i].negative_axis -= exclusive + edges[i].margin;
+            }
+        }
+    }
+}
+
+static void arrange_layer(struct hellwm_output *output, struct wl_list *layers, struct wlr_box *usable_area, bool exclusive)
+{
+    struct wlr_box full_area = {0};
+
+    wlr_output_effective_resolution(output->wlr_output, &full_area.width, &full_area.height);
+
+    struct hellwm_layer *layer;
+    wl_list_for_each_reverse (layer, layers, link)
+    {
+        struct wlr_layer_surface_v1 *layer_surface = layer->layer_surface;
+        struct wlr_layer_surface_v1_state *state   = &layer_surface->current;
+
+        if (exclusive != (state->exclusive_zone >= 0))
+        {
+            continue;
+        }
+
+        struct wlr_box bounds;
+
+        if (state->exclusive_zone == -1)
+            bounds = full_area;
+        else
+            bounds = *usable_area;
+
+        struct wlr_box arranged_area = {
+            .width  = state->desired_width,
+            .height = state->desired_height,
+        };
+
+        // horizontal
+        const uint32_t both_horiz = ZWLR_LAYER_SURFACE_V1_ANCHOR_LEFT | ZWLR_LAYER_SURFACE_V1_ANCHOR_RIGHT;
+        if ((state->anchor & both_horiz) && arranged_area.width == 0)
+        {
+            arranged_area.x     = bounds.x;
+            arranged_area.width = bounds.width;
+        }
+        else if (state->anchor & ZWLR_LAYER_SURFACE_V1_ANCHOR_LEFT)
+        {
+            arranged_area.x = bounds.x;
+        }
+        else if (state->anchor & ZWLR_LAYER_SURFACE_V1_ANCHOR_RIGHT)
+        {
+            arranged_area.x = bounds.x + (bounds.width - arranged_area.width);
+        }
+        else
+        {
+            arranged_area.x = bounds.x + ((bounds.width / 2) - (arranged_area.width / 2));
+        }
+
+        // vertical
+        const uint32_t both_vert = ZWLR_LAYER_SURFACE_V1_ANCHOR_TOP
+            | ZWLR_LAYER_SURFACE_V1_ANCHOR_BOTTOM;
+        if ((state->anchor & both_vert) && arranged_area.height == 0)
+        {
+            arranged_area.y      = bounds.y;
+            arranged_area.height = bounds.height;
+        }
+        else if (state->anchor & ZWLR_LAYER_SURFACE_V1_ANCHOR_TOP)
+        {
+            arranged_area.y = bounds.y;
+        }
+        else if (state->anchor & ZWLR_LAYER_SURFACE_V1_ANCHOR_BOTTOM)
+        {
+            arranged_area.y = bounds.y + (bounds.height - arranged_area.height);
+        }
+        else
+        {
+            arranged_area.y = bounds.y + ((bounds.height / 2) - (arranged_area.height / 2));
+        }
+
+        // left and right margin
+        if ((state->anchor & both_horiz) == both_horiz) 
+        {
+            arranged_area.x += state->margin.left;
+            arranged_area.width -= state->margin.left + state->margin.right;
+        }
+        else if (state->anchor & ZWLR_LAYER_SURFACE_V1_ANCHOR_LEFT)
+        {
+            arranged_area.x += state->margin.left;
+        }
+        else if (state->anchor & ZWLR_LAYER_SURFACE_V1_ANCHOR_RIGHT)
+        {
+            arranged_area.x -= state->margin.right;
+        }
+
+        // top and bottom margin
+        if ((state->anchor & both_vert) == both_vert)
+        {
+            arranged_area.y += state->margin.top;
+            arranged_area.height -= state->margin.top + state->margin.bottom;
+        }
+        else if (state->anchor & ZWLR_LAYER_SURFACE_V1_ANCHOR_TOP)
+        {
+            arranged_area.y += state->margin.top;
+        }
+        else if (state->anchor & ZWLR_LAYER_SURFACE_V1_ANCHOR_BOTTOM)
+        {
+            arranged_area.y -= state->margin.bottom;
+        }
+
+        if (arranged_area.width < 0 || arranged_area.height < 0)
+        {
+            wlr_log( WLR_ERROR, "Bad width/height: %d, %d", arranged_area.width, arranged_area.height);
+            wlr_layer_surface_v1_destroy(layer_surface);
+            continue;
+        }
+
+        wlr_scene_node_set_position( &layer->toplevel->scene_tree->node, arranged_area.x, arranged_area.y);
+
+        apply_exclusive(usable_area, state->anchor, state->exclusive_zone,
+                state->margin.top, state->margin.bottom,
+                state->margin.left, state->margin.right);
+
+        wlr_layer_surface_v1_configure(layer_surface, arranged_area.width, arranged_area.height);
+    }
+}
+
+void arrange_layers(struct hellwm_output *output)
+{
+    struct wlr_box usable_area = {0};
+    wlr_output_effective_resolution(output->wlr_output, &usable_area.width, &usable_area.height);
+
+    // arrange exclusive layers
+    arrange_layer(output, &output->layers[ZWLR_LAYER_SHELL_V1_LAYER_OVERLAY], &usable_area, true);
+    arrange_layer(output, &output->layers[ZWLR_LAYER_SHELL_V1_LAYER_TOP], &usable_area, true);
+    arrange_layer(output, &output->layers[ZWLR_LAYER_SHELL_V1_LAYER_BOTTOM], &usable_area, true);
+    arrange_layer(output, &output->layers[ZWLR_LAYER_SHELL_V1_LAYER_BACKGROUND], &usable_area, true);
+
+    // arrange nonexclusive layers
+    arrange_layer(output, &output->layers[ZWLR_LAYER_SHELL_V1_LAYER_OVERLAY], &usable_area, false);
+    arrange_layer(output, &output->layers[ZWLR_LAYER_SHELL_V1_LAYER_TOP], &usable_area, false);
+    arrange_layer(output, &output->layers[ZWLR_LAYER_SHELL_V1_LAYER_BOTTOM], &usable_area, false);
+    arrange_layer(output, &output->layers[ZWLR_LAYER_SHELL_V1_LAYER_BACKGROUND], &usable_area, false);
+
+    uint32_t layers_above_shell[] = {
+        ZWLR_LAYER_SHELL_V1_LAYER_OVERLAY,
+        ZWLR_LAYER_SHELL_V1_LAYER_TOP,
+    };
+
+    size_t nlayers = sizeof(layers_above_shell) / sizeof(layers_above_shell[0]);
+    struct hellwm_layer *layer;
+    struct hellwm_layer *topmost = NULL;
+    for (size_t i = 0; i < nlayers; ++i) {
+        wl_list_for_each_reverse (
+            layer, &output->layers[layers_above_shell[i]], link) {
+            if (layer->layer_surface->current.keyboard_interactive) {
+                topmost = layer;
+                break;
+            }
+        }
+
+        if (topmost) {
+            break;
+        }
+    }
+
+    if (memcmp(&usable_area, &output->usable_area, sizeof(output->usable_area)) != 0)
+    {
+        memcpy(&output->usable_area, &usable_area, sizeof(output->usable_area));
+
+        struct wlr_output_layout_output *ol_output;
+        wl_list_for_each (ol_output, &output->server->output_layout->outputs, link)
+        {
+            struct hellwm_output *output_ = ol_output->output->data;
+            struct wlr_box box;
+            wlr_output_layout_get_box(output_->server->output_layout, output_->wlr_output, &box);
+    
+            for (size_t i = 0; i < HWM_LS_COUNT; ++i)
+            {
+                if (output_->layers_tree[i])
+                {
+                    wlr_scene_node_set_position(&output_->layers_tree[i]->node, box.x, box.y);
+                }
+            }
+        }
+    }
+
+    hellwm_focus_toplevel(topmost->toplevel);
+}
+
+static void layer_surface_destroy(struct wl_listener *listener, void *data)
+{
+    struct hellwm_layer *layer = wl_container_of(listener, layer, destroy);
+    
+    wlr_scene_node_destroy(&layer->toplevel->scene_tree->node);
+    
+    wl_list_remove(&layer->destroy.link);
+    wl_list_remove(&layer->map.link);
+    wl_list_remove(&layer->unmap.link);
+    
+    if (layer->output != NULL)
+    {
+        wl_list_remove(&layer->link);
+        arrange_layers(layer->output);
+    }
+    free(layer);
+}
+
+static void layer_surface_commit(struct wl_listener *listener, void *data)
+{
+    struct hellwm_layer *layer   = wl_container_of(listener, layer, commit);
+    struct hellwm_output *output = layer->output;
+
+    if (layer->layer != layer->layer_surface->current.layer)
+    {
+        wl_list_remove(&layer->link);
+        layer->layer = layer->layer_surface->current.layer;
+        wl_list_insert(&output->layers[layer->layer], &layer->link);
+
+        enum HWM_LAYER new_layer = HWM_LAYER_FROM_LAYER_SHELL_LAYER(layer->layer);
+        wlr_scene_node_reparent(&layer->toplevel->scene_tree->node, output->layers_tree[new_layer]);
+    }
+
+    if (layer->layer_surface->current.committed != 0)
+    {
+        arrange_layers(output);
+    }
+}
+
+static void layer_surface_map(struct wl_listener *listener, void *data)
+{
+
+}
+
+static void layer_surface_unmap(struct wl_listener *listener, void *data)
+{
+
+}
+
+static void layer_shell_new_surface(struct wl_listener *listener, void *data)
+{
+    struct hellwm_server *server = wl_container_of(listener, server, layer_shell_new_surface);
+    struct wlr_layer_surface_v1 *layer_surface = data;
+
+    LOG("Layer_shell surface %s", layer_surface->namespace);
+
+    if (!layer_surface->output)
+    {
+        layer_surface->output = server->active_output->wlr_output;
+    }
+
+    struct hellwm_layer *layer = malloc(sizeof(*layer));
+    if (!layer)
+    {
+        LOG("%s:%s, Failed too allocate hellwm_layer_shell", __func__, __LINE__);
+        return;
+    }
+
+    struct hellwm_output *output = layer_surface->output->data;
+
+    size_t len = sizeof(output->layers) / sizeof(output->layers[0]);
+    if (layer_surface->current.layer >= len)
+    {
+        LOG("Bad layer surface layer %d", layer_surface->current.layer);
+        wlr_layer_surface_v1_destroy(layer_surface);
+        free(layer);
+        return;
+    }
+
+    layer->output = output;
+    layer->layer_surface = layer_surface;
+    layer->layer = layer_surface->current.layer;
+
+    layer->destroy.notify = layer_surface_destroy;
+    wl_signal_add(&layer_surface->events.destroy, &layer->destroy);
+
+    layer->commit.notify = layer_surface_commit;
+    wl_signal_add(&layer_surface->surface->events.commit, &layer->commit);
+
+    layer->map.notify = layer_surface_map;
+    wl_signal_add(&layer_surface->surface->events.map, &layer->map);
+
+    layer->unmap.notify = layer_surface_unmap;
+    wl_signal_add(&layer_surface->surface->events.unmap, &layer->unmap);
+
+    layer_surface->data = layer;
+
+    enum HWM_LAYER new_layer = HWM_LAYER_FROM_LAYER_SHELL_LAYER(layer->layer);
+
+    layer->toplevel->scene_tree = wlr_scene_tree_create(output->layers_tree[new_layer]);
+    layer->toplevel->scene_tree = wlr_scene_subsurface_tree_create(layer->toplevel->scene_tree, layer->layer_surface->surface);
+
+    wlr_scene_node_set_enabled(&layer->toplevel->scene_tree->node, false);
+
+    wl_list_insert(&output->layers[layer->layer], &layer->link);
+
+    // Temporarily set the layer's current state to pending
+    // so that we can easily arrange it
+    struct wlr_layer_surface_v1_state old_state = layer_surface->current;
+    layer_surface->current = layer_surface->pending;
+    arrange_layers(output);
+    layer_surface->current = old_state;
+}
+
 int main(int argc, char *argv[])
 {
     printf("Hello World...\n"); /* https://www.reddit.com/r/ProgrammerHumor/comments/1euwm7v/helloworldfeaturegotmergedguys/ */
@@ -2397,6 +2821,11 @@ int main(int argc, char *argv[])
     wl_signal_add(&server->xdg_shell->events.new_toplevel, &server->new_xdg_toplevel);
     server->new_xdg_popup.notify = server_new_xdg_popup;
     wl_signal_add(&server->xdg_shell->events.new_popup, &server->new_xdg_popup);
+
+
+    server->layer_shell = wlr_layer_shell_v1_create(server->wl_display, 4);
+    server->layer_shell_new_surface.notify = layer_shell_new_surface;
+    wl_signal_add(&server->layer_shell->events.new_surface, &server->layer_shell_new_surface);
 
 
     /* wlr_server_decoration */
