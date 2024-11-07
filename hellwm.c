@@ -79,7 +79,7 @@ struct hellwm_server
     double cursor_grab_x, cursor_grab_y;
     
     /* hellwm */
-    struct hellwm_output *output;
+    struct hellwm_output *active_output;
     struct hellwm_toplevel *grabbed_toplevel;
     struct hellwm_workspace *active_workspace;
     struct hellwm_config_manager *config_manager;
@@ -159,15 +159,16 @@ struct hellwm_workspace
     
     struct wl_list link;
     struct wl_list toplevels;
+
     struct hellwm_toplevel *last_focused;
 };
 
 struct hellwm_toplevel
 {
-    int workspace;
     struct wl_list link;
 
     struct hellwm_server *server;
+    struct hellwm_workspace *workspace;
 
     struct wlr_scene_tree *scene_tree;
     struct wlr_xdg_toplevel *xdg_toplevel;
@@ -185,6 +186,7 @@ struct hellwm_toplevel
 
 struct hellwm_popup
 {
+    struct hellwm_server *server;
     struct wlr_xdg_popup *xdg_popup;
 
     /* listeners */
@@ -1269,6 +1271,8 @@ static void server_backend_new_output(struct wl_listener *listener, void *data)
     struct wlr_output_layout_output *l_output = wlr_output_layout_add_auto(server->output_layout, wlr_output);
     struct wlr_scene_output *scene_output = wlr_scene_output_create(server->scene, wlr_output);
     wlr_scene_output_layout_add_output(server->scene_layout, l_output, scene_output);
+
+    /* TODO: Do actual tiling! */ server->active_output = output;
 }
 
 static void xdg_toplevel_map(struct wl_listener *listener, void *data) 
@@ -1306,9 +1310,15 @@ static void xdg_toplevel_commit(struct wl_listener *listener, void *data)
         * dimensions itself. */
         
         wlr_xdg_toplevel_set_wm_capabilities(toplevel->xdg_toplevel, WLR_XDG_TOPLEVEL_WM_CAPABILITIES_FULLSCREEN);
-        wlr_xdg_toplevel_set_size(toplevel->xdg_toplevel, 0, 0);
+        /* TODO: Do ACTUAL tiling! */ wlr_xdg_toplevel_set_size(toplevel->xdg_toplevel,
+                toplevel->server->active_output->wlr_output->width,
+                toplevel->server->active_output->wlr_output->height);
         return;
     }
+    /* TODO: Do ACTUAL tiling! */ wlr_xdg_toplevel_set_size(toplevel->xdg_toplevel,
+                toplevel->server->active_output->wlr_output->width,
+                toplevel->server->active_output->wlr_output->height);
+
 }
 
 static void xdg_toplevel_destroy(struct wl_listener *listener, void *data) 
@@ -1398,7 +1408,7 @@ static void xdg_toplevel_request_maximize(struct wl_listener *listener, void *da
      * anything and let the client finish the initial surface setup. */
     struct hellwm_toplevel *toplevel = wl_container_of(listener, toplevel, request_maximize);
     if (toplevel->xdg_toplevel->base->initialized) 
-   {
+    {
         wlr_xdg_surface_schedule_configure(toplevel->xdg_toplevel->base);
     }
 }
@@ -1408,7 +1418,7 @@ static void xdg_toplevel_request_fullscreen(struct wl_listener *listener, void *
     /* Just as with request_maximize, we must send a configure here. */
     struct hellwm_toplevel *toplevel = wl_container_of(listener, toplevel, request_fullscreen);
     if (toplevel->xdg_toplevel->base->initialized) 
-   {
+    {
         wlr_xdg_surface_schedule_configure(toplevel->xdg_toplevel->base);
     }
 }
@@ -1461,7 +1471,7 @@ static void xdg_popup_commit(struct wl_listener *listener, void *data)
     struct hellwm_popup *popup = wl_container_of(listener, popup, commit);
 
     if (popup->xdg_popup->base->initial_commit) 
-   {
+    {
         /* When an xdg_surface performs an initial commit, the compositor must
          * reply with a configure so the client can map the surface.
          * hellwm sends an empty configure. A more sophisticated compositor
@@ -1485,10 +1495,12 @@ static void xdg_popup_destroy(struct wl_listener *listener, void *data)
 static void server_new_xdg_popup(struct wl_listener *listener, void *data) 
 {
     /* This event is raised when a client creates a new popup. */
+    struct hellwm_server *server = wl_container_of(listener, server, new_xdg_popup);
     struct wlr_xdg_popup *xdg_popup = data;
 
     struct hellwm_popup *popup = calloc(1, sizeof(*popup));
     popup->xdg_popup = xdg_popup;
+    popup->server = server;
 
     /* We must add xdg popups to the scene graph so they get rendered. The
      * wlroots scene graph provides a helper for this, but to use it we must
@@ -2212,7 +2224,7 @@ static void hellwm_workspace_destroy(struct hellwm_workspace *workspace)
 static void hellwm_workspace_add_toplevel(struct hellwm_workspace *workspace, struct hellwm_toplevel *toplevel)
 {
     wl_list_insert(&workspace->toplevels, &toplevel->link);
-    toplevel->workspace = workspace->id;
+    toplevel->workspace = workspace;
 
     LOG("%s added to workspace: %d\n", toplevel->xdg_toplevel->title, workspace->id);
 }
