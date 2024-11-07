@@ -1315,9 +1315,19 @@ static void xdg_toplevel_commit(struct wl_listener *listener, void *data)
                 toplevel->server->active_output->wlr_output->height);
         return;
     }
-    /* TODO: Do ACTUAL tiling! */ wlr_xdg_toplevel_set_size(toplevel->xdg_toplevel,
-                toplevel->server->active_output->wlr_output->width,
-                toplevel->server->active_output->wlr_output->height);
+
+    /* TODO: Do ACTUAL tiling! */
+    int32_t width = toplevel->server->active_output->wlr_output->width;
+    int32_t height = toplevel->server->active_output->wlr_output->height;
+    if (toplevel->xdg_toplevel->base->surface->current.buffer_width != width &&
+         toplevel->xdg_toplevel->base->surface->current.buffer_height != height &&
+         toplevel->xdg_toplevel->base->initialized)
+    {
+        //LOG("COMMIT WLOG: %d - %d\n", width, toplevel->xdg_toplevel->base->surface->current.buffer_width );
+        //LOG("COMMIT HLOG: %d - %d\n\n", height, toplevel->xdg_toplevel->base->surface->current.buffer_height);
+        wlr_xdg_toplevel_set_size(toplevel->xdg_toplevel,width, height);
+    }
+
 
 }
 
@@ -1408,7 +1418,7 @@ static void xdg_toplevel_request_maximize(struct wl_listener *listener, void *da
      * anything and let the client finish the initial surface setup. */
     struct hellwm_toplevel *toplevel = wl_container_of(listener, toplevel, request_maximize);
     if (toplevel->xdg_toplevel->base->initialized) 
-    {
+    { 
         wlr_xdg_surface_schedule_configure(toplevel->xdg_toplevel->base);
     }
 }
