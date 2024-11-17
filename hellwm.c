@@ -2022,6 +2022,32 @@ int hellwm_lua_add_keybind(lua_State *L)
     return 1;
 }
 
+int hellwm_lua_env(lua_State *L)
+{
+    int nargs = lua_gettop(L);
+
+    char *name;
+    char *value;
+
+    for (int i = 1; i<=nargs; i++)
+    {
+        switch (i)
+        {
+            case 1:
+                name = strdup(lua_tostring(L, i));
+                break;
+            case 2:
+                value = strdup(lua_tostring(L, i));
+                LOG("Env: %s = %s", name, value);
+                setenv(name, value, 1);
+                return 0;
+            default:
+                LOG("Provided to much arguments to env() function!\n");
+        }
+    }
+    return 0;
+}
+
 void hellwm_config_manager_load_from_file(char * filename)
 {
     LOG("Loading config from: %s\n", filename);
@@ -2037,6 +2063,9 @@ void hellwm_config_manager_load_from_file(char * filename)
 
     lua_pushcfunction(L, hellwm_lua_add_keybind);
     lua_setglobal(L, "bind");
+
+    lua_pushcfunction(L, hellwm_lua_env);
+    lua_setglobal(L, "env");
 
     if (luaL_loadfile(L, filename) || lua_pcall(L, 0, 0, 0))
         hellwm_lua_error(L, "Cannot load configuration file: %s", lua_tostring(L, -1));
