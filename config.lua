@@ -48,10 +48,12 @@ bind("Super_L, 4", "workspace", 4, true, 8)
 bind("Super_L, 5", "workspace", 5, false, 0, true)
 bind("Super_L, 6", "workspace", 6, false, 0, true)
 
+bind("Super_L, r", "reload_config")
 
 bind("Super_L, q", "kill_active")
-bind("Super_L, c", "focus_next")
-bind("Super_L, r", "reload_config")
 bind("Super_L, Escape", "kill_server")
+
+bind("Super_L, n", "focus_next")
+bind("Super_L, p", "focus_prev")
 
 env("GTK", "NONE")

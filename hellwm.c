@@ -1,11 +1,11 @@
 #include <math.h>
-#include <string.h>
 #include <time.h>
 #include <stdio.h>
 #include <assert.h>
 #include <getopt.h>
 #include <stdint.h>
 #include <stdlib.h>
+#include <string.h>
 #include <unistd.h>
 #include <stdbool.h>
 
@@ -387,9 +387,14 @@ static bool handle_keybinding(struct hellwm_server *server, uint32_t modifiers, 
 static struct hellwm_toplevel *desktop_toplevel_at(struct hellwm_server *server, double lx, double ly, struct wlr_surface **surface, double *sx, double *sy);
 
 static void hellwm_server_kill(struct hellwm_server *server);
-static void hellwm_focus_next_toplevel(struct hellwm_server *server);
 static void hellwm_toplevel_kill_active(struct hellwm_server *server);
+
 static void hellwm_focus_toplevel(struct hellwm_toplevel *toplevel);
+static void hellwm_focus_next_toplevel(struct hellwm_server *server);
+static void hellwm_focus_prev_toplevel(struct hellwm_server *server);
+static void hellwm_focus_prev_toplevel_center(struct hellwm_server *server);
+static void hellwm_focus_next_toplevel_center(struct hellwm_server *server);
+static void hellwm_focus_and_center_toplevel(struct hellwm_toplevel *toplevel);
 
 static void keyboard_handle_key(struct wl_listener *listener, void *data);
 static void keyboard_handle_destroy(struct wl_listener *listener, void *data);
@@ -440,47 +445,20 @@ static void server_new_xdg_toplevel(struct wl_listener *listener, void *data) ;
 /* Global Variables */
 struct hellwm_server *GLOBAL_SERVER = NULL;
 
-/* test */
-void layout_grid(struct hellwm_workspace *workspace)
+/* 
+ * WARNING: TEMPORARY LAYOUTS AND REALLY BAD TILING - TODO: REMOVE THIS ekhm.. BEAUTIFUL CODE
+ */
+void layout_horizontal_split(struct hellwm_workspace *workspace)
 {
     int i = 0;
     int count = wl_list_length(&workspace->toplevels);
-
-    int cols = (int)ceil(sqrt(count));
-    int rows = (count + cols - 1) / cols;
-    
-    int cell_width = workspace->output->wlr_output->width / cols;
-    int cell_height = workspace->output->wlr_output->height / rows;
-
-    struct hellwm_toplevel *toplevel;
-    wl_list_for_each(toplevel, &workspace->toplevels, link)
-    {
-        int x = (i % cols) * cell_width;
-        int y = (i / cols) * cell_height;
-
-        wlr_scene_node_set_position(&toplevel->scene_tree->node, x, y);
-        wlr_xdg_toplevel_set_size(toplevel->xdg_toplevel, cell_width, cell_height);
-
-        i++;
-    }
-}
-
-void layout_horizontal_split(struct hellwm_workspace *workspace)
-{
-    struct hellwm_toplevel *toplevel;
-    int count = 0, i = 0;
-
-    wl_list_for_each(toplevel, &workspace->toplevels, link)
-    {
-        count++;
-    }
-
     if (count == 0) return;
 
     struct hellwm_output *output = workspace->output;
     int window_width = output->wlr_output->width / count;
     int window_height = output->wlr_output->height;
 
+    struct hellwm_toplevel *toplevel;
     wl_list_for_each(toplevel, &workspace->toplevels, link)
     {
         int x = i * window_width;
@@ -492,22 +470,91 @@ void layout_horizontal_split(struct hellwm_workspace *workspace)
     }
 }
 
+// only this and one above works btw 
+void layout_column_stack(struct hellwm_workspace *workspace, float master_ratio)
+{
+    if (!workspace || !workspace->output) return;
+
+    int count = wl_list_length(&workspace->toplevels);
+    if (count == 0) return;
+
+    int output_width = workspace->output->wlr_output->width;
+    int output_height = workspace->output->wlr_output->height;
+
+    int master_width = (int)(output_width * master_ratio);
+    int stack_width = (count > 1) ? (output_width - master_width) / (count - 1) : 0;
+
+    int i = 0;
+    struct hellwm_toplevel *toplevel;
+    wl_list_for_each(toplevel, &workspace->toplevels, link)
+    {
+        if (i == 0)
+        {
+            wlr_scene_node_set_position(&toplevel->scene_tree->node, 0, 0);
+            if (count>1)
+                wlr_xdg_toplevel_set_size(toplevel->xdg_toplevel, master_width, output_height);
+            else
+                wlr_xdg_toplevel_set_size(toplevel->xdg_toplevel, output_width, output_height);
+        }
+        else
+        {
+            int x = master_width + (i - 1) * stack_width;
+            int y = 0;
+            wlr_scene_node_set_position(&toplevel->scene_tree->node, x, y);
+            wlr_xdg_toplevel_set_size(toplevel->xdg_toplevel, stack_width, output_height);
+        }
+        i++;
+    }
+}
+
+void layout_circle(struct hellwm_workspace *workspace)
+{
+    if (!workspace || !workspace->output) return;
+
+    int count = wl_list_length(&workspace->toplevels);
+    if (count == 0) return;
+
+    int output_width = workspace->output->wlr_output->width;
+    int output_height = workspace->output->wlr_output->height;
+
+    int center_x = output_width / 2;
+    int center_y = output_height / 2;
+    int radius = (output_width < output_height ? output_width : output_height) / 3;
+
+    int i = 0;
+    struct hellwm_toplevel *toplevel;
+    wl_list_for_each(toplevel, &workspace->toplevels, link)
+    {
+        double angle = 2 * 3.141592653 * i / count;
+        int x = center_x + (int)(radius * cos(angle)) - (output_width / count) / 2;
+        int y = center_y + (int)(radius * sin(angle)) - (output_height / count) / 2;
+
+        wlr_scene_node_set_position(&toplevel->scene_tree->node, x, y);
+        wlr_xdg_toplevel_set_size(toplevel->xdg_toplevel, output_width / count, output_height / count);
+
+        hellwm_focus_and_center_toplevel(toplevel);
+
+        i++;
+    }
+}
+
 void apply_layout(struct hellwm_workspace *workspace, int layout_type)
 {
     switch (layout_type)
     {
-        case 0:
-            layout_grid(workspace);
-            break;
         case 1:
             layout_horizontal_split(workspace);
             break;
-        default:
-            layout_grid(workspace);
+        case 3:
+            layout_column_stack(workspace, 0.7);
             break;
+        case 4:
+            layout_circle(workspace);
+            break;
+        default:
+            layout_column_stack(workspace, 0.7);
     }
 }
-
 
 /* functions implementations */
 void LOG(const char *format, ...)
@@ -737,6 +784,14 @@ static void hellwm_focus_toplevel(struct hellwm_toplevel *toplevel)
     }
 }
 
+static void hellwm_focus_and_center_toplevel(struct hellwm_toplevel *toplevel)
+{
+    hellwm_focus_toplevel(toplevel);
+
+    // TODO: remove it ? or make it optional based on layout AFTER ADDING NODES!
+    apply_layout(toplevel->server->active_workspace, toplevel->server->active_workspace->layout);
+}
+
 static void hellwm_focus_next_toplevel(struct hellwm_server *server)
 {
     if (wl_list_length(&server->active_workspace->toplevels) < 1)
@@ -745,6 +800,49 @@ static void hellwm_focus_next_toplevel(struct hellwm_server *server)
     struct hellwm_toplevel *next_toplevel = wl_container_of(server->active_workspace->toplevels.prev, next_toplevel, link);
     if (next_toplevel)
         hellwm_focus_toplevel(next_toplevel);
+    else
+    {
+        struct hellwm_toplevel *toplevel;
+        wl_list_for_each(toplevel, &server->active_workspace->toplevels, link)
+        {
+            hellwm_focus_toplevel(next_toplevel);
+            return;
+        }
+    }
+}
+
+/* 
+ * TODO: its not working.
+ */
+static void hellwm_focus_prev_toplevel(struct hellwm_server *server)
+{
+    if (wl_list_length(&server->active_workspace->toplevels) < 1)
+        return;
+
+    struct hellwm_toplevel *prev_toplevel = wl_container_of(server->active_workspace->toplevels.next, prev_toplevel, link);
+    if (prev_toplevel)
+        hellwm_focus_toplevel(prev_toplevel);
+    else
+    {
+        struct hellwm_toplevel *toplevel;
+        wl_list_for_each(toplevel, &server->active_workspace->toplevels, link)
+        {
+            hellwm_focus_toplevel(prev_toplevel);
+            return;
+        }
+    }
+}
+
+static void hellwm_focus_next_toplevel_center(struct hellwm_server *server)
+{
+    hellwm_focus_prev_toplevel(server);
+    apply_layout(server->active_workspace, server->active_workspace->layout);
+}
+
+static void hellwm_focus_prev_toplevel_center(struct hellwm_server *server)
+{
+    hellwm_focus_next_toplevel(server);
+    apply_layout(server->active_workspace, server->active_workspace->layout);
 }
 
 static void hellwm_toplevel_kill_active(struct hellwm_server *server)
@@ -1383,7 +1481,7 @@ static void server_backend_new_output(struct wl_listener *listener, void *data)
     struct wlr_scene_output *scene_output = wlr_scene_output_create(server->scene, wlr_output);
     wlr_scene_output_layout_add_output(server->scene_layout, l_output, scene_output);
 
-    /* TODO: Do actual tiling! */ server->active_output = output;
+    server->active_output = output;
 }
 
 static void xdg_toplevel_map(struct wl_listener *listener, void *data) 
@@ -1430,7 +1528,6 @@ static void xdg_toplevel_commit(struct wl_listener *listener, void *data)
         return;
     }
 
-    /* TODO: Do ACTUAL tiling! */
     int32_t width = toplevel->server->active_output->wlr_output->width;
     int32_t height = toplevel->server->active_output->wlr_output->height;
     if (toplevel->xdg_toplevel->base->surface->current.buffer_width != width &&
@@ -2391,7 +2488,13 @@ bool hellwm_function_find(const char* name, struct hellwm_server* server, union 
 void hellwm_function_expose(struct hellwm_server *server)
 {
     hellwm_function_add_to_map(server, "kill_server",   hellwm_server_kill);
+
     hellwm_function_add_to_map(server, "focus_next",    hellwm_focus_next_toplevel);
+    hellwm_function_add_to_map(server, "focus_prev",    hellwm_focus_prev_toplevel);
+
+    hellwm_function_add_to_map(server, "focus_next_center",    hellwm_focus_next_toplevel_center);
+    hellwm_function_add_to_map(server, "focus_prev_center",    hellwm_focus_prev_toplevel_center);
+
     hellwm_function_add_to_map(server, "kill_active",   hellwm_toplevel_kill_active);
     hellwm_function_add_to_map(server, "reload_config", hellwm_config_manager_reload);
 }
@@ -2409,7 +2512,7 @@ struct hellwm_workspace *hellwm_workspace_create_begin(struct hellwm_server *ser
     wl_list_init(&workspace->toplevels);
     workspace->last_focused = NULL;
     workspace->id = workspace_id;
-    workspace->layout = 1;
+    workspace->layout = 0;
 
     return workspace;
 }
@@ -2743,3 +2846,7 @@ int main(int argc, char *argv[])
 
     return 0;
 }
+
+/*
+ * TODO: Rewrite tiling to nodes.
+ */
