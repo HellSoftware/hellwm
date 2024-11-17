@@ -53,5 +53,6 @@ bind("Super_L, q", "kill_active")
 bind("Super_L, c", "focus_next")
 bind("Super_L, r", "reload_config")
 bind("Super_L, Escape", "kill_server")
+bind("Super_L, l", "tile_workspace")
 
 
