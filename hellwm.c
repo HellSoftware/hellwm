@@ -13,7 +13,6 @@
 #include <lauxlib.h>
 #include <lualib.h>
 
-#include <wctype.h>
 #include <xkbcommon/xkbcommon.h>
 #include <xkbcommon/xkbcommon-keysyms.h>
 
@@ -711,7 +710,6 @@ static void hellwm_focus_toplevel(struct hellwm_toplevel *toplevel)
     {
         wlr_seat_keyboard_notify_enter(seat, toplevel->xdg_toplevel->base->surface, keyboard->keycodes, keyboard->num_keycodes, &keyboard->modifiers);
     }
-    apply_layout(server->active_workspace, server->active_workspace->layout);
 }
 
 static void hellwm_focus_next_toplevel(struct hellwm_server *server)
@@ -1362,6 +1360,7 @@ static void xdg_toplevel_map(struct wl_listener *listener, void *data)
 
     hellwm_workspace_add_toplevel(toplevel->server->active_workspace, toplevel);
     hellwm_focus_toplevel(toplevel);
+    apply_layout(toplevel->server->active_workspace, toplevel->server->active_workspace->layout);
 }
 
 static void xdg_toplevel_unmap(struct wl_listener *listener, void *data)
@@ -1392,10 +1391,10 @@ static void xdg_toplevel_commit(struct wl_listener *listener, void *data)
         * dimensions itself. */
         
         wlr_xdg_toplevel_set_wm_capabilities(toplevel->xdg_toplevel, WLR_XDG_TOPLEVEL_WM_CAPABILITIES_FULLSCREEN);
-        /* TODO: Do ACTUAL tiling! */ wlr_xdg_toplevel_set_size(toplevel->xdg_toplevel,
+
+        wlr_xdg_toplevel_set_size(toplevel->xdg_toplevel,
                 toplevel->server->active_output->wlr_output->width,
                 toplevel->server->active_output->wlr_output->height);
-        apply_layout(toplevel->server->active_workspace, toplevel->server->active_workspace->layout);
         return;
     }
 }
