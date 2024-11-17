@@ -215,9 +215,10 @@ struct hellwm_config_keybind_workspace
 {
     int workspace_id;
     int binary_workspace_val;
-    bool binary_workspaces_enabled;
 
     bool pressed;
+    bool move_with_active;
+    bool binary_workspaces_enabled;
 };
 
 union hellwm_function
@@ -351,6 +352,9 @@ static void hellwm_binary_workspaces_manager_add_keybind(struct hellwm_binary_wo
 
 /* add toplevel to specific workspace */
 static void hellwm_workspace_add_toplevel(struct hellwm_workspace *workspace, struct hellwm_toplevel *toplevel);
+
+/* move toplevel from workspace to new active workspace */
+void hellwm_toplevel_move_to_workspace(struct hellwm_server *server, int workspace_id);
 
 void hellwm_config_manager_free(struct hellwm_config_manager *config);
 void hellwm_config_manager_monitor_free(hellwm_config_manager_monitor *monitor);
@@ -735,12 +739,12 @@ static void hellwm_focus_toplevel(struct hellwm_toplevel *toplevel)
 
 static void hellwm_focus_next_toplevel(struct hellwm_server *server)
 {
-    if (wl_list_length(&server->active_workspace->toplevels) < 2)
-    {
+    if (wl_list_length(&server->active_workspace->toplevels) < 1)
         return;
-    }
+
     struct hellwm_toplevel *next_toplevel = wl_container_of(server->active_workspace->toplevels.prev, next_toplevel, link);
-    hellwm_focus_toplevel(next_toplevel);
+    if (next_toplevel)
+        hellwm_focus_toplevel(next_toplevel);
 }
 
 static void hellwm_toplevel_kill_active(struct hellwm_server *server)
@@ -828,7 +832,15 @@ static bool handle_keybinding(struct hellwm_server *server, uint32_t modifiers, 
                     }
                     else
                     {
-                        hellwm_workspace_change(server, keybindings->keybindings[j]->content->workspace.workspace_id);
+                        if (keybindings->keybindings[j]->content->workspace.move_with_active)
+                        {
+                            // TODO: make move_to_workspace work with binary workspaces
+                            //hellwm_toplevel_move_to_workspace(server, keybindings->keybindings[j]->content->workspace.workspace_id);
+
+                            hellwm_workspace_change(server, keybindings->keybindings[j]->content->workspace.workspace_id);
+                        }
+                        else
+                            hellwm_workspace_change(server, keybindings->keybindings[j]->content->workspace.workspace_id);
                     }
                     break;
 
@@ -1992,10 +2004,10 @@ int hellwm_lua_add_keybind(lua_State *L)
                 action = strdup(lua_tostring(L, i));
                 break;
             case 3:
-                if (!strcmp(action, "workspace"))
-                {
+                if (!strcmp(action, "workspace") || !strcmp(action, "move_active"))
                     workspace.workspace_id = (int)lua_tonumber(L, i);
-                }
+                else
+                    return 0;
                 break;
             case 4:
                 workspace.binary_workspaces_enabled = (bool)lua_toboolean(L, i);
@@ -2003,7 +2015,9 @@ int hellwm_lua_add_keybind(lua_State *L)
             case 5:
                 workspace.binary_workspace_val = (int)lua_tonumber(L, i);
                 break;
-
+            case 6:
+                workspace.move_with_active = (bool)lua_toboolean(L, i);
+                break;
             default:
                 LOG("Provided to much arguments to keybind() function!\n");
         }
@@ -2011,7 +2025,10 @@ int hellwm_lua_add_keybind(lua_State *L)
 
     if (workspace.workspace_id != -1 && keys != NULL)
     {
-        hellwm_config_keybind_add_workspace_to_config(GLOBAL_SERVER, keys, workspace);
+        if (!strcmp(action, "move_active"))
+            hellwm_config_keybind_add_workspace_to_config(GLOBAL_SERVER, keys, workspace);
+        else
+            hellwm_config_keybind_add_workspace_to_config(GLOBAL_SERVER, keys, workspace);
         return 0;
     }
     if (keys != NULL && action != NULL)
@@ -2218,12 +2235,18 @@ void hellwm_config_keybind_add_workspace_to_config(struct hellwm_server *server,
 
         config_keybindings->keybindings[config_keybindings->count]->content->workspace.pressed = false;
         config_keybindings->keybindings[config_keybindings->count]->content->workspace.workspace_id = workspace.workspace_id;
+        config_keybindings->keybindings[config_keybindings->count]->content->workspace.move_with_active = workspace.move_with_active;
         config_keybindings->keybindings[config_keybindings->count]->content->workspace.binary_workspace_val = workspace.binary_workspace_val;
         config_keybindings->keybindings[config_keybindings->count]->content->workspace.binary_workspaces_enabled = workspace.binary_workspaces_enabled;
 
         hellwm_binary_workspaces_manager_add_keybind(server->config_manager->binary_workspaces_manager, config_keybindings->keybindings[config_keybindings->count]);
     }
-    LOG("Keybind: [%s] = workspace: %d \t - bw: %d bw_val: %d\n", keys, workspace.workspace_id, workspace.binary_workspaces_enabled, workspace.binary_workspace_val);
+    LOG("Keybind: [%s] = workspace: %d \t - bw: %d bw_val: %d mv with active: %d\n", keys, 
+            workspace.workspace_id,
+            workspace.binary_workspaces_enabled,
+            workspace.binary_workspace_val,
+            workspace.move_with_active);
+
     config_keybindings->count++; 
 }
 
@@ -2302,8 +2325,9 @@ void hellwm_config_print(struct hellwm_config_manager *config)
                 case HELLWM_KEYBIND_WORKSPACE:
                     LOG("\t\t\t\tworkspace    = \n\t\t\t\t{\n", kbd->keybindings[i]->content->workspace.workspace_id);
                     LOG("\t\t\t\t\tworkspace_id              = %d\n", kbd->keybindings[i]->content->workspace.workspace_id);
-                    LOG("\t\t\t\t\tbinary_workspaces_enabled = %d\n", kbd->keybindings[i]->content->workspace.binary_workspaces_enabled);
+                    LOG("\t\t\t\t\tmove_with_active          = %d\n", kbd->keybindings[i]->content->workspace.move_with_active);
                     LOG("\t\t\t\t\tbinary_workspace_val      = %d\n", kbd->keybindings[i]->content->workspace.binary_workspace_val);
+                    LOG("\t\t\t\t\tbinary_workspaces_enabled = %d\n", kbd->keybindings[i]->content->workspace.binary_workspaces_enabled);
                     LOG("\t\t\t\t}\n");
                     break;
 
@@ -2430,6 +2454,28 @@ static void hellwm_workspace_add_toplevel(struct hellwm_workspace *workspace, st
     toplevel->workspace = workspace;
 
     LOG("%s added to workspace: %d\n", toplevel->xdg_toplevel->title, workspace->id);
+}
+
+/* Note: this function also automatically changes workspace to given id */
+void hellwm_toplevel_move_to_workspace(struct hellwm_server *server, int workspace_id)
+{
+    struct hellwm_toplevel *toplevel = server->active_workspace->last_focused;
+
+    if (toplevel)
+    {
+        LOG("Moving toplevel from %d, to %d\n", server->active_workspace->id, workspace_id);
+
+        wl_list_remove(&toplevel->link);
+        hellwm_focus_next_toplevel(server);
+        apply_layout(server->active_workspace, server->active_workspace->layout);
+
+        hellwm_workspace_change(server, workspace_id);
+        wl_list_insert(&server->active_workspace->toplevels, &toplevel->link);
+        apply_layout(server->active_workspace, server->active_workspace->layout);
+        hellwm_focus_toplevel(toplevel);
+    }
+    else
+        hellwm_workspace_change(server, workspace_id);
 }
 
 /* Change workspace by it's id */

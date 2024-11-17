@@ -45,8 +45,8 @@ bind(
 bind("Super_L, 2", "workspace", 2, true, 2)
 bind("Super_L, 3", "workspace", 3, true, 4)
 bind("Super_L, 4", "workspace", 4, true, 8)
-bind("Super_L, 5", "workspace", 5)
-bind("Super_L, 6", "workspace", 6)
+bind("Super_L, 5", "workspace", 5, false, 0, true)
+bind("Super_L, 6", "workspace", 6, false, 0, true)
 
 
 bind("Super_L, q", "kill_active")
