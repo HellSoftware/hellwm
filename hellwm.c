@@ -164,6 +164,7 @@ struct hellwm_workspace
     struct wl_list link;
     struct wl_list toplevels;
 
+    struct hellwm_output *output;
     struct hellwm_toplevel *last_focused;
 };
 
