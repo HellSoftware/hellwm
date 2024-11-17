@@ -1,12 +1,11 @@
 # HellWM Wayland Compositor
 
-## "The HellWM is this ?"
+## The hell is HellWM?
 
-HellWM is meant to be very light and modular Wayland Compositor with features.
+HellWM is meant to be very light and modular Wayland Compositor with some unique features, like **binary workspace** or **config hot reload**.
 Still under development, open for contributions and ideas that will make this project better.
 
 ## TODO:
-- [ ] tiling
 - [ ] xwayland
 - [ ] wlr-layer-shell
 
@@ -14,3 +13,4 @@ Still under development, open for contributions and ideas that will make this pr
 - [x] config
 - [x] workspaces
 - [x] binary workspaces
+- [x] tiling (kinda?, **TODO**: rewrite using nodes.)

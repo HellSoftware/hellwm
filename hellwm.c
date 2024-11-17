@@ -816,32 +816,36 @@ static void hellwm_focus_next_toplevel(struct hellwm_server *server)
  */
 static void hellwm_focus_prev_toplevel(struct hellwm_server *server)
 {
-    if (wl_list_length(&server->active_workspace->toplevels) < 1)
+    int count = wl_list_length(&server->active_workspace->toplevels);
+
+    if (count < 1)
         return;
 
-    struct hellwm_toplevel *prev_toplevel = wl_container_of(server->active_workspace->toplevels.next, prev_toplevel, link);
-    if (prev_toplevel)
-        hellwm_focus_toplevel(prev_toplevel);
-    else
+    struct hellwm_toplevel *prev = NULL;
+    struct hellwm_toplevel *toplevel;
+    wl_list_for_each(toplevel, &server->active_workspace->toplevels, link)
     {
-        struct hellwm_toplevel *toplevel;
-        wl_list_for_each(toplevel, &server->active_workspace->toplevels, link)
+        struct hellwm_toplevel *next_toplevel = wl_container_of(server->active_workspace->toplevels.prev, next_toplevel, link);
+
+        if (prev != NULL && next_toplevel == toplevel)
         {
-            hellwm_focus_toplevel(prev_toplevel);
+            hellwm_focus_toplevel(prev);
             return;
         }
+
+        prev = toplevel;
     }
 }
 
 static void hellwm_focus_next_toplevel_center(struct hellwm_server *server)
 {
-    hellwm_focus_prev_toplevel(server);
+    hellwm_focus_next_toplevel(server);
     apply_layout(server->active_workspace, server->active_workspace->layout);
 }
 
 static void hellwm_focus_prev_toplevel_center(struct hellwm_server *server)
 {
-    hellwm_focus_next_toplevel(server);
+    hellwm_focus_prev_toplevel(server);
     apply_layout(server->active_workspace, server->active_workspace->layout);
 }
 

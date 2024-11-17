@@ -39,21 +39,31 @@ bind(
     "Super_L, 1",   -- keys
     "workspace",    -- specify that it is a workspace
     1,              -- workspace number
-    true,           -- binary workspaces enabled
-    1               -- binary workspaces value
+    false,          -- binary workspaces enabled
+    1,              -- binary workspaces value
+    true            -- also move active window to this workspace
     )
-bind("Super_L, 2", "workspace", 2, true, 2)
-bind("Super_L, 3", "workspace", 3, true, 4)
-bind("Super_L, 4", "workspace", 4, true, 8)
-bind("Super_L, 5", "workspace", 5, false, 0, true)
-bind("Super_L, 6", "workspace", 6, false, 0, true)
+bind("Super_L, 2", "workspace", 2, false, 0)
+bind("Super_L, 3", "workspace", 3, false, 0)
+bind("Super_L, 4", "workspace", 4, false, 0)
+bind("Super_L, 5", "workspace", 5, false, 0)
+bind("Super_L, 6", "workspace", 6, false, 0)
 
-bind("Super_L, r", "reload_config")
+-- Binary workspaces
+bind("Super_L, y", "workspace", 1, true, 1)
+bind("Super_L, u", "workspace", 2, true, 2)
+bind("Super_L, i", "workspace", 3, true, 4)
+bind("Super_L, o", "workspace", 4, true, 8)
 
-bind("Super_L, q", "kill_active")
-bind("Super_L, Escape", "kill_server")
 
-bind("Super_L, n", "focus_next")
+bind("Super_L, r", "reload_config")     -- Reload config
+
+bind("Super_L, q", "kill_active")       -- Kill Active Window
+bind("Super_L, Escape", "kill_server")  -- Kill HellWM
+
+bind("Super_L, n", "focus_next")        -- Focus next Window
+bind("Alt_L, n", "focus_next_center")   -- Focus next and center Window
 bind("Super_L, p", "focus_prev")
+bind("Alt_L, p", "focus_prev_center")
 
-env("GTK", "NONE")
+env("EDITOR", "nvim")                   -- Set environment variable
