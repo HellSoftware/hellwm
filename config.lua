@@ -31,8 +31,11 @@ bind(
     "Super_L, b",     -- keys
     "firefox"         -- program name
     )
-bind("Super_L, t", "alacritty")
 bind("Super_L, Return", "foot")
+bind("Super_L, F12", "pavucontrol")
+
+
+bind("Super_L, a", "firefox")
 
 
 bind(

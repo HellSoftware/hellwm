@@ -43,7 +43,7 @@ clean:
 	rm -f hellwm *.o *-protocol.h *.log
 
 # CREATE PACKAGE
-dist: clean
+release: clean
 	mkdir -p hellwm-$(VERSION)
 	cp -R LICENSE* Makefile README.md protocols hellwm.c hellwm-$(VERSION)
 	tar -caf hellwm-$(VERSION).tar.gz hellwm-$(VERSION)
@@ -62,3 +62,5 @@ uninstall:
 .SUFFIXES: .c .o
 .c.o:
 	$(CC) $(CPPFLAGS) $(HELLWMCFLAGS) -c $<
+
+.PHONY: hellwm clean release install uninstall
