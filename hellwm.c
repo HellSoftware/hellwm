@@ -202,6 +202,8 @@ struct hellwm_workspace
 
 struct hellwm_toplevel
 {
+    bool floating;
+
     struct wl_list link;
 
     struct hellwm_server *server;
@@ -215,6 +217,8 @@ struct hellwm_toplevel
     struct wl_listener unmap;
     struct wl_listener commit;
     struct wl_listener destroy;
+    struct wl_listener set_title;
+    struct wl_listener set_app_id;
     struct wl_listener request_move;
     struct wl_listener request_resize;
     struct wl_listener request_maximize;
@@ -355,10 +359,10 @@ typedef struct
 {
     float master_ratio;
 
-    unsigned inner_gap;
-    unsigned outer_gap;
+    uint32_t inner_gap;
+    uint32_t outer_gap;
 
-    unsigned border_size;
+    uint32_t border_size;
     float border_color[4];
 
 } hellwm_config_manager_decoration;
@@ -919,31 +923,8 @@ static void hellwm_focus_toplevel(struct hellwm_toplevel *toplevel)
 
 static void focus_layer_surface(struct hellwm_layer_surface *layer_surface)
 {
-    struct hellwm_server *server = layer_surface->server;
-  enum zwlr_layer_surface_v1_keyboard_interactivity keyboard_interactive = layer_surface->wlr_layer_surface->current.keyboard_interactive;
-
-  switch(keyboard_interactive)
-  {
-    case ZWLR_LAYER_SURFACE_V1_KEYBOARD_INTERACTIVITY_NONE: {
-      return;
-    }
-    case ZWLR_LAYER_SURFACE_V1_KEYBOARD_INTERACTIVITY_EXCLUSIVE: {
-      server->layer_exclusive_keyboard = layer_surface;
-      struct wlr_keyboard *keyboard = wlr_seat_get_keyboard(server->seat);
-      if(keyboard != NULL)
-        wlr_seat_keyboard_notify_enter(server->seat, layer_surface->wlr_layer_surface->surface,
-                                       keyboard->keycodes, keyboard->num_keycodes, &keyboard->modifiers);
-      return;
-    }
-    case ZWLR_LAYER_SURFACE_V1_KEYBOARD_INTERACTIVITY_ON_DEMAND: {
-      struct wlr_keyboard *keyboard = wlr_seat_get_keyboard(server->seat);
-      if(keyboard != NULL)
-        wlr_seat_keyboard_notify_enter(server->seat,
-                                       layer_surface->wlr_layer_surface->surface,
-                                       keyboard->keycodes, keyboard->num_keycodes, &keyboard->modifiers);
-      return;
-    }
-  }
+    //struct hellwm_server *server = layer_surface->server;
+    //enum zwlr_layer_surface_v1_keyboard_interactivity keyboard_interactive = layer_surface->wlr_layer_surface->current.keyboard_interactive;
 }
 
 static void hellwm_focus_and_center_toplevel(struct hellwm_toplevel *toplevel)
@@ -1015,9 +996,11 @@ static void hellwm_toplevel_kill_active(struct hellwm_server *server)
 {
     if (!server->active_workspace) return;
     if (wl_list_length(&server->active_workspace->toplevels) < 1) return;
+
     struct wlr_xdg_toplevel *toplevel = wlr_xdg_toplevel_try_from_wlr_surface(server->seat->keyboard_state.focused_surface);
     if (!toplevel)
         return;
+
     wlr_xdg_toplevel_send_close(toplevel);
 
     hellwm_focus_next_toplevel(server);
@@ -1369,6 +1352,19 @@ static void reset_cursor_mode(struct hellwm_server *server)
     /* Reset the cursor mode to passthrough. */
     server->cursor_mode = HELLWM_CURSOR_PASSTHROUGH;
     server->grabbed_toplevel = NULL;
+    server->cursor_mode = HELLWM_CURSOR_PASSTHROUGH;
+    server->resize_edges = false;
+    server->grabbed_toplevel = NULL;
+
+    struct wlr_xdg_toplevel *toplevel = wlr_xdg_toplevel_try_from_wlr_surface(server->seat->keyboard_state.focused_surface);
+
+    if(toplevel != NULL)
+    {
+    }
+    else
+    {
+        wlr_cursor_set_xcursor(server->cursor, server->cursor_mgr, "default");
+    }
 }
 
 static void process_cursor_move(struct hellwm_server *server, uint32_t time)
@@ -1438,24 +1434,24 @@ static void process_cursor_resize(struct hellwm_server *server, uint32_t time)
     wlr_xdg_toplevel_set_size(toplevel->xdg_toplevel, new_width, new_height);
 }
 
-static void process_cursor_motion(struct hellwm_server *server, uint32_t time) 
+static void process_cursor_motion(struct hellwm_server *server, uint32_t time)
 {
-    /* If the mode is non-passthrough, delegate to those functions. */
-    if (server->cursor_mode == HELLWM_CURSOR_MOVE) 
+    /* get the output that the cursor is on currently */
+    if(server->cursor_mode == HELLWM_CURSOR_MOVE)
     {
         process_cursor_move(server, time);
         return;
     }
-    else if (server->cursor_mode == HELLWM_CURSOR_RESIZE) 
+    else if (server->cursor_mode == HELLWM_CURSOR_RESIZE)
     {
         process_cursor_resize(server, time);
         return;
     }
 
-    /* Otherwise, find the toplevel under the pointer and send the event along. */
     double sx, sy;
     struct wlr_seat *seat = server->seat;
     struct wlr_surface *surface = NULL;
+
     struct hellwm_toplevel *toplevel = desktop_toplevel_at(server, server->cursor->x, server->cursor->y, &surface, &sx, &sy);
 
     if (!toplevel) 
@@ -1479,45 +1475,13 @@ static void process_cursor_motion(struct hellwm_server *server, uint32_t time)
          */
         wlr_seat_pointer_notify_enter(seat, surface, sx, sy);
         wlr_seat_pointer_notify_motion(seat, time, sx, sy);
-    } else {
+    }
+    else
+    {
         /* Clear pointer focus so future button events and such are not sent to
          * the last client to have the cursor over it. */
         wlr_seat_pointer_clear_focus(seat);
     }
-
-    //struct hellwm_view *view = desktop_view_at(server, server->cursor->x, server->cursor->y, &surface, &sx, &sy);
-    //if (view == NULL)
-    //    return;
-
-    //if (view->view_type != HELLWM_VIEW_TOPLEVEL || !view->toplevel)
-    //{
-    //    /* If there's no toplevel under the cursor, set the cursor image to a
-    //     * default. This is what makes the cursor image appear when you move it
-    //     * around the screen, not over any toplevels. */
-    //    wlr_cursor_set_xcursor(server->cursor, server->cursor_mgr, "default");
-    //}
-    //if (surface)
-    //{
-    //    /*
-    //     * Send pointer enter and motion events.
-    //     *
-    //     * The enter event gives the surface "pointer focus", which is distinct
-    //     * from keyboard focus. You get pointer focus by moving the pointer over
-    //     * a window.
-    //     *
-    //     * Note that wlroots will avoid sending duplicate enter/motion events if
-    //     * the surface has already has pointer focus or if the client is already
-    //     * aware of the coordinates passed.
-    //     */
-    //    wlr_seat_pointer_notify_enter(seat, surface, sx, sy);
-    //    wlr_seat_pointer_notify_motion(seat, time, sx, sy);
-    //}
-    //else
-    //{
-    //    /* Clear pointer focus so future button events and such are not sent to
-    //     * the last client to have the cursor over it. */
-    //    wlr_seat_pointer_clear_focus(seat);
-    //}
 }
 
 static void server_cursor_motion(struct wl_listener *listener, void *data)
@@ -1549,28 +1513,69 @@ static void server_cursor_motion_absolute(struct wl_listener *listener, void *da
     process_cursor_motion(server, event->time_msec);
 }
 
+static int box_area(struct wlr_box *box)
+{
+  return box->width * box->height;
+}
+
+struct hellwm_output *toplevel_get_primary_output(struct hellwm_toplevel *toplevel) {
+    uint32_t toplevel_x =
+        toplevel->scene_tree->node.x +
+        toplevel->xdg_toplevel->base->current.geometry.x;
+    uint32_t toplevel_y =
+        toplevel->scene_tree->node.y +
+        toplevel->xdg_toplevel->base->current.geometry.y;
+
+    struct wlr_box toplevel_box = {
+        .x = toplevel_x,
+        .y = toplevel_y,
+        .width = toplevel->xdg_toplevel->base->current.geometry.width,
+        .height = toplevel->xdg_toplevel->base->current.geometry.height
+    };
+
+    struct wlr_box intersection_box;
+    struct wlr_box output_box;
+    uint32_t max_area = 0;
+    struct hellwm_output *max_area_output = NULL;
+
+    struct hellwm_output *o;
+    wl_list_for_each(o, &GLOBAL_SERVER->outputs, link) {
+        wlr_output_layout_get_box(GLOBAL_SERVER->output_layout, o->wlr_output, &output_box);
+        bool intersects = wlr_box_intersection(&intersection_box, &toplevel_box, &output_box);
+
+        if(intersects && box_area(&intersection_box) > max_area)
+        {
+            max_area = box_area(&intersection_box);
+            max_area_output = o;
+        }
+    }
+
+    return max_area_output;
+}
+
 static void server_cursor_button(struct wl_listener *listener, void *data)
 {
-    /* This event is forwarded by the cursor when a pointer emits a button
-     * event. */
-    struct hellwm_server *server = wl_container_of(listener, server, cursor_button);
     struct wlr_pointer_button_event *event = data;
-    /* Notify the client with pointer focus that a button press has occurred */
-    wlr_seat_pointer_notify_button(server->seat, event->time_msec, event->button, event->state);
-    double sx, sy;
-    struct wlr_surface *surface = NULL;
-    struct hellwm_toplevel *toplevel = desktop_toplevel_at(server, server->cursor->x, server->cursor->y, &surface, &sx, &sy);
 
-    if (event->state == WL_POINTER_BUTTON_STATE_RELEASED) 
+    /* notify the client with pointer focus that a button press has occurred */
+    wlr_seat_pointer_notify_button(GLOBAL_SERVER->seat, event->time_msec,
+            event->button, event->state);
+
+    if(event->state == WL_POINTER_BUTTON_STATE_RELEASED && GLOBAL_SERVER->cursor_mode != HELLWM_CURSOR_PASSTHROUGH)
     {
-        /* If you released any buttons, we exit interactive move/resize mode. */
-        reset_cursor_mode(server);
-    } else {
-        /* Focus that client if the button was _pressed_ */
-        if (toplevel != NULL)
-            hellwm_focus_toplevel(toplevel);
+        //struct hellwm_output *primary_output = toplevel_get_primary_output(GLOBAL_SERVER->grabbed_toplevel);
+
+        //if(primary_output != GLOBAL_SERVER->grabbed_toplevel->workspace->output)
+        //{
+        //    GLOBAL_SERVER->grabbed_toplevel->workspace = primary_output->active_workspace;
+        //    wl_list_remove(&GLOBAL_SERVER->grabbed_toplevel->link);
+        //    wl_list_insert(&primary_output->active_workspace->toplevels, &GLOBAL_SERVER->grabbed_toplevel->link);
+        //}
+
+        reset_cursor_mode(GLOBAL_SERVER);
     }
 }
+
 
 static void server_cursor_axis(struct wl_listener *listener, void *data) 
 {
@@ -1893,23 +1898,33 @@ static void server_new_xdg_toplevel(struct wl_listener *listener, void *data)
     /* Listen to the various events it can emit */
     toplevel->map.notify = xdg_toplevel_map;
     wl_signal_add(&xdg_toplevel->base->surface->events.map, &toplevel->map);
+
     toplevel->unmap.notify = xdg_toplevel_unmap;
     wl_signal_add(&xdg_toplevel->base->surface->events.unmap, &toplevel->unmap);
+
     toplevel->commit.notify = xdg_toplevel_commit;
     wl_signal_add(&xdg_toplevel->base->surface->events.commit, &toplevel->commit);
 
     toplevel->destroy.notify = xdg_toplevel_destroy;
     wl_signal_add(&xdg_toplevel->events.destroy, &toplevel->destroy);
 
-    /* cotd */
     toplevel->request_move.notify = xdg_toplevel_request_move;
     wl_signal_add(&xdg_toplevel->events.request_move, &toplevel->request_move);
+
     toplevel->request_resize.notify = xdg_toplevel_request_resize;
     wl_signal_add(&xdg_toplevel->events.request_resize, &toplevel->request_resize);
+
     toplevel->request_maximize.notify = xdg_toplevel_request_maximize;
     wl_signal_add(&xdg_toplevel->events.request_maximize, &toplevel->request_maximize);
+
     toplevel->request_fullscreen.notify = xdg_toplevel_request_fullscreen;
     wl_signal_add(&xdg_toplevel->events.request_fullscreen, &toplevel->request_fullscreen);
+
+    //toplevel->set_app_id.notify = xdg_toplevel_set_app_id;
+    //wl_signal_add(&xdg_toplevel->events.set_app_id, &toplevel->set_app_id);
+
+    //toplevel->set_title.notify = toplevel_set_title;
+    //wl_signal_add(&xdg_toplevel->events.set_title, &toplevel->set_title);
 }
 
 static void xdg_decoration_new_toplevel_decoration(struct wl_listener *listener, void *data)
@@ -1970,15 +1985,6 @@ struct hellwm_view *desktop_view_at(struct hellwm_server *server, double lx, dou
     }
 
     return view;
-}
-
-void handle_new_xdg_surface(struct wl_listener *listener, void *data)
-{
-    struct hellwm_server *server = wl_container_of(listener, server, new_layer_surface);
-    struct wlr_xdg_surface *xdg_surface = data;
-
-    if (xdg_surface->role != WLR_XDG_SURFACE_ROLE_TOPLEVEL)
-        return;
 }
 
 void xdg_popup_commit(struct wl_listener *listener, void *data)
@@ -2082,12 +2088,12 @@ static void layer_surface_handle_commit(struct wl_listener *listener, void *data
     if(layer_surface->wlr_layer_surface->initial_commit)
     {
         struct hellwm_output *output = layer_surface->wlr_layer_surface->output->data;
-
         if (output == NULL)
             output = layer_surface->server->active_output;
 
         struct wlr_box output_box;
-        wlr_output_layout_get_box(output->server->output_layout, output->wlr_output, &output_box);
+        wlr_output_layout_get_box(layer_surface->server->output_layout, output->wlr_output, &output_box);
+
         wlr_scene_layer_surface_v1_configure(layer_surface->scene, &output_box, &output->usable_area);
     }
 }
@@ -2103,22 +2109,22 @@ static void layer_surface_handle_map(struct wl_listener *listener, void *data)
     if (output == NULL)
         output = layer_surface->server->active_output;
 
-    unsigned layer = wlr_layer_surface->pending.layer;
+    uint32_t layer = wlr_layer_surface->pending.layer;
 
     wlr_scene_node_raise_to_top(&layer_surface->scene->tree->node);
 
     switch(layer)
     {
-        case 0: // bg
+        case ZWLR_LAYER_SHELL_V1_LAYER_BACKGROUND:
             wl_list_insert(&output->layers.background, &layer_surface->link);
             break;
-        case 1: // top
-            wl_list_insert(&output->layers.bottom, &layer_surface->link);
-            break;
-        case 2: // bottom
+        case ZWLR_LAYER_SHELL_V1_LAYER_TOP:
             wl_list_insert(&output->layers.top, &layer_surface->link);
             break;
-        case 3: // overlay
+        case ZWLR_LAYER_SHELL_V1_LAYER_BOTTOM:
+            wl_list_insert(&output->layers.bottom, &layer_surface->link);
+            break;
+        case ZWLR_LAYER_SHELL_V1_LAYER_OVERLAY:
             wl_list_insert(&output->layers.overlay, &layer_surface->link);
             break;
     }
@@ -2126,11 +2132,7 @@ static void layer_surface_handle_map(struct wl_listener *listener, void *data)
     struct wlr_box output_box;
     wlr_output_layout_get_box(server->output_layout, output->wlr_output, &output_box);
 
-    struct wlr_box temp = output->usable_area;
     wlr_scene_layer_surface_v1_configure(layer_surface->scene, &output_box, &output->usable_area);
-
-    if(temp.width != output->usable_area.width || temp.height != output->usable_area.height)
-        apply_layout(server->active_workspace, server->active_workspace->layout);
 
     focus_layer_surface(layer_surface);
 }
@@ -2185,14 +2187,21 @@ static void layer_surface_handle_unmap(struct wl_listener *listener, void *data)
                         output->usable_area.width += state->exclusive_zone + state->margin.right;
                     break;
             }
-
-            apply_layout(server->active_workspace, server->active_workspace->layout);
         }
-
         wl_list_remove(&layer_surface->link);
     }
 }
 
+static void layer_surface_handle_destroy(struct wl_listener *listener, void *data)
+{
+    struct hellwm_layer_surface *layer_surface = wl_container_of(listener, layer_surface, destroy);
+
+    wl_list_remove(&layer_surface->map.link);
+    wl_list_remove(&layer_surface->unmap.link);
+    wl_list_remove(&layer_surface->destroy.link);
+
+    free(layer_surface);
+}
 
 void layer_surface_handle_new_popup(struct wl_listener *listener, void *data)
 {
@@ -2212,17 +2221,6 @@ void layer_surface_handle_new_popup(struct wl_listener *listener, void *data)
     popup->xdg_popup->base->data = popup->scene_tree;
 }
 
-static void layer_surface_handle_destroy(struct wl_listener *listener, void *data)
-{
-    struct hellwm_layer_surface *layer_surface = wl_container_of(listener, layer_surface, destroy);
-
-    wl_list_remove(&layer_surface->map.link);
-    wl_list_remove(&layer_surface->unmap.link);
-    wl_list_remove(&layer_surface->destroy.link);
-
-    free(layer_surface);
-}
-
 static void handle_new_layer_surface(struct wl_listener *listener, void *data)
 {
     struct hellwm_server *server = wl_container_of(listener, server, new_layer_surface);
@@ -2236,19 +2234,25 @@ static void handle_new_layer_surface(struct wl_listener *listener, void *data)
     int layer = wlr_layer_surface->pending.layer;
     switch(layer)
     {
-        case 0: // bg
+        case ZWLR_LAYER_SHELL_V1_LAYER_BACKGROUND:
             layer_surface->scene = wlr_scene_layer_surface_v1_create(server->layers[0], wlr_layer_surface);
             break;
-        case 1: // top
+        case ZWLR_LAYER_SHELL_V1_LAYER_TOP:
             layer_surface->scene = wlr_scene_layer_surface_v1_create(server->layers[1], wlr_layer_surface);
             break;
-        case 2: // bottom
+        case ZWLR_LAYER_SHELL_V1_LAYER_BOTTOM:
             layer_surface->scene = wlr_scene_layer_surface_v1_create(server->layers[2], wlr_layer_surface);
             break;
-        case 3: // overlay
+        case ZWLR_LAYER_SHELL_V1_LAYER_OVERLAY:
             layer_surface->scene = wlr_scene_layer_surface_v1_create(server->layers[3], wlr_layer_surface);
             break;
     }
+
+    struct hellwm_view *view = calloc(1, sizeof(*view));
+    view->view_type = HELLWM_VIEW_LAYER;
+    view->layer_surface = layer_surface;
+
+    layer_surface->scene->tree->node.data = view;
 
     if(layer_surface->wlr_layer_surface->output == NULL)
         layer_surface->wlr_layer_surface->output = server->active_workspace->output->wlr_output;

@@ -33,9 +33,7 @@ bind(
     )
 bind("Super_L, Return", "foot")
 bind("Super_L, F12", "pavucontrol")
-
-
-bind("Super_L, a", "firefox")
+bind("Super_L, w", "setwall")
 
 
 bind(
@@ -69,4 +67,10 @@ bind("Alt_L, n", "focus_next_center")   -- Focus next and center Window
 bind("Super_L, p", "focus_prev")
 bind("Alt_L, p", "focus_prev_center")
 
-env("EDITOR", "nvim")                   -- Set environment variable
+
+-- Set environment variables
+env("EDITOR", "nvim")
+
+-- Exec daemons etc.
+exec("swww-daemon")
+exec("wbar-reload")
