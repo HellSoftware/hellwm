@@ -1436,7 +1436,6 @@ static void process_cursor_resize(struct hellwm_server *server, uint32_t time)
     wlr_xdg_toplevel_set_size(toplevel->xdg_toplevel, new_width, new_height);
 }
 
-/* TODO: FIX CLICKS */
 static void process_cursor_motion(struct hellwm_server *server, uint32_t time)
 {
     if(server->cursor_mode == HELLWM_CURSOR_MOVE) {
@@ -1451,17 +1450,19 @@ static void process_cursor_motion(struct hellwm_server *server, uint32_t time)
     struct wlr_seat *seat = server->seat;
     struct wlr_surface *surface = NULL;
     struct hellwm_toplevel *toplevel = desktop_toplevel_at(server, server->cursor->x, server->cursor->y, &surface, &sx, &sy);
-    //struct hellwm_view *view = desktop_view_at(server, server->cursor->x, server->cursor->y, &surface, &sx, &sy);
+    struct hellwm_view *view = desktop_view_at(server, server->cursor->x, server->cursor->y, &surface, &sx, &sy);
 
-    if(toplevel == NULL)
+    if (view == NULL)
     {
         wlr_cursor_set_xcursor(server->cursor, server->cursor_mgr, "default");
+
         /* clear pointer focus so future button events and such are not sent to
          * the last client to have the cursor over it */
         wlr_seat_pointer_clear_focus(seat);
         return;
     }
-    else
+
+    if (view->view_type == HELLWM_VIEW_TOPLEVEL)
         hellwm_focus_toplevel(toplevel);
 
     wlr_seat_pointer_notify_enter(seat, surface, sx, sy);
@@ -1664,10 +1665,6 @@ static void server_backend_new_output(struct wl_listener *listener, void *data)
     wl_list_init(&output->layers.bottom);
     wl_list_init(&output->layers.overlay);
 
-    struct wlr_box output_box;
-    wlr_output_layout_get_box(server->output_layout, wlr_output, &output_box);
-    output->usable_area = output_box;
-
     /* Set everything according to config */
     hellwm_config_manager_monitor_set(server->config_manager->monitor_manager, output);
     hellwm_workspace_create_for_output(server, hellwm_workspace_get_next_id(server), output);
@@ -1700,6 +1697,10 @@ static void server_backend_new_output(struct wl_listener *listener, void *data)
     wlr_scene_output_layout_add_output(server->scene_layout, l_output, scene_output);
 
     server->active_output = output;
+
+    struct wlr_box output_box;
+    wlr_output_layout_get_box(server->output_layout, wlr_output, &output_box);
+    output->usable_area = output_box;
 }
 
 static void xdg_toplevel_map(struct wl_listener *listener, void *data) 
@@ -2047,6 +2048,18 @@ static void layer_surface_handle_commit(struct wl_listener *listener, void *data
 
         struct wlr_box output_box;
         wlr_output_layout_get_box(layer_surface->server->output_layout, output->wlr_output, &output_box);
+        LOG("\n\nLAYER_COMMIT: W: %d, H: %d, (%d, %d)\n", 
+                output_box.width,
+                output_box.height,
+                output_box.x,
+                output_box.y
+                );
+        LOG("LAYER_COMMIT: W: %d, H: %d, (%d, %d)\n\n\n", 
+                output->usable_area.width,
+                output->usable_area.height,
+                output->usable_area.x,
+                output->usable_area.y
+                );
 
         wlr_scene_layer_surface_v1_configure(layer_surface->scene, &output_box, &output->usable_area);
     }
