@@ -92,6 +92,8 @@ enum HELLWM_VIEW
 
 struct hellwm_server
 {
+    char **exec_args;
+    size_t exec_args_count;
     uint32_t resize_edges;
 
     unsigned cursor_mode;
@@ -1434,16 +1436,13 @@ static void process_cursor_resize(struct hellwm_server *server, uint32_t time)
     wlr_xdg_toplevel_set_size(toplevel->xdg_toplevel, new_width, new_height);
 }
 
+/* TODO: FIX CLICKS */
 static void process_cursor_motion(struct hellwm_server *server, uint32_t time)
 {
-    /* get the output that the cursor is on currently */
-    if(server->cursor_mode == HELLWM_CURSOR_MOVE)
-    {
+    if(server->cursor_mode == HELLWM_CURSOR_MOVE) {
         process_cursor_move(server, time);
         return;
-    }
-    else if (server->cursor_mode == HELLWM_CURSOR_RESIZE)
-    {
+    } else if (server->cursor_mode == HELLWM_CURSOR_RESIZE) {
         process_cursor_resize(server, time);
         return;
     }
@@ -1451,37 +1450,22 @@ static void process_cursor_motion(struct hellwm_server *server, uint32_t time)
     double sx, sy;
     struct wlr_seat *seat = server->seat;
     struct wlr_surface *surface = NULL;
-
     struct hellwm_toplevel *toplevel = desktop_toplevel_at(server, server->cursor->x, server->cursor->y, &surface, &sx, &sy);
+    //struct hellwm_view *view = desktop_view_at(server, server->cursor->x, server->cursor->y, &surface, &sx, &sy);
 
-    if (!toplevel) 
+    if(toplevel == NULL)
     {
-        /* If there's no toplevel under the cursor, set the cursor image to a
-         * default. This is what makes the cursor image appear when you move it
-         * around the screen, not over any toplevels. */
         wlr_cursor_set_xcursor(server->cursor, server->cursor_mgr, "default");
-    }
-    if (surface) {
-        /*
-         * Send pointer enter and motion events.
-         *
-         * The enter event gives the surface "pointer focus", which is distinct
-         * from keyboard focus. You get pointer focus by moving the pointer over
-         * a window.
-         *
-         * Note that wlroots will avoid sending duplicate enter/motion events if
-         * the surface has already has pointer focus or if the client is already
-         * aware of the coordinates passed.
-         */
-        wlr_seat_pointer_notify_enter(seat, surface, sx, sy);
-        wlr_seat_pointer_notify_motion(seat, time, sx, sy);
+        /* clear pointer focus so future button events and such are not sent to
+         * the last client to have the cursor over it */
+        wlr_seat_pointer_clear_focus(seat);
+        return;
     }
     else
-    {
-        /* Clear pointer focus so future button events and such are not sent to
-         * the last client to have the cursor over it. */
-        wlr_seat_pointer_clear_focus(seat);
-    }
+        hellwm_focus_toplevel(toplevel);
+
+    wlr_seat_pointer_notify_enter(seat, surface, sx, sy);
+    wlr_seat_pointer_notify_motion(seat, time, sx, sy);
 }
 
 static void server_cursor_motion(struct wl_listener *listener, void *data)
@@ -1989,47 +1973,16 @@ struct hellwm_view *desktop_view_at(struct hellwm_server *server, double lx, dou
 
 void xdg_popup_commit(struct wl_listener *listener, void *data)
 {
-    /* Called when a new surface state is committed. */
     struct hellwm_popup *popup = wl_container_of(listener, popup, commit);
-    struct hellwm_server *server = popup->server;
 
-    if(!popup->xdg_popup->base->initialized) return;
-
-    if(popup->xdg_popup->base->initial_commit)
+    if (popup->xdg_popup->base->initial_commit) 
     {
         /* When an xdg_surface performs an initial commit, the compositor must
          * reply with a configure so the client can map the surface.
          * hellwm sends an empty configure. A more sophisticated compositor
          * might change an xdg_popup's geometry to ensure it's not positioned
          * off-screen, for example. */
-        struct hellwm_view *root = root_parent_surface(popup->xdg_popup->base->surface);
-
-        if(root == NULL)
-        {
-            wlr_xdg_surface_schedule_configure(popup->xdg_popup->base);
-        }
-        else if(root->view_type == HELLWM_VIEW_TOPLEVEL)
-        {
-            struct wlr_box output_box = root->toplevel->workspace->output->usable_area;
-
-            output_box.x -= root->toplevel->scene_tree->node.x;
-            output_box.y -= root->toplevel->scene_tree->node.y;
-
-            wlr_xdg_popup_unconstrain_from_box(popup->xdg_popup, &output_box);
-        }
-        else
-        {
-            struct hellwm_layer_surface *layer_surface= root->layer_surface;
-            struct wlr_output *wlr_output = layer_surface->wlr_layer_surface->output;
-
-            struct wlr_box output_box;
-            wlr_output_layout_get_box(server->output_layout, wlr_output, &output_box);
-
-            output_box.x -= layer_surface->scene->tree->node.x;
-            output_box.y -= layer_surface->scene->tree->node.y;
-
-            wlr_xdg_popup_unconstrain_from_box(popup->xdg_popup, &output_box);
-        }
+        wlr_xdg_surface_schedule_configure(popup->xdg_popup->base);
     }
 }
 
@@ -2051,7 +2004,8 @@ static void server_new_xdg_popup(struct wl_listener *listener, void *data)
     struct hellwm_popup *popup = calloc(1, sizeof(*popup));
     popup->xdg_popup = xdg_popup;
 
-    if(xdg_popup->parent != NULL) {
+    if(xdg_popup->parent != NULL)
+    {
         struct wlr_xdg_surface *parent = wlr_xdg_surface_try_from_wlr_surface(xdg_popup->parent);
         struct wlr_scene_tree *parent_tree = parent->data;
         popup->scene_tree = wlr_scene_xdg_surface_create(parent_tree, xdg_popup->base);
@@ -2107,7 +2061,7 @@ static void layer_surface_handle_map(struct wl_listener *listener, void *data)
     struct hellwm_output *output = wlr_layer_surface->output->data;
 
     if (output == NULL)
-        output = layer_surface->server->active_output;
+        output = server->active_output;
 
     uint32_t layer = wlr_layer_surface->pending.layer;
 
@@ -2140,10 +2094,10 @@ static void layer_surface_handle_map(struct wl_listener *listener, void *data)
 static void layer_surface_handle_unmap(struct wl_listener *listener, void *data)
 {
     struct hellwm_layer_surface *layer_surface = wl_container_of(listener, layer_surface, unmap);
+    struct hellwm_server *server = layer_surface->server;
 
     struct wlr_layer_surface_v1_state *state = &layer_surface->wlr_layer_surface->current;
     struct hellwm_output *output = layer_surface->wlr_layer_surface->output->data;
-    struct hellwm_server *server = output->server;
 
     if(layer_surface == server->layer_exclusive_keyboard)
     {
@@ -2221,6 +2175,7 @@ void layer_surface_handle_new_popup(struct wl_listener *listener, void *data)
     popup->xdg_popup->base->data = popup->scene_tree;
 }
 
+// TODO: fix
 static void handle_new_layer_surface(struct wl_listener *listener, void *data)
 {
     struct hellwm_server *server = wl_container_of(listener, server, new_layer_surface);
@@ -2231,8 +2186,7 @@ static void handle_new_layer_surface(struct wl_listener *listener, void *data)
     layer_surface->wlr_layer_surface->data = layer_surface;
     layer_surface->server = server;
 
-    int layer = wlr_layer_surface->pending.layer;
-    switch(layer)
+    switch(wlr_layer_surface->pending.layer)
     {
         case ZWLR_LAYER_SHELL_V1_LAYER_BACKGROUND:
             layer_surface->scene = wlr_scene_layer_surface_v1_create(server->layers[0], wlr_layer_surface);
@@ -2677,13 +2631,23 @@ int hellwm_lua_env(lua_State *L)
 int hellwm_lua_exec(lua_State *L)
 {
     int nargs = lua_gettop(L);
+    char **temp = NULL;
 
     for (int i = 1; i<=nargs; i++)
     {
         switch (i)
         {
             case 1:
-                RUN_EXEC(strdup(lua_tostring(L, i)));
+                temp = realloc(GLOBAL_SERVER->exec_args, (GLOBAL_SERVER->exec_args_count + 1) * sizeof(char *));
+                if (temp == NULL) ERR("realloc error");
+
+                GLOBAL_SERVER->exec_args = temp;
+                (GLOBAL_SERVER->exec_args)[GLOBAL_SERVER->exec_args_count] = strdup(lua_tostring(L, i));
+                if ((GLOBAL_SERVER->exec_args)[GLOBAL_SERVER->exec_args_count] == NULL) {
+                    perror("Failed to allocate memory for new argument");
+                    exit(EXIT_FAILURE);
+                }
+                GLOBAL_SERVER->exec_args_count++;
                 break;
             default:
                 LOG("Provided to much arguments to exec() function!\n");
@@ -3217,7 +3181,6 @@ int main(int argc, char *argv[])
     printf("Hello World...\n"); /* https://www.reddit.com/r/ProgrammerHumor/comments/1euwm7v/helloworldfeaturegotmergedguys/ */
 
     wlr_log_init(WLR_DEBUG, NULL);
-    char *startup_cmd = NULL;
     LOG("~HELLWM LOG~\n");
 
     /* server */
@@ -3381,12 +3344,10 @@ int main(int argc, char *argv[])
 
     /* Set the WAYLAND_DISPLAY environment variable to our socket and run the startup command if requested. */
     setenv("WAYLAND_DISPLAY", socket, true);
-    if (startup_cmd)
-    {
-        if (fork() == 0)
-        {
-            execl("/bin/sh", "/bin/sh", "-c", startup_cmd, (void *)NULL);
-        }
+
+    /* Execute programs specified in config */
+    for (int c = 0; c < server->exec_args_count; c++) {
+        RUN_EXEC(server->exec_args[c]);
     }
 
     /* Run the Wayland event loop. This does not return until you exit the
@@ -3402,7 +3363,3 @@ int main(int argc, char *argv[])
 
     return 0;
 }
-
-/*
- * TODO: Rewrite tiling to nodes.
- */
