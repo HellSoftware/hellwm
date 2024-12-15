@@ -141,7 +141,6 @@ struct hellwm_server
 
     struct wlr_layer_shell_v1 *layer_shell;
     struct wlr_xdg_decoration_manager_v1 *xdg_decoration_manager;
-    //struct wlr_xdg_activation_v1 *xdg_activation; 
 
     /* listeners */
     struct wl_listener renderer_lost;
@@ -164,7 +163,6 @@ struct hellwm_server
 
     struct wl_listener new_layer_surface;
     struct wl_listener xdg_decoration_new_toplevel_decoration;
-    //struct wl_listener xdg_activation_request_activate;
 };
 
 struct hellwm_output
@@ -761,8 +759,8 @@ hellwm_config_manager_decoration *hellwm_config_manager_decoration_create()
     decoration->master_ratio = 0.7;
 
         /* gaps */
-    decoration->inner_gap = 5;
-    decoration->outer_gap = 5;
+    decoration->inner_gap = 10;
+    decoration->outer_gap = 10;
 
     /* border */
     decoration->border_size = 3;
@@ -3238,7 +3236,6 @@ int main(int argc, char *argv[])
     server->new_xdg_popup.notify = server_new_xdg_popup;
     wl_signal_add(&server->xdg_shell->events.new_popup, &server->new_xdg_popup);
 
-
     /* wlr_server_decoration */
     server->wlr_server_decoration_manager = wlr_server_decoration_manager_create(server->wl_display);
     wlr_server_decoration_manager_set_default_mode(server->wlr_server_decoration_manager, WLR_SERVER_DECORATION_MANAGER_MODE_SERVER);
@@ -3248,6 +3245,10 @@ int main(int argc, char *argv[])
     server->xdg_decoration_manager = wlr_xdg_decoration_manager_v1_create(server->wl_display);
     server->xdg_decoration_new_toplevel_decoration.notify = xdg_decoration_new_toplevel_decoration;
     wl_signal_add(&server->xdg_decoration_manager->events.new_toplevel_decoration, &server->xdg_decoration_new_toplevel_decoration);
+
+
+    /* TODO: idle_notifier */
+    /* TODO: session lock */
 
 
     /* wlr_layer_shell_v1 */
