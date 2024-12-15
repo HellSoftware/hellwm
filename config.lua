@@ -76,3 +76,4 @@ env("GTK_THEME", "Adwaita")
 -- Exec daemons etc.
 exec("swww init ; swww img ~/wallpapers/anime-girls-balloon-women-sky-wallpaper-659852899b3ce30278d24f855a4395e8.jpg")
 exec("waybar")
+exec("alacritty")

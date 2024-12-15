@@ -490,7 +490,6 @@ static void hellwm_focus_next_toplevel(struct hellwm_server *server);
 static void hellwm_focus_prev_toplevel(struct hellwm_server *server);
 static void hellwm_focus_prev_toplevel_center(struct hellwm_server *server);
 static void hellwm_focus_next_toplevel_center(struct hellwm_server *server);
-static void hellwm_focus_and_center_toplevel(struct hellwm_toplevel *toplevel);
 
 static void keyboard_handle_key(struct wl_listener *listener, void *data);
 static void keyboard_handle_destroy(struct wl_listener *listener, void *data);
@@ -557,6 +556,8 @@ void layout_horizontal_split(struct hellwm_workspace *workspace)
     int count = wl_list_length(&workspace->toplevels);
     if (count == 0) return;
 
+    int gaps = workspace->last_focused->server->config_manager->decoration->outer_gap;
+
     struct hellwm_output *output = workspace->output;
     int window_width = output->wlr_output->width / count;
     int window_height = output->wlr_output->height;
@@ -567,69 +568,9 @@ void layout_horizontal_split(struct hellwm_workspace *workspace)
         int x = i * window_width;
         int y = 0;
 
-        wlr_scene_node_set_position(&toplevel->scene_tree->node, x, y);
-        wlr_xdg_toplevel_set_size(toplevel->xdg_toplevel, window_width, window_height);
+        wlr_scene_node_set_position(&toplevel->scene_tree->node, x + gaps, y + output->usable_area.y + gaps);
+        wlr_xdg_toplevel_set_size(toplevel->xdg_toplevel, window_width - gaps*2, window_height - output->usable_area.y - gaps*2);
         i++;
-    }
-}
-
-static void set_toplevel_position_and_size(struct hellwm_toplevel *toplevel, int x, int y, int width, int height)
-{
-    wlr_scene_node_set_position(&toplevel->scene_tree->node, x, y);
-    wlr_xdg_toplevel_set_size(toplevel->xdg_toplevel, width, height);
-}
-
-
-void layout_circle(struct hellwm_workspace *workspace)
-{
-    if (!workspace || !workspace->output) return;
-
-    int count = wl_list_length(&workspace->toplevels);
-    if (count == 0) return;
-    if (workspace->output == NULL) return;
-
-    int output_width = workspace->output->usable_area.width;
-    int output_height = workspace->output->usable_area.height;
-
-    int center_x = output_width / 2;
-    int center_y = output_height / 2;
-    int radius = (output_width < output_height ? output_width : output_height) / 3;
-
-    int i = 0;
-    struct hellwm_toplevel *toplevel;
-    wl_list_for_each(toplevel, &workspace->toplevels, link)
-    {
-        double angle = 2 * 3.141592653 * i / count;
-        int x = center_x + (int)(radius * cos(angle)) - (output_width / count) / 2;
-        int y = center_y + (int)(radius * sin(angle)) - (output_height / count) / 2;
-
-        wlr_scene_node_set_position(&toplevel->scene_tree->node, x, y);
-        wlr_xdg_toplevel_set_size(toplevel->xdg_toplevel, output_width / count, output_height / count);
-
-        hellwm_focus_and_center_toplevel(toplevel);
-
-        i++;
-    }
-}
-
-static void layout_monocle(struct hellwm_workspace *workspace)
-{
-    if (!workspace || !workspace->output) return;
-
-    struct hellwm_output *output = workspace->output;
-    int output_width = output->wlr_output->width;
-    int output_height = output->wlr_output->height;
-
-    struct hellwm_toplevel *toplevel;
-
-    wl_list_for_each(toplevel, &workspace->toplevels, link) {
-        set_toplevel_position_and_size(
-            toplevel,
-            0,
-            0,
-            output_width,
-            output_height
-        );
     }
 }
 
@@ -644,9 +585,6 @@ void apply_layout(struct hellwm_workspace *workspace, int layout_type)
     {
         case 1:
             layout_horizontal_split(workspace);
-            break;
-        case 2:
-            layout_monocle(workspace);
             break;
         default:
             layout_horizontal_split(workspace);
@@ -925,16 +863,37 @@ static void hellwm_focus_toplevel(struct hellwm_toplevel *toplevel)
 
 static void focus_layer_surface(struct hellwm_layer_surface *layer_surface)
 {
-    //struct hellwm_server *server = layer_surface->server;
-    //enum zwlr_layer_surface_v1_keyboard_interactivity keyboard_interactive = layer_surface->wlr_layer_surface->current.keyboard_interactive;
-}
+    struct hellwm_server *server = layer_surface->server;
+    enum zwlr_layer_surface_v1_keyboard_interactivity keyboard_interactive = layer_surface->wlr_layer_surface->current.keyboard_interactive;
 
-static void hellwm_focus_and_center_toplevel(struct hellwm_toplevel *toplevel)
-{
-    hellwm_focus_toplevel(toplevel);
+    switch(keyboard_interactive) 
+    {
+        case ZWLR_LAYER_SURFACE_V1_KEYBOARD_INTERACTIVITY_NONE: {
+            return;
+        }
+        case ZWLR_LAYER_SURFACE_V1_KEYBOARD_INTERACTIVITY_EXCLUSIVE: {
+            //server->prev_focused = server->focused_toplevel;
+            //unfocus_focused_toplevel();
+            //server->layer_exclusive_keyboard = layer_surface;
+            struct wlr_keyboard *keyboard = wlr_seat_get_keyboard(server->seat);
 
-    // TODO: remove it ? or make it optional based on layout AFTER ADDING NODES!
-    apply_layout(toplevel->server->active_workspace, toplevel->server->active_workspace->layout);
+            if(keyboard != NULL) 
+            {
+              wlr_seat_keyboard_notify_enter(server->seat, layer_surface->wlr_layer_surface->surface, keyboard->keycodes, keyboard->num_keycodes, &keyboard->modifiers);
+            }
+            return;
+        }
+        case ZWLR_LAYER_SURFACE_V1_KEYBOARD_INTERACTIVITY_ON_DEMAND: {
+            if(server->layer_exclusive_keyboard != NULL) return;
+            //server->prev_focused = server->focused_toplevel;
+            struct wlr_keyboard *keyboard = wlr_seat_get_keyboard(server->seat);
+            if(keyboard != NULL) 
+            {
+              wlr_seat_keyboard_notify_enter(server->seat, layer_surface->wlr_layer_surface->surface, keyboard->keycodes, keyboard->num_keycodes, &keyboard->modifiers);
+            }
+            return;
+        }
+    }
 }
 
 static void hellwm_focus_next_toplevel(struct hellwm_server *server)
@@ -1464,6 +1423,8 @@ static void process_cursor_motion(struct hellwm_server *server, uint32_t time)
 
     if (view->view_type == HELLWM_VIEW_TOPLEVEL)
         hellwm_focus_toplevel(toplevel);
+    if (view->view_type == HELLWM_VIEW_LAYER)
+        focus_layer_surface(view->layer_surface);
 
     wlr_seat_pointer_notify_enter(seat, surface, sx, sy);
     wlr_seat_pointer_notify_motion(seat, time, sx, sy);
@@ -1755,7 +1716,7 @@ static void xdg_toplevel_commit(struct wl_listener *listener, void *data)
     {
         //LOG("COMMIT WLOG: %d - %d\n", width, toplevel->xdg_toplevel->base->surface->current.buffer_width );
         //LOG("COMMIT HLOG: %d - %d\n\n", height, toplevel->xdg_toplevel->base->surface->current.buffer_height);
-        wlr_xdg_toplevel_set_size(toplevel->xdg_toplevel,width, height);
+        //wlr_xdg_toplevel_set_size(toplevel->xdg_toplevel,width, height);
     }
 
 
@@ -2048,19 +2009,6 @@ static void layer_surface_handle_commit(struct wl_listener *listener, void *data
 
         struct wlr_box output_box;
         wlr_output_layout_get_box(layer_surface->server->output_layout, output->wlr_output, &output_box);
-        LOG("\n\nLAYER_COMMIT: W: %d, H: %d, (%d, %d)\n", 
-                output_box.width,
-                output_box.height,
-                output_box.x,
-                output_box.y
-                );
-        LOG("LAYER_COMMIT: W: %d, H: %d, (%d, %d)\n\n\n", 
-                output->usable_area.width,
-                output->usable_area.height,
-                output->usable_area.x,
-                output->usable_area.y
-                );
-
         wlr_scene_layer_surface_v1_configure(layer_surface->scene, &output_box, &output->usable_area);
     }
 }
@@ -2102,6 +2050,7 @@ static void layer_surface_handle_map(struct wl_listener *listener, void *data)
     wlr_scene_layer_surface_v1_configure(layer_surface->scene, &output_box, &output->usable_area);
 
     focus_layer_surface(layer_surface);
+    apply_layout(server->active_workspace, server->active_workspace->layout);
 }
 
 static void layer_surface_handle_unmap(struct wl_listener *listener, void *data)
@@ -2157,6 +2106,7 @@ static void layer_surface_handle_unmap(struct wl_listener *listener, void *data)
         }
         wl_list_remove(&layer_surface->link);
     }
+    apply_layout(server->active_workspace, server->active_workspace->layout);
 }
 
 static void layer_surface_handle_destroy(struct wl_listener *listener, void *data)
