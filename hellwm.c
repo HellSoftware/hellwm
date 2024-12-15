@@ -170,6 +170,7 @@ struct hellwm_output
 {
     struct wl_list link;
     struct wlr_box usable_area;
+    struct wlr_box total_area;
     struct wlr_output *wlr_output;
 
     struct hellwm_server *server;
@@ -197,8 +198,10 @@ struct hellwm_workspace
     struct wl_list link;
     struct wl_list toplevels;
 
+    struct hellwm_server *server;
     struct hellwm_output *output;
     struct hellwm_toplevel *last_focused;
+    struct hellwm_toplevel *prev_focused;
 };
 
 struct hellwm_toplevel
@@ -210,6 +213,7 @@ struct hellwm_toplevel
     struct hellwm_server *server;
     struct hellwm_workspace *workspace;
 
+    struct wlr_box prev_geom;
     struct wlr_scene_tree *scene_tree;
     struct wlr_xdg_toplevel *xdg_toplevel;
 
@@ -557,7 +561,7 @@ void layout_horizontal_split(struct hellwm_workspace *workspace)
     int count = wl_list_length(&workspace->toplevels);
     if (count == 0) return;
 
-    int gaps = workspace->last_focused->server->config_manager->decoration->outer_gap;
+    int gaps = workspace->server->config_manager->decoration->outer_gap;
 
     struct hellwm_output *output = workspace->output;
     int window_width = output->wlr_output->width / count;
@@ -862,6 +866,35 @@ static void hellwm_focus_toplevel(struct hellwm_toplevel *toplevel)
     }
 }
 
+static void unfocus_focused(struct hellwm_server *server)
+{
+    if (server == NULL)
+        return;
+
+    struct wlr_seat *seat = server->seat;
+    struct wlr_surface *focused_surface = seat->keyboard_state.focused_surface;
+
+    if (focused_surface == NULL) {
+        return;
+    }
+
+    struct hellwm_toplevel *toplevel = NULL;
+    wl_list_for_each(toplevel, &server->active_workspace->toplevels, link)
+    {
+        if (toplevel->xdg_toplevel->base->surface == focused_surface)
+        {
+            wlr_xdg_toplevel_set_activated(toplevel->xdg_toplevel, false);
+
+            wlr_seat_keyboard_clear_focus(seat);
+
+            server->active_workspace->last_focused = NULL;
+            return;
+        }
+    }
+
+    wlr_seat_keyboard_clear_focus(seat);
+}
+
 static void focus_layer_surface(struct hellwm_layer_surface *layer_surface)
 {
     struct hellwm_server *server = layer_surface->server;
@@ -873,20 +906,17 @@ static void focus_layer_surface(struct hellwm_layer_surface *layer_surface)
             return;
         }
         case ZWLR_LAYER_SURFACE_V1_KEYBOARD_INTERACTIVITY_EXCLUSIVE: {
-            //server->prev_focused = server->focused_toplevel;
-            //unfocus_focused_toplevel();
-            //server->layer_exclusive_keyboard = layer_surface;
+            unfocus_focused(server);
+            server->layer_exclusive_keyboard = layer_surface;
             struct wlr_keyboard *keyboard = wlr_seat_get_keyboard(server->seat);
 
-            if(keyboard != NULL) 
-            {
+            if(keyboard != NULL) {
               wlr_seat_keyboard_notify_enter(server->seat, layer_surface->wlr_layer_surface->surface, keyboard->keycodes, keyboard->num_keycodes, &keyboard->modifiers);
             }
             return;
         }
         case ZWLR_LAYER_SURFACE_V1_KEYBOARD_INTERACTIVITY_ON_DEMAND: {
             if(server->layer_exclusive_keyboard != NULL) return;
-            //server->prev_focused = server->focused_toplevel;
             struct wlr_keyboard *keyboard = wlr_seat_get_keyboard(server->seat);
             if(keyboard != NULL) 
             {
@@ -1668,7 +1698,13 @@ static void server_backend_new_output(struct wl_listener *listener, void *data)
 
     struct wlr_box output_box;
     wlr_output_layout_get_box(server->output_layout, wlr_output, &output_box);
+
     output->usable_area = output_box;
+
+    output->total_area.width = wlr_output->width;
+    output->total_area.height = wlr_output->height;
+    output->total_area.x = 0;
+    output->total_area.y = 0;
 }
 
 static void xdg_toplevel_map(struct wl_listener *listener, void *data) 
@@ -1795,7 +1831,7 @@ static void xdg_toplevel_request_resize(struct wl_listener *listener, void *data
     begin_interactive(toplevel, HELLWM_CURSOR_RESIZE, event->edges);
 }
 
-static void xdg_toplevel_request_maximize(struct wl_listener *listener, void *data) 
+static void xdg_toplevel_request_maximize(struct wl_listener *listener, void *data)
 {
     /* This event is raised when a client would like to maximize itself,
      * typically because the user clicked on the maximize button on client-side
@@ -1804,21 +1840,77 @@ static void xdg_toplevel_request_maximize(struct wl_listener *listener, void *da
      * wlr_xdg_surface_schedule_configure() is used to send an empty reply.
      * However, if the request was sent before an initial commit, we don't do
      * anything and let the client finish the initial surface setup. */
+
     struct hellwm_toplevel *toplevel = wl_container_of(listener, toplevel, request_maximize);
-    if (toplevel->xdg_toplevel->base->initialized) 
-    { 
+
+    if(toplevel->xdg_toplevel->base->initialized)
         wlr_xdg_surface_schedule_configure(toplevel->xdg_toplevel->base);
-    }
 }
 
-static void xdg_toplevel_request_fullscreen(struct wl_listener *listener, void *data) 
+void toplevel_unset_fullscreen(struct hellwm_toplevel *toplevel)
 {
-    /* Just as with request_maximize, we must send a configure here. */
+    if (toplevel == NULL || toplevel->xdg_toplevel == NULL)
+        return;
+
+    struct wlr_box prev = toplevel->prev_geom;
+
+    wlr_scene_node_set_position(&toplevel->scene_tree->node, prev.x, prev.y);
+    wlr_xdg_toplevel_set_size(toplevel->xdg_toplevel, prev.width, prev.height);
+
+    wlr_xdg_toplevel_set_fullscreen(toplevel->xdg_toplevel, false);
+}
+
+void toplevel_set_fullscreen(struct hellwm_toplevel *toplevel)
+{
+    if (toplevel == NULL || toplevel->xdg_toplevel == NULL)
+        return;
+
+    struct hellwm_output *output = toplevel->server->active_workspace->output;
+    if (output == NULL)
+        return;
+
+    struct wlr_box *output_box = &output->total_area;
+
+    toplevel->prev_geom.x = toplevel->scene_tree->node.x;
+    toplevel->prev_geom.y = toplevel->scene_tree->node.y;
+    toplevel->prev_geom.width = toplevel->xdg_toplevel->current.width;
+    toplevel->prev_geom.height = toplevel->xdg_toplevel->current.height;
+
+    wlr_scene_node_set_position(&toplevel->scene_tree->node, output_box->x, output_box->y);
+    wlr_xdg_toplevel_set_size(toplevel->xdg_toplevel, output_box->width, output_box->height);
+
+    wlr_xdg_toplevel_set_fullscreen(toplevel->xdg_toplevel, true);
+}
+
+void xdg_toplevel_request_fullscreen(struct wl_listener *listener, void *data)
+{
     struct hellwm_toplevel *toplevel = wl_container_of(listener, toplevel, request_fullscreen);
-    if (toplevel->xdg_toplevel->base->initialized) 
+
+    if (toplevel == NULL || toplevel->xdg_toplevel == NULL)
+        return;
+
+    if (toplevel->xdg_toplevel->requested.fullscreen)
     {
-        wlr_xdg_surface_schedule_configure(toplevel->xdg_toplevel->base);
+        toplevel_set_fullscreen(toplevel);
     }
+    else
+    {
+        toplevel_unset_fullscreen(toplevel);
+    }
+
+    if (toplevel->xdg_toplevel->base->initialized)
+        wlr_xdg_surface_schedule_configure(toplevel->xdg_toplevel->base);
+}
+
+
+void toplevel_handle_set_app_id(struct wl_listener *listener, void *data)
+{
+    struct hellwm_toplevel *toplevel = wl_container_of(listener, toplevel, set_title);
+}
+
+void toplevel_handle_set_title(struct wl_listener *listener, void *data)
+{
+    struct hellwm_toplevel *toplevel = wl_container_of(listener, toplevel, set_title);
 }
 
 static void server_new_xdg_toplevel(struct wl_listener *listener, void *data) 
@@ -2160,7 +2252,6 @@ void layer_surface_handle_new_popup(struct wl_listener *listener, void *data)
     popup->xdg_popup->base->data = popup->scene_tree;
 }
 
-// TODO: fix
 static void handle_new_layer_surface(struct wl_listener *listener, void *data)
 {
     struct hellwm_server *server = wl_container_of(listener, server, new_layer_surface);
@@ -3015,8 +3106,11 @@ struct hellwm_workspace *hellwm_workspace_create_begin(struct hellwm_server *ser
     wl_list_insert(&server->workspaces, &workspace->link);
     wl_list_init(&workspace->toplevels);
     workspace->last_focused = NULL;
+    workspace->prev_focused = NULL;
     workspace->id = workspace_id;
     workspace->layout = 1;
+
+    workspace->server = server;
 
     return workspace;
 }
@@ -3127,9 +3221,12 @@ static void hellwm_workspace_change(struct hellwm_server *server, int workspace_
             }
         }
     }
+
     server->active_workspace = workspace;
     if (server->active_workspace->last_focused != NULL)
         hellwm_focus_toplevel(server->active_workspace->last_focused);
+    else
+        unfocus_focused(server);
 
     server->layout_reapply = 1;
 }
