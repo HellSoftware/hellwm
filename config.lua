@@ -81,7 +81,18 @@ bind("Alt_L, n", "focus_next_center")   -- Focus next and center Window
 
 -- Set environment variables
 env("EDITOR", "nvim")
+env("BROWSER ", "firefox")
 env("GTK_THEME", "Adwaita")
+
+env("XDG_SESSION_TYPE", "wayland")
+env("QT_QPA_PLATFORM", "wayland")
+
+env("QT_WAYLAND_DISABLE_WINDOWDECORATION", "1")
+env("QT_STYLE_OVERRIDE", "kvantum")
+env("QT_AUTO_SCREEN_SCALE_FACTOR", "1")
+
+env("XDG_CURRENT_DESKTOP", "hellwm")
+env("XDG_SESSION_DESKTOP", "hellwm")
 
 -- Exec daemons etc.
 exec("swww init ; swww img ~/wallpapers/anime-girls-balloon-women-sky-wallpaper-659852899b3ce30278d24f855a4395e8.jpg")

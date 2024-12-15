@@ -22,7 +22,7 @@ LDLIBS    = `$(PKG_CONFIG) --libs $(PKGS)` $(LIBS)
 
 all: hellwm
 hellwm: hellwm.o
-	$(CC) hellwm.o $(LDLIBS) $(LDFLAGS) $(HELLWMCFLAGS) -o $@
+	$(CC) hellwm.o $(LDLIBS) $(HELLWMCFLAGS) -o $@
 hellwm.o: hellwm.c cursor-shape-v1-protocol.h xdg-shell-protocol.h wlr-layer-shell-unstable-v1-protocol.h
 
 # WAYLAND

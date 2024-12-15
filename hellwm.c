@@ -1,5 +1,6 @@
-#include <math.h>
+#include <sys/stat.h>
 #include <time.h>
+#include <fcntl.h>
 #include <stdio.h>
 #include <assert.h>
 #include <getopt.h>
@@ -8,6 +9,7 @@
 #include <string.h>
 #include <unistd.h>
 #include <stdbool.h>
+#include <pthread.h>
 
 #include <lua.h>
 #include <lauxlib.h>
@@ -18,8 +20,6 @@
 
 #include <wayland-util.h>
 #include <wayland-server-core.h>
-
-
 #include <wlr/backend.h>
 #include <wlr/util/box.h>
 #include <wlr/util/log.h>
@@ -36,12 +36,14 @@
 #include <wlr/render/wlr_renderer.h>
 #include <wlr/types/wlr_xdg_shell.h>
 #include <wlr/types/wlr_compositor.h>
-#include <wlr/types/wlr_viewporter.h>
-#include <wlr/types/wlr_data_device.h>
 #include <wlr/types/wlr_input_device.h>
 #include <wlr/types/wlr_output_layout.h>
-#include <wlr/types/wlr_subcompositor.h>
 #include <wlr/types/wlr_xcursor_manager.h>
+
+#include <wlr/types/wlr_viewporter.h>
+#include <wlr/types/wlr_data_device.h>
+#include <wlr/types/wlr_subcompositor.h>
+#include <wlr/types/wlr_presentation_time.h>
 #include <wlr/types/wlr_server_decoration.h>
 
 #include <wlr/types/wlr_screencopy_v1.h>
@@ -51,11 +53,11 @@
 #include <wlr/types/wlr_export_dmabuf_v1.h>
 #include <wlr/types/wlr_xdg_decoration_v1.h>
 #include <wlr/types/wlr_alpha_modifier_v1.h>
-#include <wlr/types/wlr_presentation_time.h>
 #include <wlr/types/wlr_fractional_scale_v1.h>
 #include <wlr/types/wlr_linux_drm_syncobj_v1.h>
 #include <wlr/types/wlr_primary_selection_v1.h>
 #include <wlr/types/wlr_single_pixel_buffer_v1.h>
+#include <wlr/types/wlr_foreign_toplevel_management_v1.h>
 
 #include "wlr-layer-shell-unstable-v1-protocol.h"
 
@@ -88,6 +90,12 @@ enum HELLWM_VIEW
     HELLWM_VIEW_TOPLEVEL,
     HELLWM_VIEW_POPUP,
     HELLWM_VIEW_LAYER
+};
+
+enum hell_ipc_type
+{
+    HELL_IPC_WORKSPACE,
+    HELL_IPC_CLIENT
 };
 
 struct hellwm_server
@@ -131,6 +139,14 @@ struct hellwm_server
     struct wlr_output_layout *output_layout;
     struct wlr_subcompositor *subcompositor;
     struct wlr_scene_output_layout *scene_layout;
+
+    struct wlr_viewporter *viewporter;
+    struct wlr_data_device_manager *data_device_manager;
+
+    struct wlr_screencopy_manager_v1 *screencopy_manager;
+    struct wlr_xdg_output_manager_v1 *xdg_output_manager;
+    struct wlr_data_control_manager_v1 *data_control_manager;
+    struct wlr_foreign_toplevel_manager_v1 *foreign_toplevel_manager;
     struct wlr_server_decoration_manager *wlr_server_decoration_manager;
 
     struct hellwm_layer_surface *layer_exclusive_keyboard;
@@ -216,6 +232,7 @@ struct hellwm_toplevel
     struct wlr_box prev_geom;
     struct wlr_scene_tree *scene_tree;
     struct wlr_xdg_toplevel *xdg_toplevel;
+    struct wlr_foreign_toplevel_handle_v1 *foreign_toplevel_handle;
 
     /* listeners */
     struct wl_listener map;
@@ -617,8 +634,6 @@ void LOG(const char *format, ...)
     }
 }
 
-
-
 void ERR(const char *format, ...)
 {
     va_list ap;
@@ -637,6 +652,91 @@ void ERR(const char *format, ...)
         fclose(file);
     }
     exit(EXIT_FAILURE);
+}
+
+static void write_to_file(const char *file_path, const char *new_data) {
+    FILE *file = fopen(file_path, "w");
+    if (file == NULL)
+    {
+        perror("Failed to open file");
+        return;
+    }
+    fprintf(file, "%s\n", new_data);
+    fclose(file);
+}
+
+void *hell_ipc_send(void *args)
+{
+    enum hell_ipc_type *type = (enum hell_ipc_type *)args;
+    const char *dir_path = "/tmp/hellwm";
+
+    if (access(dir_path, F_OK) == -1)
+    {
+        if (mkdir(dir_path, 0700) == -1)
+        {
+            LOG("Failed to create directory");
+            return NULL;
+        }
+    }
+        
+    if (*type == HELL_IPC_WORKSPACE)
+    {
+        if (GLOBAL_SERVER->active_workspace == NULL)
+        {
+            LOG("No active workspace found.\n");
+            free(type);
+            return NULL;
+        }
+
+        char workspace_id_str[16];
+        snprintf(workspace_id_str, sizeof(workspace_id_str), "%d", GLOBAL_SERVER->active_workspace->id);
+
+        char workspace_file[256];
+        snprintf(workspace_file, sizeof(workspace_file), "%s/workspace", dir_path);
+
+        write_to_file(workspace_file, workspace_id_str);
+        //LOG("Updated workspace file: %s with ID: %s\n", workspace_file, workspace_id_str);
+    }
+    else if (*type == HELL_IPC_CLIENT)
+    {
+        if (GLOBAL_SERVER->active_workspace == NULL)
+        {
+            //LOG("No active workspace found.\n");
+            free(type);
+            return NULL;
+        }
+        if (GLOBAL_SERVER->active_workspace->last_focused == NULL)
+        {
+            //LOG("No last focused client found in the active workspace.\n");
+            free(type);
+            return NULL;
+        }
+
+        const char *client_title = GLOBAL_SERVER->active_workspace->last_focused->xdg_toplevel->title;
+
+        char active_client_file[256];
+        snprintf(active_client_file, sizeof(active_client_file), "%s/active_client", dir_path);
+
+        write_to_file(active_client_file, client_title);
+        //LOG("Updated client file: %s with Title: %s\n", active_client_file, client_title);
+    }
+    free(type);
+    return NULL;
+}
+
+void hell_ipc_broadcast_alastor_radio(enum hell_ipc_type type)
+{
+    pthread_t thread_id;
+    enum hell_ipc_type *type_copy = malloc(sizeof(enum hell_ipc_type));
+    *type_copy = type;
+
+    if (pthread_create(&thread_id, NULL, hell_ipc_send, type_copy) != 0)
+    {
+        LOG("Failed to create thread");
+        free(type_copy);
+        return;
+    }
+    pthread_detach(thread_id);
 }
 
 void hellwm_lua_error (lua_State *L, const char *fmt, ...)
@@ -864,6 +964,7 @@ static void hellwm_focus_toplevel(struct hellwm_toplevel *toplevel)
     {
         wlr_seat_keyboard_notify_enter(seat, toplevel->xdg_toplevel->base->surface, keyboard->keycodes, keyboard->num_keycodes, &keyboard->modifiers);
     }
+    hell_ipc_broadcast_alastor_radio(HELL_IPC_CLIENT);
 }
 
 static void unfocus_focused(struct hellwm_server *server)
@@ -1714,7 +1815,12 @@ static void xdg_toplevel_map(struct wl_listener *listener, void *data)
 
     hellwm_workspace_add_toplevel(toplevel->server->active_workspace, toplevel);
     hellwm_focus_toplevel(toplevel);
-    apply_layout(toplevel->server->active_workspace, toplevel->server->active_workspace->layout);
+
+     toplevel->foreign_toplevel_handle = wlr_foreign_toplevel_handle_v1_create(toplevel->server->foreign_toplevel_manager);
+     wlr_foreign_toplevel_handle_v1_set_title(toplevel->foreign_toplevel_handle, toplevel->xdg_toplevel->title);
+     wlr_foreign_toplevel_handle_v1_set_app_id(toplevel->foreign_toplevel_handle, toplevel->xdg_toplevel->app_id);
+
+    toplevel->server->layout_reapply = 1;
 }
 
 static void xdg_toplevel_unmap(struct wl_listener *listener, void *data)
@@ -1729,7 +1835,7 @@ static void xdg_toplevel_unmap(struct wl_listener *listener, void *data)
     }
 
     wl_list_remove(&toplevel->link);
-    apply_layout(toplevel->server->active_workspace, toplevel->server->active_workspace->layout);
+    toplevel->server->layout_reapply = 1;
 }
 
 static void xdg_toplevel_commit(struct wl_listener *listener, void *data) 
@@ -1847,7 +1953,7 @@ static void xdg_toplevel_request_maximize(struct wl_listener *listener, void *da
         wlr_xdg_surface_schedule_configure(toplevel->xdg_toplevel->base);
 }
 
-void toplevel_unset_fullscreen(struct hellwm_toplevel *toplevel)
+static void toplevel_unset_fullscreen(struct hellwm_toplevel *toplevel)
 {
     if (toplevel == NULL || toplevel->xdg_toplevel == NULL)
         return;
@@ -1860,7 +1966,7 @@ void toplevel_unset_fullscreen(struct hellwm_toplevel *toplevel)
     wlr_xdg_toplevel_set_fullscreen(toplevel->xdg_toplevel, false);
 }
 
-void toplevel_set_fullscreen(struct hellwm_toplevel *toplevel)
+static void toplevel_set_fullscreen(struct hellwm_toplevel *toplevel)
 {
     if (toplevel == NULL || toplevel->xdg_toplevel == NULL)
         return;
@@ -1882,7 +1988,7 @@ void toplevel_set_fullscreen(struct hellwm_toplevel *toplevel)
     wlr_xdg_toplevel_set_fullscreen(toplevel->xdg_toplevel, true);
 }
 
-void xdg_toplevel_request_fullscreen(struct wl_listener *listener, void *data)
+static void xdg_toplevel_request_fullscreen(struct wl_listener *listener, void *data)
 {
     struct hellwm_toplevel *toplevel = wl_container_of(listener, toplevel, request_fullscreen);
 
@@ -1903,14 +2009,15 @@ void xdg_toplevel_request_fullscreen(struct wl_listener *listener, void *data)
 }
 
 
-void toplevel_handle_set_app_id(struct wl_listener *listener, void *data)
+static void xdg_toplevel_set_app_id(struct wl_listener *listener, void *data)
 {
     struct hellwm_toplevel *toplevel = wl_container_of(listener, toplevel, set_title);
 }
 
-void toplevel_handle_set_title(struct wl_listener *listener, void *data)
+static void xdg_toplevel_set_title(struct wl_listener *listener, void *data)
 {
     struct hellwm_toplevel *toplevel = wl_container_of(listener, toplevel, set_title);
+    hell_ipc_broadcast_alastor_radio(HELL_IPC_CLIENT);
 }
 
 static void server_new_xdg_toplevel(struct wl_listener *listener, void *data) 
@@ -1952,11 +2059,11 @@ static void server_new_xdg_toplevel(struct wl_listener *listener, void *data)
     toplevel->request_fullscreen.notify = xdg_toplevel_request_fullscreen;
     wl_signal_add(&xdg_toplevel->events.request_fullscreen, &toplevel->request_fullscreen);
 
-    //toplevel->set_app_id.notify = xdg_toplevel_set_app_id;
-    //wl_signal_add(&xdg_toplevel->events.set_app_id, &toplevel->set_app_id);
+    toplevel->set_app_id.notify = xdg_toplevel_set_app_id;
+    wl_signal_add(&xdg_toplevel->events.set_app_id, &toplevel->set_app_id);
 
-    //toplevel->set_title.notify = toplevel_set_title;
-    //wl_signal_add(&xdg_toplevel->events.set_title, &toplevel->set_title);
+    toplevel->set_title.notify = xdg_toplevel_set_title;
+    wl_signal_add(&xdg_toplevel->events.set_title, &toplevel->set_title);
 }
 
 static void xdg_decoration_new_toplevel_decoration(struct wl_listener *listener, void *data)
@@ -3229,6 +3336,8 @@ static void hellwm_workspace_change(struct hellwm_server *server, int workspace_
         unfocus_focused(server);
 
     server->layout_reapply = 1;
+
+    hell_ipc_broadcast_alastor_radio(HELL_IPC_WORKSPACE);
 }
 
 /* Return next id based on count of workspaces */
@@ -3326,23 +3435,31 @@ int main(int argc, char *argv[])
     }
 
 
-    server->compositor = wlr_compositor_create(server->wl_display, 6, server->renderer);
+    server->compositor = wlr_compositor_create(server->wl_display, 5, server->renderer);
     server->subcompositor = wlr_subcompositor_create(server->wl_display);
+
     wlr_screencopy_manager_v1_create(server->wl_display);
-    wlr_data_device_manager_create(server->wl_display);
-    wlr_data_control_manager_v1_create(server->wl_display);
+
+
+
+    wlr_alpha_modifier_v1_create(server->wl_display);
     wlr_export_dmabuf_manager_v1_create(server->wl_display);
-    wlr_primary_selection_v1_device_manager_create(server->wl_display);
-    wlr_viewporter_create(server->wl_display);
+    wlr_presentation_create(server->wl_display, server->backend);
     wlr_single_pixel_buffer_manager_v1_create(server->wl_display);
     wlr_fractional_scale_manager_v1_create(server->wl_display, 1);
-    wlr_presentation_create(server->wl_display, server->backend);
-    wlr_alpha_modifier_v1_create(server->wl_display);
+    wlr_primary_selection_v1_device_manager_create(server->wl_display);
+
+
+    server->viewporter = wlr_viewporter_create(server->wl_display);
+
+    server->data_device_manager = wlr_data_device_manager_create(server->wl_display);
+    server->data_control_manager = wlr_data_control_manager_v1_create(server->wl_display);
+    server->foreign_toplevel_manager = wlr_foreign_toplevel_manager_v1_create(server->wl_display);
 
 
     /* output layout */
     server->output_layout = wlr_output_layout_create(server->wl_display);
-    wlr_xdg_output_manager_v1_create(server->wl_display, server->output_layout);
+    server->xdg_output_manager = wlr_xdg_output_manager_v1_create(server->wl_display, server->output_layout);
 
 
     /* scene */
