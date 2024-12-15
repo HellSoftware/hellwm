@@ -61,6 +61,8 @@
 
 #include "wlr-layer-shell-unstable-v1-protocol.h"
 
+#define HELL_IPC_PIPE "/tmp/hellwm/"
+
 /* structures */
 enum hellwm_cursor_mode
 {
@@ -654,7 +656,8 @@ void ERR(const char *format, ...)
     exit(EXIT_FAILURE);
 }
 
-static void write_to_file(const char *file_path, const char *new_data) {
+static void write_to_file(const char *file_path, const char *new_data)
+{
     FILE *file = fopen(file_path, "w");
     if (file == NULL)
     {
@@ -665,14 +668,71 @@ static void write_to_file(const char *file_path, const char *new_data) {
     fclose(file);
 }
 
+char *generate_workspace_json()
+{
+    char *json_str = (char *)malloc(1024);
+    if (json_str == NULL) {
+        perror("Failed to allocate memory for JSON string");
+        return NULL;
+    }
+
+    strcpy(json_str, "{ \"workspaces\": [");
+
+    struct hellwm_workspace *workspace;
+    int first = 1;
+    wl_list_for_each(workspace, &GLOBAL_SERVER->workspaces, link)
+    {
+        if (!first) {
+            strcat(json_str, ", ");
+        }
+
+        char workspace_entry[256];
+        snprintf(workspace_entry, sizeof(workspace_entry), 
+            "{\"id\": %d, \"name\": \"%s\", \"active\": %d}", 
+            workspace->id, "x", 1);
+
+        strcat(json_str, workspace_entry);
+        first = 0;
+    }
+
+    strcat(json_str, "] }");
+
+    return json_str;
+}
+
+void hell_ipc_handle_workspace()
+{
+    char *json_str = generate_workspace_json();
+    if (json_str != NULL)
+    {
+        char workspace_file[256];
+        snprintf(workspace_file, sizeof(workspace_file), "%s/workspaces", HELL_IPC_PIPE);
+
+        write_to_file(workspace_file, json_str);
+
+        free(json_str);
+    }
+    else
+    {
+        printf("Error generating workspace JSON.\n");
+    }
+
+    char workspace_id_str[16];
+    snprintf(workspace_id_str, sizeof(workspace_id_str), "%d", GLOBAL_SERVER->active_workspace->id);
+
+    char workspace_file_path[256];
+    snprintf(workspace_file_path, sizeof(workspace_file_path), "%s/workspace", HELL_IPC_PIPE);
+
+    write_to_file(workspace_file_path, workspace_id_str);
+}
+
 void *hell_ipc_send(void *args)
 {
     enum hell_ipc_type *type = (enum hell_ipc_type *)args;
-    const char *dir_path = "/tmp/hellwm";
 
-    if (access(dir_path, F_OK) == -1)
+    if (access(HELL_IPC_PIPE, F_OK) == -1)
     {
-        if (mkdir(dir_path, 0700) == -1)
+        if (mkdir(HELL_IPC_PIPE, 0700) == -1)
         {
             LOG("Failed to create directory");
             return NULL;
@@ -687,15 +747,7 @@ void *hell_ipc_send(void *args)
             free(type);
             return NULL;
         }
-
-        char workspace_id_str[16];
-        snprintf(workspace_id_str, sizeof(workspace_id_str), "%d", GLOBAL_SERVER->active_workspace->id);
-
-        char workspace_file[256];
-        snprintf(workspace_file, sizeof(workspace_file), "%s/workspace", dir_path);
-
-        write_to_file(workspace_file, workspace_id_str);
-        //LOG("Updated workspace file: %s with ID: %s\n", workspace_file, workspace_id_str);
+        hell_ipc_handle_workspace();
     }
     else if (*type == HELL_IPC_CLIENT)
     {
@@ -715,7 +767,7 @@ void *hell_ipc_send(void *args)
         const char *client_title = GLOBAL_SERVER->active_workspace->last_focused->xdg_toplevel->title;
 
         char active_client_file[256];
-        snprintf(active_client_file, sizeof(active_client_file), "%s/active_client", dir_path);
+        snprintf(active_client_file, sizeof(active_client_file), "%s/active_client", HELL_IPC_PIPE);
 
         write_to_file(active_client_file, client_title);
         //LOG("Updated client file: %s with Title: %s\n", active_client_file, client_title);
