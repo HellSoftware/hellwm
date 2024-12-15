@@ -96,6 +96,7 @@ struct hellwm_server
     size_t exec_args_count;
     uint32_t resize_edges;
 
+    int layout_reapply;
     unsigned cursor_mode;
     unsigned mapped_functions;
     double cursor_grab_x, cursor_grab_y;
@@ -520,7 +521,9 @@ static void output_request_state(struct wl_listener *listener, void *data);
 static void focus_layer_surface(struct hellwm_layer_surface *layer_surface);
 static void handle_new_layer_surface(struct wl_listener *listener, void *data);
 static void layer_surface_handle_map(struct wl_listener *listener, void *data);
+static void layer_surface_map_func(struct hellwm_layer_surface *layer_surface);
 static void layer_surface_handle_unmap(struct wl_listener *listener, void *data);
+static void layer_surface_unmap_func(struct hellwm_layer_surface *layer_surface);
 static void layer_surface_handle_commit(struct wl_listener *listener, void *data);
 static void layer_surface_handle_destroy(struct wl_listener *listener, void *data);
 
@@ -942,13 +945,13 @@ static void hellwm_focus_prev_toplevel(struct hellwm_server *server)
 static void hellwm_focus_next_toplevel_center(struct hellwm_server *server)
 {
     hellwm_focus_next_toplevel(server);
-    apply_layout(server->active_workspace, server->active_workspace->layout);
+    server->layout_reapply = 1;
 }
 
 static void hellwm_focus_prev_toplevel_center(struct hellwm_server *server)
 {
     hellwm_focus_prev_toplevel(server);
-    apply_layout(server->active_workspace, server->active_workspace->layout);
+    server->layout_reapply = 1;
 }
 
 static void hellwm_toplevel_kill_active(struct hellwm_server *server)
@@ -963,7 +966,7 @@ static void hellwm_toplevel_kill_active(struct hellwm_server *server)
     wlr_xdg_toplevel_send_close(toplevel);
 
     hellwm_focus_next_toplevel(server);
-    apply_layout(server->active_workspace, server->active_workspace->layout);
+    server->layout_reapply = 1;
 }
 
 static void hellwm_server_kill(struct hellwm_server *server)
@@ -1551,6 +1554,12 @@ static void output_frame(struct wl_listener *listener, void *data)
 
     struct wlr_scene_output *scene_output = wlr_scene_get_scene_output(scene, output->wlr_output);
 
+    if (output->server->layout_reapply == 1)
+    {
+        apply_layout(output->server->active_workspace, output->server->active_workspace->layout);
+        output->server->layout_reapply = 0;
+    }
+
     /* Render the scene if needed and commit the output */
     wlr_scene_output_commit(scene_output, NULL);
 
@@ -1705,19 +1714,6 @@ static void xdg_toplevel_commit(struct wl_listener *listener, void *data)
                 toplevel->server->active_output->wlr_output->height);
         return;
     }
-
-    int32_t width = toplevel->server->active_output->wlr_output->width;
-    int32_t height = toplevel->server->active_output->wlr_output->height;
-    if (toplevel->xdg_toplevel->base->surface->current.buffer_width != width &&
-            toplevel->xdg_toplevel->base->surface->current.buffer_height != height &&
-            toplevel->xdg_toplevel->base->initialized)
-    {
-        //LOG("COMMIT WLOG: %d - %d\n", width, toplevel->xdg_toplevel->base->surface->current.buffer_width );
-        //LOG("COMMIT HLOG: %d - %d\n\n", height, toplevel->xdg_toplevel->base->surface->current.buffer_height);
-        //wlr_xdg_toplevel_set_size(toplevel->xdg_toplevel,width, height);
-    }
-
-
 }
 
 static void xdg_toplevel_destroy(struct wl_listener *listener, void *data) 
@@ -1737,7 +1733,7 @@ static void xdg_toplevel_destroy(struct wl_listener *listener, void *data)
 
     free(toplevel);
 
-    apply_layout(server->active_workspace, server->active_workspace->layout);
+    server->layout_reapply = 1;
 }
 
 static void begin_interactive(struct hellwm_toplevel *toplevel, enum hellwm_cursor_mode mode, uint32_t edges) 
@@ -2014,6 +2010,11 @@ static void layer_surface_handle_commit(struct wl_listener *listener, void *data
 static void layer_surface_handle_map(struct wl_listener *listener, void *data)
 {
     struct hellwm_layer_surface *layer_surface = wl_container_of(listener, layer_surface, map);
+    layer_surface_map_func(layer_surface);
+}
+
+static void layer_surface_map_func(struct hellwm_layer_surface *layer_surface)
+{
     struct hellwm_server *server = layer_surface->server;
 
     struct wlr_layer_surface_v1 *wlr_layer_surface = layer_surface->wlr_layer_surface;
@@ -2048,64 +2049,86 @@ static void layer_surface_handle_map(struct wl_listener *listener, void *data)
     wlr_scene_layer_surface_v1_configure(layer_surface->scene, &output_box, &output->usable_area);
 
     focus_layer_surface(layer_surface);
-    apply_layout(server->active_workspace, server->active_workspace->layout);
+    server->layout_reapply = 1;
 }
 
 static void layer_surface_handle_unmap(struct wl_listener *listener, void *data)
 {
     struct hellwm_layer_surface *layer_surface = wl_container_of(listener, layer_surface, unmap);
+    layer_surface_unmap_func(layer_surface);
+}
+
+static void layer_surface_unmap_func(struct hellwm_layer_surface *layer_surface)
+{
     struct hellwm_server *server = layer_surface->server;
 
-    struct wlr_layer_surface_v1_state *state = &layer_surface->wlr_layer_surface->current;
+    if (!layer_surface || !layer_surface->wlr_layer_surface || !layer_surface->wlr_layer_surface->output) {
+        LOG("layer_surface_handle_unmap(): NULL \n");
+        return;
+    }
+
+    struct wlr_layer_surface_v1_state state = layer_surface->wlr_layer_surface->current;
     struct hellwm_output *output = layer_surface->wlr_layer_surface->output->data;
 
-    if(layer_surface == server->layer_exclusive_keyboard)
-    {
-        server->layer_exclusive_keyboard = NULL;
-
-        if(server->active_workspace->last_focused != NULL)
-            hellwm_focus_toplevel(server->active_workspace->last_focused);
-
-        if(layer_surface->wlr_layer_surface->current.exclusive_zone > 0)
-        {
-            switch (state->anchor)
-            {
-                case ZWLR_LAYER_SURFACE_V1_ANCHOR_TOP:
-                    case (ZWLR_LAYER_SURFACE_V1_ANCHOR_TOP |
-                            ZWLR_LAYER_SURFACE_V1_ANCHOR_LEFT |
-                            ZWLR_LAYER_SURFACE_V1_ANCHOR_RIGHT):
-                        // Anchor top
-                        output->usable_area.y -= state->exclusive_zone + state->margin.top;
-                    output->usable_area.height += state->exclusive_zone + state->margin.top;
-                    break;
-                case ZWLR_LAYER_SURFACE_V1_ANCHOR_BOTTOM:
-                    case (ZWLR_LAYER_SURFACE_V1_ANCHOR_BOTTOM |
-                            ZWLR_LAYER_SURFACE_V1_ANCHOR_LEFT |
-                            ZWLR_LAYER_SURFACE_V1_ANCHOR_RIGHT):
-                        // Anchor bottom
-                        output->usable_area.height += state->exclusive_zone + state->margin.bottom;
-                    break;
-                case ZWLR_LAYER_SURFACE_V1_ANCHOR_LEFT:
-                    case (ZWLR_LAYER_SURFACE_V1_ANCHOR_TOP |
-                            ZWLR_LAYER_SURFACE_V1_ANCHOR_BOTTOM |
-                            ZWLR_LAYER_SURFACE_V1_ANCHOR_LEFT):
-                        // Anchor left
-                        output->usable_area.x -= state->exclusive_zone + state->margin.left;
-                    output->usable_area.width += state->exclusive_zone + state->margin.left;
-                    break;
-                case ZWLR_LAYER_SURFACE_V1_ANCHOR_RIGHT:
-                    case (ZWLR_LAYER_SURFACE_V1_ANCHOR_TOP |
-                            ZWLR_LAYER_SURFACE_V1_ANCHOR_BOTTOM |
-                            ZWLR_LAYER_SURFACE_V1_ANCHOR_RIGHT):
-                        // Anchor right
-                        output->usable_area.width += state->exclusive_zone + state->margin.right;
-                    break;
-            }
-        }
-        wl_list_remove(&layer_surface->link);
+    if (!output) {
+        LOG("Error: output->data is NULL\n");
+        return;
     }
-    apply_layout(server->active_workspace, server->active_workspace->layout);
+
+    server->layer_exclusive_keyboard = NULL;
+
+    // Check and modify usable_area only if exclusive_zone is set
+    if (state.exclusive_zone > 0) {
+        switch (state.anchor) {
+            case ZWLR_LAYER_SURFACE_V1_ANCHOR_TOP:
+            case (ZWLR_LAYER_SURFACE_V1_ANCHOR_TOP |
+                  ZWLR_LAYER_SURFACE_V1_ANCHOR_LEFT |
+                  ZWLR_LAYER_SURFACE_V1_ANCHOR_RIGHT):
+                // Anchor top
+                output->usable_area.y -= (state.exclusive_zone + state.margin.top);
+                output->usable_area.height += (state.exclusive_zone + state.margin.top);
+                break;
+
+            case ZWLR_LAYER_SURFACE_V1_ANCHOR_BOTTOM:
+            case (ZWLR_LAYER_SURFACE_V1_ANCHOR_BOTTOM |
+                  ZWLR_LAYER_SURFACE_V1_ANCHOR_LEFT |
+                  ZWLR_LAYER_SURFACE_V1_ANCHOR_RIGHT):
+                // Anchor bottom
+                output->usable_area.height += (state.exclusive_zone + state.margin.bottom);
+                break;
+
+            case ZWLR_LAYER_SURFACE_V1_ANCHOR_LEFT:
+            case (ZWLR_LAYER_SURFACE_V1_ANCHOR_TOP |
+                  ZWLR_LAYER_SURFACE_V1_ANCHOR_BOTTOM |
+                  ZWLR_LAYER_SURFACE_V1_ANCHOR_LEFT):
+                // Anchor left
+                output->usable_area.x -= (state.exclusive_zone + state.margin.left);
+                output->usable_area.width += (state.exclusive_zone + state.margin.left);
+                break;
+
+            case ZWLR_LAYER_SURFACE_V1_ANCHOR_RIGHT:
+            case (ZWLR_LAYER_SURFACE_V1_ANCHOR_TOP |
+                  ZWLR_LAYER_SURFACE_V1_ANCHOR_BOTTOM |
+                  ZWLR_LAYER_SURFACE_V1_ANCHOR_RIGHT):
+                // Anchor right
+                output->usable_area.width += (state.exclusive_zone + state.margin.right);
+                break;
+
+            default:
+                LOG("Warning: Unhandled anchor value %d\n", state.anchor);
+                break;
+        }
+    }
+
+    // Safely remove the layer_surface from the list
+    if (!wl_list_empty(&layer_surface->link))
+        wl_list_remove(&layer_surface->link);
+
+    // Apply layout
+    if (server->active_workspace)
+        server->layout_reapply = 1;
 }
+
 
 static void layer_surface_handle_destroy(struct wl_listener *listener, void *data)
 {
@@ -2117,6 +2140,7 @@ static void layer_surface_handle_destroy(struct wl_listener *listener, void *dat
 
     free(layer_surface);
 }
+
 
 void layer_surface_handle_new_popup(struct wl_listener *listener, void *data)
 {
@@ -2171,6 +2195,7 @@ static void handle_new_layer_surface(struct wl_listener *listener, void *data)
 
     if(layer_surface->wlr_layer_surface->output == NULL)
         layer_surface->wlr_layer_surface->output = server->active_workspace->output->wlr_output;
+    layer_surface->wlr_layer_surface->output->data = server->active_workspace->output;
 
     layer_surface->commit.notify = layer_surface_handle_commit;
     wl_signal_add(&wlr_layer_surface->surface->events.commit, &layer_surface->commit);
@@ -3049,11 +3074,11 @@ void hellwm_toplevel_move_to_workspace(struct hellwm_server *server, int workspa
 
         wl_list_remove(&toplevel->link);
         hellwm_focus_next_toplevel(server);
-        apply_layout(server->active_workspace, server->active_workspace->layout);
+        server->layout_reapply = 1;
 
         hellwm_workspace_change(server, workspace_id);
         wl_list_insert(&server->active_workspace->toplevels, &toplevel->link);
-        apply_layout(server->active_workspace, server->active_workspace->layout);
+        server->layout_reapply = 1;
         hellwm_focus_toplevel(toplevel);
     }
     else
@@ -3105,6 +3130,8 @@ static void hellwm_workspace_change(struct hellwm_server *server, int workspace_
     server->active_workspace = workspace;
     if (server->active_workspace->last_focused != NULL)
         hellwm_focus_toplevel(server->active_workspace->last_focused);
+
+    server->layout_reapply = 1;
 }
 
 /* Return next id based on count of workspaces */

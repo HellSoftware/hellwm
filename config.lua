@@ -34,7 +34,17 @@ bind(
 bind("Super_L, Return", "foot")
 bind("Super_L, t", "alacritty")
 bind("Super_L, F12", "pavucontrol")
+bind("Super_L, F11", "grim")
 bind("Super_L, w", "setwall")
+bind("Super_L, v", "vesktop")
+
+    -- Screen Brightness
+bind("Alt_L, XF86AudioRaiseVolume", "brightnessctl s +1%")
+bind("Alt_L, XF86AudioLowerVolume", "brightnessctl s 1%-")
+
+    -- Volume Controls
+bind("XF86AudioRaiseVolume", "wpctl set-volume -l 1.5 @DEFAULT_AUDIO_SINK@ 5%+")
+bind("XF86AudioLowerVolume", "wpctl set-volume -l 1.5 @DEFAULT_AUDIO_SINK@ 5%-")
 
 
 bind(
