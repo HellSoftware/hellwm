@@ -19,7 +19,6 @@
 #include <wayland-util.h>
 #include <wayland-server-core.h>
 
-
 #include <wlr/backend.h>
 #include <wlr/util/box.h>
 #include <wlr/util/log.h>
@@ -88,6 +87,13 @@ enum HELLWM_VIEW
     HELLWM_VIEW_TOPLEVEL,
     HELLWM_VIEW_POPUP,
     HELLWM_VIEW_LAYER
+};
+
+enum hellwm_border_state
+{
+    HELLWM_BORDER_INVISIBLE,
+    HELLWM_BORDER_INACTIVE,
+    HELLWM_BORDER_ACTIVE
 };
 
 struct hellwm_server
@@ -214,6 +220,7 @@ struct hellwm_toplevel
     struct hellwm_workspace *workspace;
 
     struct wlr_box prev_geom;
+    struct wlr_scene_rect *borders[4];
     struct wlr_scene_tree *scene_tree;
     struct wlr_xdg_toplevel *xdg_toplevel;
 
@@ -367,8 +374,9 @@ typedef struct
     uint32_t inner_gap;
     uint32_t outer_gap;
 
-    uint32_t border_size;
-    float border_color[4];
+    uint32_t border_width;
+    float active_border_color[4];
+    float inactive_border_color[4];
 
 } hellwm_config_manager_decoration;
 
@@ -541,6 +549,11 @@ static void xdg_toplevel_request_resize(struct wl_listener *listener, void *data
 static void xdg_toplevel_request_maximize(struct wl_listener *listener, void *data);
 static void xdg_toplevel_request_fullscreen(struct wl_listener *listener, void *data);
 
+float *border_get_color(enum hellwm_border_state state);
+static void borders_toplevel_update(struct hellwm_toplevel *toplevel);
+static void borders_toplevel_create(struct hellwm_toplevel *toplevel);
+static void toplevel_borders_set_state(struct hellwm_toplevel *toplevel, enum hellwm_border_state state);
+
 static void xdg_decoration_new_toplevel_decoration(struct wl_listener *listener, void *data);
 
 static void xdg_popup_commit(struct wl_listener *listener, void *data);
@@ -562,6 +575,7 @@ void layout_horizontal_split(struct hellwm_workspace *workspace)
     if (count == 0) return;
 
     int gaps = workspace->server->config_manager->decoration->outer_gap;
+    int border = workspace->server->config_manager->decoration->border_width;
 
     struct hellwm_output *output = workspace->output;
     int window_width = output->wlr_output->width / count;
@@ -573,8 +587,9 @@ void layout_horizontal_split(struct hellwm_workspace *workspace)
         int x = i * window_width;
         int y = 0;
 
-        wlr_scene_node_set_position(&toplevel->scene_tree->node, x + gaps, y + output->usable_area.y + gaps);
-        wlr_xdg_toplevel_set_size(toplevel->xdg_toplevel, window_width - gaps*2, window_height - output->usable_area.y - gaps*2);
+        wlr_scene_node_set_position(&toplevel->scene_tree->node, x + gaps + border, y + output->usable_area.y + gaps + border);
+        wlr_xdg_toplevel_set_size(toplevel->xdg_toplevel, window_width - border*2 - gaps*2, window_height - output->usable_area.y - border*2 - gaps*2);
+        borders_toplevel_update(toplevel);
         i++;
     }
 }
@@ -765,14 +780,24 @@ hellwm_config_manager_decoration *hellwm_config_manager_decoration_create()
     /* tiling */
     decoration->master_ratio = 0.7;
 
-        /* gaps */
+    /* gaps */
     decoration->inner_gap = 10;
     decoration->outer_gap = 10;
 
     /* border */
-    decoration->border_size = 3;
-    for (size_t i = 0; i < 4; i++) /* white color */
-        decoration->border_color[0] = 1.f;
+    decoration->border_width = 3;
+
+    /* border active color */
+    decoration->active_border_color[0] = 0.9f; 
+    decoration->active_border_color[1] = 0.9f; 
+    decoration->active_border_color[2] = 0.9f; 
+    decoration->active_border_color[3] = 1.0f; 
+
+    /* border inactive color */
+    decoration->inactive_border_color[0] = 0.7f; 
+    decoration->inactive_border_color[1] = 0.1f; 
+    decoration->inactive_border_color[2] = 0.1f; 
+    decoration->inactive_border_color[3] = 1.0f; 
 
     return decoration;
 }
@@ -851,6 +876,11 @@ static void hellwm_focus_toplevel(struct hellwm_toplevel *toplevel)
 
     wl_list_remove(&toplevel->link);
     wl_list_insert(&server->active_workspace->toplevels, &toplevel->link);
+
+    if (server->active_workspace->last_focused != NULL)
+        toplevel_borders_set_state(server->active_workspace->last_focused, HELLWM_BORDER_INACTIVE);
+    toplevel_borders_set_state(toplevel, HELLWM_BORDER_ACTIVE);
+
     server->active_workspace->last_focused = toplevel;
 
     /* Activate the new surface */
@@ -1707,13 +1737,85 @@ static void server_backend_new_output(struct wl_listener *listener, void *data)
     output->total_area.y = 0;
 }
 
+float *border_get_color(enum hellwm_border_state state)
+{
+    static float invisible[] = {0, 0, 0, 0};
+    switch(state)
+    {
+        case HELLWM_BORDER_INVISIBLE:
+            return invisible;
+        case HELLWM_BORDER_ACTIVE:
+            return GLOBAL_SERVER->config_manager->decoration->active_border_color;
+        case HELLWM_BORDER_INACTIVE:
+            return GLOBAL_SERVER->config_manager->decoration->inactive_border_color;
+    }
+
+    return invisible;
+}
+
+static void borders_toplevel_create(struct hellwm_toplevel *toplevel)
+{
+    if (toplevel == NULL)
+        return;
+
+    uint32_t width, height;
+    width = toplevel->xdg_toplevel->current.width;
+    height = toplevel->xdg_toplevel->current.height;
+
+    uint32_t border_width = GLOBAL_SERVER->config_manager->decoration->border_width;
+
+    const float *border_color = border_get_color(HELLWM_BORDER_INVISIBLE);
+
+    toplevel->borders[0] = wlr_scene_rect_create(toplevel->scene_tree, width + 2 * border_width, border_width, border_color);
+    wlr_scene_node_set_position(&toplevel->borders[0]->node, -border_width, -border_width);
+
+    toplevel->borders[1] = wlr_scene_rect_create(toplevel->scene_tree, border_width, height, border_color);
+    wlr_scene_node_set_position(&toplevel->borders[1]->node, width, 0);
+
+    toplevel->borders[2] = wlr_scene_rect_create(toplevel->scene_tree, width + 2 * border_width, border_width, border_color);
+    wlr_scene_node_set_position(&toplevel->borders[2]->node, -border_width, height);
+
+    toplevel->borders[3] = wlr_scene_rect_create(toplevel->scene_tree, border_width, height, border_color);
+    wlr_scene_node_set_position(&toplevel->borders[3]->node, -border_width, 0);
+}
+
+static void toplevel_borders_set_state(struct hellwm_toplevel *toplevel, enum hellwm_border_state state)
+{
+    const float *border_color = border_get_color(state);
+    for(size_t i = 0; i < 4; i++)
+        wlr_scene_rect_set_color(toplevel->borders[i], border_color);
+}
+
+static void borders_toplevel_update(struct hellwm_toplevel *toplevel)
+{
+    if (toplevel == NULL)
+        return;
+
+    uint32_t width, height;
+    width = toplevel->xdg_toplevel->current.width;
+    height = toplevel->xdg_toplevel->current.height;
+
+    uint32_t border_width = GLOBAL_SERVER->config_manager->decoration->border_width;
+
+    wlr_scene_node_set_position(&toplevel->borders[1]->node, width, 0);
+    wlr_scene_node_set_position(&toplevel->borders[2]->node, -border_width, height);
+
+    wlr_scene_rect_set_size(toplevel->borders[0], width + 2 * border_width, border_width);
+    wlr_scene_rect_set_size(toplevel->borders[1], border_width, height);
+    wlr_scene_rect_set_size(toplevel->borders[2], width + 2 * border_width, border_width);
+    wlr_scene_rect_set_size(toplevel->borders[3], border_width, height);
+}
+
 static void xdg_toplevel_map(struct wl_listener *listener, void *data) 
 {
     /* Called when the surface is mapped, or ready to display on-screen. */
     struct hellwm_toplevel *toplevel = wl_container_of(listener, toplevel, map);
 
     hellwm_workspace_add_toplevel(toplevel->server->active_workspace, toplevel);
+
+    borders_toplevel_create(toplevel);
     hellwm_focus_toplevel(toplevel);
+
     apply_layout(toplevel->server->active_workspace, toplevel->server->active_workspace->layout);
 }
 
