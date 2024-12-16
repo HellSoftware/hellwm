@@ -676,7 +676,8 @@ char *generate_workspace_json()
         return NULL;
     }
 
-    strcpy(json_str, "{ \"workspaces\": [");
+    // Start the array directly
+    strcpy(json_str, "[");
 
     struct hellwm_workspace *workspace;
     int first = 1;
@@ -695,7 +696,8 @@ char *generate_workspace_json()
         first = 0;
     }
 
-    strcat(json_str, "] }");
+    // Close the array
+    strcat(json_str, "]");
 
     return json_str;
 }
