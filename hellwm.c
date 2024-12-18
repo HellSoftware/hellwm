@@ -206,7 +206,7 @@ struct hellwm_workspace
 
     struct hellwm_server *server;
     struct hellwm_output *output;
-    struct hellwm_toplevel *last_focused;
+    struct hellwm_toplevel *now_focused;
     struct hellwm_toplevel *prev_focused;
 };
 
@@ -551,6 +551,7 @@ static void xdg_toplevel_request_fullscreen(struct wl_listener *listener, void *
 
 float *border_get_color(enum hellwm_border_state state);
 static void borders_toplevel_update(struct hellwm_toplevel *toplevel);
+static void borders_toplevel_update_all(struct hellwm_server *server);
 static void borders_toplevel_create(struct hellwm_toplevel *toplevel);
 static void toplevel_borders_set_state(struct hellwm_toplevel *toplevel, enum hellwm_border_state state);
 
@@ -589,7 +590,6 @@ void layout_horizontal_split(struct hellwm_workspace *workspace)
 
         wlr_scene_node_set_position(&toplevel->scene_tree->node, x + gaps + border, y + output->usable_area.y + gaps + border);
         wlr_xdg_toplevel_set_size(toplevel->xdg_toplevel, window_width - border*2 - gaps*2, window_height - output->usable_area.y - border*2 - gaps*2);
-        borders_toplevel_update(toplevel);
         i++;
     }
 }
@@ -610,6 +610,8 @@ void apply_layout(struct hellwm_workspace *workspace, int layout_type)
             layout_horizontal_split(workspace);
             break;
     }
+
+    borders_toplevel_update_all(workspace->server);
 }
 
 /* functions implementations */
@@ -785,7 +787,7 @@ hellwm_config_manager_decoration *hellwm_config_manager_decoration_create()
     decoration->outer_gap = 10;
 
     /* border */
-    decoration->border_width = 3;
+    decoration->border_width = 2;
 
     /* border active color */
     decoration->active_border_color[0] = 0.9f; 
@@ -867,21 +869,24 @@ static void hellwm_focus_toplevel(struct hellwm_toplevel *toplevel)
         struct wlr_xdg_toplevel *prev_toplevel = wlr_xdg_toplevel_try_from_wlr_surface(prev_surface);
         if (prev_toplevel != NULL)
         {
+            /* store prev focused toplevel to focus it after closing something */
+            server->active_workspace->prev_focused = server->active_workspace->now_focused;
+
+            toplevel_borders_set_state(server->active_workspace->prev_focused, HELLWM_BORDER_INACTIVE);
+            borders_toplevel_update(server->active_workspace->prev_focused);
+
             wlr_xdg_toplevel_set_activated(prev_toplevel, false);
         }
     }
+
+    server->active_workspace->now_focused = toplevel;
+
     struct wlr_keyboard *keyboard = wlr_seat_get_keyboard(seat);
     /* Move the toplevel to the front */
     wlr_scene_node_raise_to_top(&toplevel->scene_tree->node);
 
     wl_list_remove(&toplevel->link);
     wl_list_insert(&server->active_workspace->toplevels, &toplevel->link);
-
-    if (server->active_workspace->last_focused != NULL)
-        toplevel_borders_set_state(server->active_workspace->last_focused, HELLWM_BORDER_INACTIVE);
-    toplevel_borders_set_state(toplevel, HELLWM_BORDER_ACTIVE);
-
-    server->active_workspace->last_focused = toplevel;
 
     /* Activate the new surface */
     wlr_xdg_toplevel_set_activated(toplevel->xdg_toplevel, true);
@@ -894,6 +899,9 @@ static void hellwm_focus_toplevel(struct hellwm_toplevel *toplevel)
     {
         wlr_seat_keyboard_notify_enter(seat, toplevel->xdg_toplevel->base->surface, keyboard->keycodes, keyboard->num_keycodes, &keyboard->modifiers);
     }
+
+    toplevel_borders_set_state(toplevel, HELLWM_BORDER_ACTIVE);
+            borders_toplevel_update(toplevel);
 }
 
 static void unfocus_focused(struct hellwm_server *server)
@@ -917,7 +925,7 @@ static void unfocus_focused(struct hellwm_server *server)
 
             wlr_seat_keyboard_clear_focus(seat);
 
-            server->active_workspace->last_focused = NULL;
+            server->active_workspace->now_focused = NULL;
             return;
         }
     }
@@ -1804,6 +1812,18 @@ static void borders_toplevel_update(struct hellwm_toplevel *toplevel)
     wlr_scene_rect_set_size(toplevel->borders[1], border_width, height);
     wlr_scene_rect_set_size(toplevel->borders[2], width + 2 * border_width, border_width);
     wlr_scene_rect_set_size(toplevel->borders[3], border_width, height);
+}
+
+static void borders_toplevel_update_all(struct hellwm_server *server)
+{
+    if (server->active_workspace == NULL)
+        return;
+
+    struct hellwm_toplevel *toplevel;
+    wl_list_for_each(toplevel, &server->active_workspace->toplevels, link)
+    {
+        borders_toplevel_update(toplevel);
+    }
 }
 
 static void xdg_toplevel_map(struct wl_listener *listener, void *data) 
@@ -3207,7 +3227,7 @@ struct hellwm_workspace *hellwm_workspace_create_begin(struct hellwm_server *ser
 
     wl_list_insert(&server->workspaces, &workspace->link);
     wl_list_init(&workspace->toplevels);
-    workspace->last_focused = NULL;
+    workspace->now_focused = NULL;
     workspace->prev_focused = NULL;
     workspace->id = workspace_id;
     workspace->layout = 1;
@@ -3262,7 +3282,7 @@ static void hellwm_workspace_add_toplevel(struct hellwm_workspace *workspace, st
 /* Note: this function also automatically changes workspace to given id */
 void hellwm_toplevel_move_to_workspace(struct hellwm_server *server, int workspace_id)
 {
-    struct hellwm_toplevel *toplevel = server->active_workspace->last_focused;
+    struct hellwm_toplevel *toplevel = server->active_workspace->now_focused;
 
     if (toplevel)
     {
@@ -3325,8 +3345,8 @@ static void hellwm_workspace_change(struct hellwm_server *server, int workspace_
     }
 
     server->active_workspace = workspace;
-    if (server->active_workspace->last_focused != NULL)
-        hellwm_focus_toplevel(server->active_workspace->last_focused);
+    if (server->active_workspace->now_focused != NULL)
+        hellwm_focus_toplevel(server->active_workspace->now_focused);
     else
         unfocus_focused(server);
 

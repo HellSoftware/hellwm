@@ -37,6 +37,7 @@ bind("Super_L, F12", "pavucontrol")
 bind("Super_L, F11", "grim")
 bind("Super_L, w", "setwall")
 bind("Super_L, v", "vesktop")
+bind("Super_L, e", "wofi --show drun")
 
     -- Screen Brightness
 bind("Alt_L, XF86AudioRaiseVolume", "brightnessctl s +1%")
