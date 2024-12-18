@@ -2,13 +2,15 @@
 
 ## Why?
 I got inspired by Vaxry, I thoguht that if someone from my country could create 'base' for Hyprland in a month, I should try writing my own WaylandCompositor too - it can't be that hard... right? (Oh god, how mistaken I was).
+
 That being said, it kinda works after rewriting it 3 times ;P
 
 ## The hell is HellWM?
 
-HellWM is meant to be very light and modular Wayland Compositor with some unique features, like"
-- **binary workspace**
+HellWM is meant to be very light and modular Wayland Compositor with some unique features, like:
+- **binary workspaces**
 - **config hot reload** (not really unique rn)
+- **lua**
 
 Still under heavy development, open for contributions and ideas that will make this project better :)
 
@@ -81,19 +83,19 @@ bind("Super_L, 2", "workspace", 2, false, 0) -- Switch to workspace 2
 #### Binary Workspaces: If you enable binary mode, keys combine to generate workspace numbers:
 
 ```lua
-bind("Super_L, u", "workspace", 1, true, 1, true)``  -- Key 'u' represents Binary 1
+bind("Super_L, u", "workspace", 1, true, 1, true)  -- Key 'u' represents Binary 1
 ```
 
 ```lua
-bind("Super_L, i", "workspace", 2, true, 2, false)`` -- Key 'i' represents Binary 2
+bind("Super_L, i", "workspace", 2, true, 2, false) -- Key 'i' represents Binary 2
 ```
 
 ```lua
-bind("Super_L, o", "workspace", 3, true, 4, false)`` -- Key 'o' represents Binary 4
+bind("Super_L, o", "workspace", 3, true, 4, false) -- Key 'o' represents Binary 4
 ```
 
 ```lua
-bind("Super_L, p", "workspace", 4, true, 8, false)`` -- Key 'p' represents Binary 8
+bind("Super_L, p", "workspace", 4, true, 8, false) -- Key 'p' represents Binary 8
 ```
 
   Binary mode enabled (true): Combines key presses to calculate the workspace number.
