@@ -7,10 +7,21 @@ Still under development, open for contributions and ideas that will make this pr
 
 ## TODO:
 - [ ] xwayland
-- [ ] wlr-layer-shell
 
 ## DONE:
 - [x] config
 - [x] workspaces
+- [x] wlr-layer-shell
 - [x] binary workspaces
 - [x] tiling (kinda?, **TODO**: rewrite using nodes.)
+
+# Special thanks
+
+Thank you all for showing how 2 do stuff <3
+
+- https://codeberg.org/dwl/dwl/
+- https://github.com/swaywm/sway/
+- https://github.com/buffet/kiwmi/
+- https://github.com/dqrk0jeste/owl/
+- https://github.com/hyprwm/Hyprland/
+- https://github.com/inclement/vivarium/
