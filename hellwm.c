@@ -1,5 +1,5 @@
-#include <math.h>
 #include <time.h>
+#include <ctype.h>
 #include <stdio.h>
 #include <assert.h>
 #include <getopt.h>
@@ -371,8 +371,7 @@ typedef struct
 {
     float master_ratio;
 
-    uint32_t inner_gap;
-    uint32_t outer_gap;
+    uint32_t gaps;
 
     uint32_t border_width;
     float active_border_color[4];
@@ -418,11 +417,22 @@ void LOG(const char *format, ...);
 void check_usage(int argc, char**argv);
 void hellwm_lua_error (lua_State *L, const char *fmt, ...);
 
+int is_digit_str(const char* str);
+int hex_to_float(const char* hex, float* color);
+int get_color(const char* color_str, float* color);
+
 struct hellwm_config_manager *hellwm_config_manager_create();
 
-int hellwm_lua_add_keyboard(lua_State *L);
-int hellwm_lua_add_monitor(lua_State *L);
+int hellwm_lua_env(lua_State *L);
+int hellwm_lua_exec(lua_State *L);
 int hellwm_lua_add_keybind(lua_State *L);
+int hellwm_lua_add_monitor(lua_State *L);
+int hellwm_lua_add_keyboard(lua_State *L);
+int hellwm_lua_tiling_layout(lua_State *L);
+int hellwm_lua_decoration_gaps(lua_State *L);
+int hellwm_lua_decoration_border_width(lua_State *L);
+int hellwm_lua_decoration_border_active(lua_State *L);
+int hellwm_lua_decoration_border_inactive(lua_State *L);
 
 void hellwm_config_print(struct hellwm_config_manager *config);
 bool hellwm_function_find(const char* name, struct hellwm_server* server, union hellwm_function *func);
@@ -575,7 +585,7 @@ void layout_horizontal_split(struct hellwm_workspace *workspace)
     int count = wl_list_length(&workspace->toplevels);
     if (count == 0) return;
 
-    int gaps = workspace->server->config_manager->decoration->outer_gap;
+    int gaps = workspace->server->config_manager->decoration->gaps;
     int border = workspace->server->config_manager->decoration->border_width;
 
     struct hellwm_output *output = workspace->output;
@@ -634,7 +644,69 @@ void LOG(const char *format, ...)
     }
 }
 
+int is_digit_str(const char* str)
+{
+    while (*str)
+    {
+        if (!isdigit(*str))
+        {
+            return 0;
+        }
+        str++;
+    }
+    return 1;
+}
 
+int hex_to_float(const char* hex, float* color)
+{
+    unsigned int r, g, b;
+    
+    if (sscanf(hex, "#%2x%2x%2x", &r, &g, &b) != 3) {
+        fprintf(stderr, "Error: Invalid hex color format. Expected #RRGGBB.\n");
+        return 0;
+    }
+
+    color[0] = (float)r / 255.0f; // Red
+    color[1] = (float)g / 255.0f; // Green
+    color[2] = (float)b / 255.0f; // Blue
+    color[3] = 1.0f;              // Alpha set to 1.0 for hex colors
+
+    return 1;
+}
+
+int get_color(const char* color_str, float* color)
+{
+    if (color_str[0] == '#')
+    {
+        if (hex_to_float(color_str, color))
+            return 1;
+        else
+            return 0;
+    }
+
+    int r, g, b, a;
+
+    if (sscanf(color_str, "%d,%d,%d,%d", &r, &g, &b, &a) == 4)
+    {
+        // RGBA
+        color[0] = (float)r / 255.0f;
+        color[1] = (float)g / 255.0f;
+        color[2] = (float)b / 255.0f;
+        color[3] = (float)a / 255.0f;
+        return 1;
+    }
+    else
+    {
+        // RGB
+        color[0] = (float)r / 255.0f;
+        color[1] = (float)g / 255.0f;
+        color[2] = (float)b / 255.0f;
+        color[3] = 1.0f;
+        return 1;
+    }
+    // err
+    return 0;
+}
 
 void ERR(const char *format, ...)
 {
@@ -663,7 +735,6 @@ void hellwm_lua_error (lua_State *L, const char *fmt, ...)
     vfprintf(stderr, fmt, argp);
     va_end(argp);
     lua_close(L);
-    exit(EXIT_FAILURE);
 }
 
 void RUN_EXEC(char *commnad)
@@ -783,8 +854,7 @@ hellwm_config_manager_decoration *hellwm_config_manager_decoration_create()
     decoration->master_ratio = 0.7;
 
     /* gaps */
-    decoration->inner_gap = 10;
-    decoration->outer_gap = 10;
+    decoration->gaps = 20;
 
     /* border */
     decoration->border_width = 2;
@@ -2661,6 +2731,11 @@ void hellwm_config_manager_free(struct hellwm_config_manager *config)
 int hellwm_lua_add_keyboard(lua_State *L)
 {
     hellwm_config_keyboard *keyboard = calloc(1, sizeof(hellwm_config_keyboard));
+    if (keyboard == NULL) {
+        LOG("Memory allocation failed for keyboard.\n");
+        return 0; // Early return on allocation failure
+    }
+
     keyboard->name = NULL;
     keyboard->layout = NULL;
     keyboard->rate = 25;
@@ -2672,43 +2747,82 @@ int hellwm_lua_add_keyboard(lua_State *L)
 
     int nargs = lua_gettop(L);
 
-    for (int i = 1; i<=nargs; i++)
+    for (int i = 1; i <= nargs; i++)
     {
         switch (i)
         {
             case 1:
-                keyboard->name = strdup(lua_tostring(L, i));
+                if (lua_isstring(L, i)) {
+                    keyboard->name = strdup(lua_tostring(L, i));
+                } else {
+                    LOG("Invalid argument for 'name', expected string.\n");
+                }
                 break;
             case 2:
-                keyboard->layout = strdup(lua_tostring(L, i));
+                if (lua_isstring(L, i)) {
+                    keyboard->layout = strdup(lua_tostring(L, i));
+                } else {
+                    LOG("Invalid argument for 'layout', expected string.\n");
+                }
                 break;
             case 3:
-                keyboard->rate = (int32_t)lua_tonumber(L, i);
+                if (lua_isnumber(L, i)) {
+                    keyboard->rate = (int32_t)lua_tonumber(L, i);
+                } else {
+                    LOG("Invalid argument for 'rate', expected number.\n");
+                }
                 break;
             case 4:
-                keyboard->delay = (int32_t)lua_tonumber(L, i);
+                if (lua_isnumber(L, i)) {
+                    keyboard->delay = (int32_t)lua_tonumber(L, i);
+                } else {
+                    LOG("Invalid argument for 'delay', expected number.\n");
+                }
                 break;
             case 5:
-                keyboard->options = strdup(lua_tostring(L, i));
+                if (lua_isstring(L, i)) {
+                    keyboard->options = strdup(lua_tostring(L, i));
+                } else {
+                    LOG("Invalid argument for 'options', expected string.\n");
+                }
                 break;
             case 6:
-                keyboard->rules = strdup(lua_tostring(L, i));
+                if (lua_isstring(L, i)) {
+                    keyboard->rules = strdup(lua_tostring(L, i));
+                } else {
+                    LOG("Invalid argument for 'rules', expected string.\n");
+                }
                 break;
             case 7:
-                keyboard->variant = strdup(lua_tostring(L, i));
+                if (lua_isstring(L, i)) {
+                    keyboard->variant = strdup(lua_tostring(L, i));
+                } else {
+                    LOG("Invalid argument for 'variant', expected string.\n");
+                }
                 break;
             case 8:
-                keyboard->model = strdup(lua_tostring(L, i));
+                if (lua_isstring(L, i)) {
+                    keyboard->model = strdup(lua_tostring(L, i));
+                } else {
+                    LOG("Invalid argument for 'model', expected string.\n");
+                }
                 break;
-
             default:
-                LOG("Provided to much arguments to keyboard() function!\n");
+                LOG("Too many arguments provided to keyboard() function!\n");
+                break;
         }
+    }
+
+    if (keyboard->name == NULL) {
+        LOG("Keyboard name is mandatory!\n");
+        free(keyboard);
+        return 0;
     }
 
     hellwm_config_manager_keyboard_add(GLOBAL_SERVER->config_manager->keyboard_manager, keyboard);
     return 0;
 }
+
 
 int hellwm_lua_add_monitor(lua_State *L)
 {
@@ -2825,7 +2939,7 @@ int hellwm_lua_env(lua_State *L)
                 break;
             case 2:
                 value = strdup(lua_tostring(L, i));
-                LOG("Env: %s = %s", name, value);
+                LOG("Env: %s = %s\n", name, value);
                 setenv(name, value, 1);
                 return 0;
             default:
@@ -2840,24 +2954,28 @@ int hellwm_lua_exec(lua_State *L)
     int nargs = lua_gettop(L);
     char **temp = NULL;
 
-    for (int i = 1; i<=nargs; i++)
+    for (int i = 1; i <= nargs; i++)
     {
         switch (i)
         {
             case 1:
                 temp = realloc(GLOBAL_SERVER->exec_args, (GLOBAL_SERVER->exec_args_count + 1) * sizeof(char *));
-                if (temp == NULL) ERR("realloc error");
+                if (temp == NULL) {
+                    LOG("Memory allocation failed during realloc.\n");
+                    return 0;
+                }
 
                 GLOBAL_SERVER->exec_args = temp;
-                (GLOBAL_SERVER->exec_args)[GLOBAL_SERVER->exec_args_count] = strdup(lua_tostring(L, i));
-                if ((GLOBAL_SERVER->exec_args)[GLOBAL_SERVER->exec_args_count] == NULL) {
-                    perror("Failed to allocate memory for new argument");
-                    exit(EXIT_FAILURE);
+                GLOBAL_SERVER->exec_args[GLOBAL_SERVER->exec_args_count] = strdup(lua_tostring(L, i));
+                if (GLOBAL_SERVER->exec_args[GLOBAL_SERVER->exec_args_count] == NULL) {
+                    LOG("Failed to allocate memory for new argument.\n");
+                    return 0;
                 }
                 GLOBAL_SERVER->exec_args_count++;
                 break;
             default:
-                LOG("Provided to much arguments to exec() function!\n");
+                LOG("Too many arguments provided to exec() function!\n");
+                break;
         }
     }
     return 0;
@@ -2876,6 +2994,110 @@ int hellwm_lua_tiling_layout(lua_State *L)
                 break;
             default:
                 LOG("Provided to much arguments to exec() function!\n");
+        }
+    }
+    return 0;
+}
+
+int hellwm_lua_decoration_border_width(lua_State *L)
+{
+    int nargs = lua_gettop(L);
+
+    for (int i = 1; i<=nargs; i++)
+    {
+        switch (i)
+        {
+            case 1:
+                GLOBAL_SERVER->config_manager->decoration->border_width = lua_tointeger(L, i);
+                break;
+            default:
+                LOG("Provided to much arguments to border_width() function!\n");
+        }
+    }
+    return 0;
+}
+
+int hellwm_lua_decoration_gaps(lua_State *L)
+{
+    int nargs = lua_gettop(L);
+
+    for (int i = 1; i<=nargs; i++)
+    {
+        switch (i)
+        {
+            case 1:
+                GLOBAL_SERVER->config_manager->decoration->gaps = lua_tointeger(L, i);
+                break;
+            default:
+                LOG("Provided to much arguments to gaps() function!\n");
+        }
+    }
+    return 0;
+}
+
+int hellwm_lua_decoration_border_active(lua_State *L)
+{
+    float color[4];
+    char *string_color = NULL;
+    int nargs = lua_gettop(L);
+
+    for (int i = 1; i<=nargs; i++)
+    {
+        switch (i)
+        {
+            case 1:
+                 string_color = strdup(lua_tostring(L, i));
+
+                if (get_color(string_color, color))
+                {
+                    LOG("BorderColor (ACTIVE):  (%f, %f, %f), Alpha: %f\n", color[0], color[1], color[2], color[3]);
+                }
+                else {
+                    LOG("Invalid color format: border_active_color(\"%s\")\n", string_color);
+                    return 1;
+                }
+
+                GLOBAL_SERVER->config_manager->decoration->active_border_color[0] = color[0];
+                GLOBAL_SERVER->config_manager->decoration->active_border_color[1] = color[1];
+                GLOBAL_SERVER->config_manager->decoration->active_border_color[2] = color[2];
+                GLOBAL_SERVER->config_manager->decoration->active_border_color[3] = color[3];
+                break;
+            default:
+                LOG("Provided to much arguments to gaps() function!\n");
+        }
+    }
+    return 0;
+}
+
+int hellwm_lua_decoration_border_inactive(lua_State *L)
+{
+    float color[4];
+    char *string_color = NULL;
+    int nargs = lua_gettop(L);
+
+    for (int i = 1; i<=nargs; i++)
+    {
+        switch (i)
+        {
+            case 1:
+                 string_color = strdup(lua_tostring(L, i));
+
+                if (get_color(string_color, color))
+                {
+                    LOG("BorderColor(INACTIVE): (%f, %f, %f), Alpha: %f\n", color[0], color[1], color[2], color[3]);
+                }
+                else {
+                    LOG("Invalid color format: border_inactive_color(\"%s\")\n", string_color);
+                    return 1;
+                }
+
+                GLOBAL_SERVER->config_manager->decoration->inactive_border_color[0] = color[0];
+                GLOBAL_SERVER->config_manager->decoration->inactive_border_color[1] = color[1];
+                GLOBAL_SERVER->config_manager->decoration->inactive_border_color[2] = color[2];
+                GLOBAL_SERVER->config_manager->decoration->inactive_border_color[3] = color[3];
+                break;
+            default:
+                LOG("Provided to much arguments to gaps() function!\n");
         }
     }
     return 0;
@@ -2906,8 +3128,25 @@ void hellwm_config_manager_load_from_file(char * filename)
     lua_pushcfunction(L, hellwm_lua_tiling_layout);
     lua_setglobal(L, "layout");
 
+    lua_pushcfunction(L, hellwm_lua_decoration_border_width);
+    lua_setglobal(L, "border_width");
+
+    lua_pushcfunction(L, hellwm_lua_decoration_gaps);
+    lua_setglobal(L, "gaps");
+
+    lua_pushcfunction(L, hellwm_lua_decoration_border_active);
+    lua_setglobal(L, "border_active_color");
+
+    lua_pushcfunction(L, hellwm_lua_decoration_border_inactive);
+    lua_setglobal(L, "border_inactive_color");
+
     if (luaL_loadfile(L, filename) || lua_pcall(L, 0, 0, 0))
-        hellwm_lua_error(L, "Cannot load configuration file: %s", lua_tostring(L, -1));
+        // TODO > Create dummy config manager to store all vars from config, so in case of an error it instead of crash it will just not apply.
+        hellwm_lua_error(L, "Cannot load configuration file: %s\n", lua_tostring(L, -1));
+    else
+    {
+        // TODO > if not failed GLOBAL_SERVER->config_manager = dummy config
+    }
 
     lua_close(L);
 
@@ -3079,16 +3318,17 @@ void hellwm_config_print(struct hellwm_config_manager *config)
 
     LOG("\n\nstruct hellwm_config_manager* config\n{\n");
 
+    // Printing monitor_manager details
     if (config->monitor_manager)
     {
         hellwm_config_manager_monitor *mon = config->monitor_manager;
 
         LOG("\tstruct hellwm_config_manager_monitor* monitor_manager\n\t{\n");
-        LOG("\t\tcount = %d\n\t\thellwm_config_monitor **monitors[%d] = \n\t\t{\n",mon->count, mon->count);
+        LOG("\t\tcount = %d\n\t\thellwm_config_monitor **monitors[%d] = \n\t\t{\n", mon->count, mon->count);
 
-        for (size_t i = 0; i<mon->count; i++)
+        for (size_t i = 0; i < mon->count; i++)
         {
-            LOG("\t\t\t[%d] = \n\t\t\t{\n",i);
+            LOG("\t\t\t[%d] = \n\t\t\t{\n", i);
             LOG("\t\t\t\tname      = %s\n", mon->monitors[i]->name);
             LOG("\t\t\t\tenabled   = %d\n", mon->monitors[i]->enabled);
             LOG("\t\t\t\twidth     = %d\n", mon->monitors[i]->width);
@@ -3102,39 +3342,41 @@ void hellwm_config_print(struct hellwm_config_manager *config)
         LOG("\t\t}\n\t}\n");
     }
 
+    // Printing keyboard_manager details
     if (config->keyboard_manager)
     {
         hellwm_config_manager_keyboard *kbd = config->keyboard_manager;
 
         LOG("\tstruct hellwm_config_manager_keyboard* keyboard_manager\n\t{\n");
-        LOG("\t\tcount = %d\n\t\thellwm_config_keyboard **keyboards[%d] = \n\t\t{\n",kbd->count, kbd->count);
+        LOG("\t\tcount = %d\n\t\thellwm_config_keyboard **keyboards[%d] = \n\t\t{\n", kbd->count, kbd->count);
 
-        for (size_t i = 0; i<kbd->count; i++)
+        for (size_t i = 0; i < kbd->count; i++)
         {
-            LOG("\t\t\t[%d] = \n\t\t\t{\n",i);
+            LOG("\t\t\t[%d] = \n\t\t\t{\n", i);
             LOG("\t\t\t\tname   = %s\n", kbd->keyboards[i]->name);
             LOG("\t\t\t\tlayout = %s\n", kbd->keyboards[i]->layout);
             LOG("\t\t\t\tdelay  = %d\n", kbd->keyboards[i]->delay);
             LOG("\t\t\t\trate   = %d\n", kbd->keyboards[i]->rate);
             LOG("\t\t\t\toption = %s\n", kbd->keyboards[i]->options);
             LOG("\t\t\t\trules  = %s\n", kbd->keyboards[i]->rules);
-            LOG("\t\t\t\tvarian = %s\n", kbd->keyboards[i]->variant);
+            LOG("\t\t\t\tvariant = %s\n", kbd->keyboards[i]->variant);
             LOG("\t\t\t\tmodel  = %s\n", kbd->keyboards[i]->model);
             LOG("\t\t\t}\n");
         }
         LOG("\t\t}\n\t}\n");
     }
 
+    // Printing keybindings details
     if (config->keybindings)
     {
         hellwm_config_manager_keybindings *kbd = config->keybindings;
 
         LOG("\tstruct hellwm_config_manager_keybindings* keybindings_manager\n\t{\n");
-        LOG("\t\tcount = %d\n\t\thellwm_config_keybindings **keybindings[%d] = \n\t\t{\n",kbd->count, kbd->count);
+        LOG("\t\tcount = %d\n\t\thellwm_config_keybindings **keybindings[%d] = \n\t\t{\n", kbd->count, kbd->count);
 
         for (size_t i = 0; i < kbd->count; i++)
         {
-            LOG("\t\t\t[%d] = \n\t\t\t{\n",i);
+            LOG("\t\t\t[%d] = \n\t\t\t{\n", i);
             LOG("\t\t\t\tcount        = %d\n", kbd->keybindings[i]->count);
             LOG("\t\t\t\ttype         = %d\n", kbd->keybindings[i]->type);
 
@@ -3145,7 +3387,7 @@ void hellwm_config_print(struct hellwm_config_manager *config)
                     break;
 
                 case HELLWM_KEYBIND_WORKSPACE:
-                    LOG("\t\t\t\tworkspace    = \n\t\t\t\t{\n", kbd->keybindings[i]->content->workspace.workspace_id);
+                    LOG("\t\t\t\tworkspace    = \n\t\t\t\t{\n");
                     LOG("\t\t\t\t\tworkspace_id              = %d\n", kbd->keybindings[i]->content->workspace.workspace_id);
                     LOG("\t\t\t\t\tmove_with_active          = %d\n", kbd->keybindings[i]->content->workspace.move_with_active);
                     LOG("\t\t\t\t\tbinary_workspace_val      = %d\n", kbd->keybindings[i]->content->workspace.binary_workspace_val);
@@ -3159,23 +3401,38 @@ void hellwm_config_print(struct hellwm_config_manager *config)
 
                 default:
                     LOG("%s:%s Wrong keybind type: %d", __func__, __LINE__, kbd->keybindings[i]->type);
-
             }
-            LOG("\t\t\t\tkeysyms[%d]   = \n\t\t\t\t{\n", kbd->keybindings[i]->count);
+            LOG("\t\t\t\tkeysyms[%d] = \n\t\t\t\t{\n", kbd->keybindings[i]->count);
 
-            for (size_t j = 0; j<kbd->keybindings[i]->count; j++)
+            for (size_t j = 0; j < kbd->keybindings[i]->count; j++)
             {
                 char keysym[16];
                 if (xkb_keysym_get_name(kbd->keybindings[i]->keysyms[j], keysym, 16) != -1)
-                    LOG("\t\t\t\t\tkey[%d]    = %s\n", j, keysym);
+                    LOG("\t\t\t\t\tkey[%d] = %s\n", j, keysym);
                 else
-                    LOG("\t\t\t\t\tkey[%d]    = %s\n", j, NULL);
+                    LOG("\t\t\t\t\tkey[%d] = %s\n", j, NULL);
             }
             LOG("\t\t\t\t}\n\t\t\t}\n");
         }
         LOG("\t\t}\n\t}\n");
     }
 
+    // Printing decoration details
+    if (config->decoration)
+    {
+        hellwm_config_manager_decoration *dec = config->decoration;
+
+        LOG("\tstruct hellwm_config_manager_decoration* decoration\n\t{\n");
+        LOG("\t\tgaps             = %d\n", dec->gaps);
+        LOG("\t\tborder_width     = %d\n", dec->border_width);
+        LOG("\t\tactive_border_color = {%f, %f, %f, %f}\n", 
+            dec->active_border_color[0], dec->active_border_color[1], 
+            dec->active_border_color[2], dec->active_border_color[3]);
+        LOG("\t\tinactive_border_color = {%f, %f, %f, %f}\n", 
+            dec->inactive_border_color[0], dec->inactive_border_color[1], 
+            dec->inactive_border_color[2], dec->inactive_border_color[3]);
+        LOG("\t}\n");
+    }
 
     LOG("}\n");
 }

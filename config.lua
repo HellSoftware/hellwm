@@ -1,3 +1,12 @@
+--[[
+    _   _      _ ___        ____  __     ____             __ _       
+   | | | | ___| | \ \      / /  \/  |   / ___|___  _ __  / _(_) __ _ 
+   | |_| |/ _ \ | |\ \ /\ / /| |\/| |  | |   / _ \| '_ \| |_| |/ _` |
+   |  _  |  __/ | | \ V  V / | |  | |  | |__| (_) | | | |  _| | (_| |
+   |_| |_|\___|_|_|  \_/\_/  |_|  |_|   \____\___/|_| |_|_| |_|\__, |
+                                                               |___/ 
+]]
+
 -- Monitor Settings
 monitor(
     "DP-1", -- name
@@ -28,11 +37,10 @@ keyboard("ckb1: CORSAIR K68 RGB Mechanical Gaming Keyboard vKB", "pl",50,200)
 -- Keybindings
     
 bind(
-    "Super_L, b",     -- keys
+    "Super_L, b",     -- keys (for now you can only use combination of max 2
     "firefox"         -- program name
     )
-bind("Super_L, Return", "foot")
-bind("Super_L, t", "alacritty")
+bind("Super_L, Return", "alacritty")
 bind("Super_L, F12", "pavucontrol")
 bind("Super_L, F11", "grim")
 bind("Super_L, w", "setwall")
@@ -82,9 +90,20 @@ bind("Alt_L, n", "focus_next_center")   -- Focus next and center Window
 
 -- Set environment variables
 env("EDITOR", "nvim")
-env("GTK_THEME", "Adwaita")
+env("GTK_THEME", "Nordic")
 
 -- Exec daemons etc.
 exec("swww init")
 exec("waybar")
 exec("alacritty")
+
+-- Decoration
+border_width(2)
+gaps(100)
+
+--dofile("/home/dh/.cache/hellwal/hellwm.lua")
+--border_inactive_color(background)
+--border_active_color(foreground)
+
+border_inactive_color("#87554c")
+border_active_color("233, 23, 52, 128")
