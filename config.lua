@@ -37,6 +37,7 @@ bind("Super_L, F12", "pavucontrol")
 bind("Super_L, F11", "grim")
 bind("Super_L, w", "setwall")
 bind("Super_L, v", "vesktop")
+bind("Super_L, e", "wofi --show drun")
 
     -- Screen Brightness
 bind("Alt_L, XF86AudioRaiseVolume", "brightnessctl s +1%")
@@ -84,6 +85,6 @@ env("EDITOR", "nvim")
 env("GTK_THEME", "Adwaita")
 
 -- Exec daemons etc.
-exec("swww init ; swww img ~/wallpapers/anime-girls-balloon-women-sky-wallpaper-659852899b3ce30278d24f855a4395e8.jpg")
+exec("swww init")
 exec("waybar")
 exec("alacritty")
