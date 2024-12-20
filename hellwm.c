@@ -214,6 +214,7 @@ struct hellwm_workspace
 struct hellwm_toplevel
 {
     struct wl_list link;
+    struct timespec fade_animation_start; // for fade animation
 
     struct hellwm_server *server;
     struct hellwm_workspace *workspace;
@@ -370,6 +371,7 @@ typedef struct
 typedef struct 
 {
     float master_ratio;
+    float fade_duration;
 
     uint32_t gaps;
 
@@ -433,6 +435,7 @@ int hellwm_lua_decoration_gaps(lua_State *L);
 int hellwm_lua_decoration_border_width(lua_State *L);
 int hellwm_lua_decoration_border_active(lua_State *L);
 int hellwm_lua_decoration_border_inactive(lua_State *L);
+int hellwm_lua_decoration_fade_animation_duration(lua_State *L);
 
 void hellwm_config_print(struct hellwm_config_manager *config);
 bool hellwm_function_find(const char* name, struct hellwm_server* server, union hellwm_function *func);
@@ -873,6 +876,9 @@ hellwm_config_manager_decoration *hellwm_config_manager_decoration_create()
 
     /* gaps */
     decoration->gaps = 20;
+
+    /* fade animation duration */
+    decoration->fade_duration = 0.4f;
 
     /* border */
     decoration->border_width = 2;
@@ -1640,7 +1646,8 @@ static int box_area(struct wlr_box *box)
   return box->width * box->height;
 }
 
-struct hellwm_output *toplevel_get_primary_output(struct hellwm_toplevel *toplevel) {
+struct hellwm_output *toplevel_get_primary_output(struct hellwm_toplevel *toplevel)
+{
     uint32_t toplevel_x =
         toplevel->scene_tree->node.x +
         toplevel->xdg_toplevel->base->current.geometry.x;
@@ -1767,6 +1774,11 @@ static void output_frame(struct wl_listener *listener, void *data)
         output->server->layout_reapply = 0;
     }
 
+    struct timespec now;
+    clock_gettime(CLOCK_MONOTONIC, &now);
+
+    float duration = output->server->config_manager->decoration->fade_duration;
+
     if (!output->server->active_workspace->fullscreened)
     {
         struct hellwm_toplevel *toplevel;
@@ -1774,16 +1786,31 @@ static void output_frame(struct wl_listener *listener, void *data)
         {
             wlr_scene_node_set_enabled(&toplevel->scene_tree->node, true);
             struct wlr_scene_buffer *scene_buffer = surface_find_buffer(&toplevel->scene_tree->node, toplevel->xdg_toplevel->base->surface);
-            wlr_scene_buffer_set_dest_size(scene_buffer, toplevel->current_geom.width, toplevel->current_geom.height);
+            //wlr_scene_buffer_set_dest_size(scene_buffer, toplevel->current_geom.width, toplevel->current_geom.height);
+
+            if (duration > 0.0f)
+            {
+                double elapsed = (now.tv_sec - toplevel->fade_animation_start.tv_sec) +
+                    (now.tv_nsec - toplevel->fade_animation_start.tv_nsec) / 1e9;
+
+                if (elapsed >= duration)
+                {
+                    // Animation complete
+                    wlr_scene_buffer_set_opacity(scene_buffer, 1.f);
+                }
+                else
+                {
+                    // Interpolate opacity (0.0 to 1.0)
+                    float opacity = elapsed / duration;
+                    wlr_scene_buffer_set_opacity(scene_buffer, opacity);
+                }
+            }
             borders_toplevel_update(toplevel);
         }
     }
 
     /* Render the scene if needed and commit the output */
     wlr_scene_output_commit(scene_output, NULL);
-
-    struct timespec now;
-    clock_gettime(CLOCK_MONOTONIC, &now);
     wlr_scene_output_send_frame_done(scene_output, &now);
 }
 
@@ -1918,8 +1945,8 @@ static void borders_toplevel_create(struct hellwm_toplevel *toplevel)
         return;
 
     uint32_t width, height;
-    width = toplevel->xdg_toplevel->current.width;
-    height = toplevel->xdg_toplevel->current.height;
+    width = toplevel->current_geom.width;
+    height = toplevel->current_geom.height;
 
     uint32_t border_width = GLOBAL_SERVER->config_manager->decoration->border_width;
 
@@ -1956,8 +1983,9 @@ static void borders_toplevel_update(struct hellwm_toplevel *toplevel)
         return;
 
     uint32_t width, height;
-    width = toplevel->xdg_toplevel->current.width;
-    height = toplevel->xdg_toplevel->current.height;
+
+    width = toplevel->current_geom.width;
+    height = toplevel->current_geom.height;
 
     uint32_t border_width = GLOBAL_SERVER->config_manager->decoration->border_width;
 
@@ -2037,6 +2065,8 @@ static void xdg_toplevel_commit(struct wl_listener *listener, void *data)
         wlr_xdg_toplevel_set_size(toplevel->xdg_toplevel,
                 toplevel->server->active_output->wlr_output->width,
                 toplevel->server->active_output->wlr_output->height);
+
+        clock_gettime(CLOCK_MONOTONIC, &toplevel->fade_animation_start);
         return;
     }
 }
@@ -3171,6 +3201,24 @@ int hellwm_lua_decoration_border_active(lua_State *L)
     return 0;
 }
 
+int hellwm_lua_decoration_fade_animation_duration(lua_State *L)
+{
+    int nargs = lua_gettop(L);
+
+    for (int i = 1; i<=nargs; i++)
+    {
+        switch (i)
+        {
+            case 1:
+                GLOBAL_SERVER->config_manager->decoration->fade_duration = lua_tonumber(L, i);
+                break;
+            default:
+                LOG("Provided to much arguments to fade_duration() function!\n");
+        }
+    }
+    return 0;
+}
+
 int hellwm_lua_decoration_border_inactive(lua_State *L)
 {
     float color[4];
@@ -3241,6 +3289,9 @@ void hellwm_config_manager_load_from_file(char * filename)
 
     lua_pushcfunction(L, hellwm_lua_decoration_border_inactive);
     lua_setglobal(L, "border_inactive_color");
+
+    lua_pushcfunction(L, hellwm_lua_decoration_fade_animation_duration);
+    lua_setglobal(L, "fade_duration");
 
     if (luaL_loadfile(L, filename) || lua_pcall(L, 0, 0, 0))
         // TODO > Create dummy config manager to store all vars from config, so in case of an error it instead of crash it will just not apply.

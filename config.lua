@@ -103,6 +103,8 @@ exec("alacritty")
 border_width(2)
 gaps(100)
 
+fade_duration(0.4)
+
 -- Border colors
 border_inactive_color("#87554c")
 border_active_color("233, 23, 52, 128")
