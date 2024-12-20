@@ -1119,6 +1119,7 @@ static void hellwm_toplevel_kill_active(struct hellwm_server *server)
 {
     if (!server->active_workspace) return;
     if (wl_list_length(&server->active_workspace->toplevels) < 1) return;
+    if (server->seat->keyboard_state.focused_surface == NULL) return;
 
     struct wlr_xdg_toplevel *toplevel = wlr_xdg_toplevel_try_from_wlr_surface(server->seat->keyboard_state.focused_surface);
     if (!toplevel)
@@ -1126,7 +1127,10 @@ static void hellwm_toplevel_kill_active(struct hellwm_server *server)
 
     wlr_xdg_toplevel_send_close(toplevel);
 
+    //if (server->active_workspace->prev_focused != NULL)
+    //    hellwm_focus_toplevel(server->active_workspace->prev_focused);
     hellwm_focus_next_toplevel(server);
+
     server->layout_reapply = 1;
 }
 
