@@ -568,6 +568,7 @@ static void toplevel_unset_fullscreen(struct hellwm_toplevel *toplevel);
 
 float *border_get_color(enum hellwm_border_state state);
 static void borders_toplevel_update(struct hellwm_toplevel *toplevel);
+static void borders_toplevel_update_all(struct hellwm_server *server);
 static void borders_toplevel_create(struct hellwm_toplevel *toplevel);
 static void toplevel_borders_set_state(struct hellwm_toplevel *toplevel, enum hellwm_border_state state);
 
@@ -1960,6 +1961,23 @@ static void borders_toplevel_update(struct hellwm_toplevel *toplevel)
     wlr_scene_rect_set_size(toplevel->borders[3], border_width, height);
 }
 
+static void borders_toplevel_update_all(struct hellwm_server *server)
+{
+    if (server->active_workspace == NULL)
+        return;
+
+    struct hellwm_toplevel *toplevel;
+    wl_list_for_each(toplevel, &server->active_workspace->toplevels, link)
+    {
+        if (toplevel == server->active_workspace->now_focused)
+            toplevel_borders_set_state(toplevel, HELLWM_BORDER_ACTIVE);
+        else
+            toplevel_borders_set_state(toplevel, HELLWM_BORDER_INACTIVE);
+
+        borders_toplevel_update(toplevel);
+    }
+}
+
 static void xdg_toplevel_map(struct wl_listener *listener, void *data) 
 {
     /* Called when the surface is mapped, or ready to display on-screen. */
@@ -2736,6 +2754,8 @@ void hellwm_config_manager_reload(struct hellwm_server *server)
 
     hellwm_config_manager_monitor_reload(server);
     hellwm_config_manager_keyboard_reload(server);
+
+    borders_toplevel_update_all(server);
 }
 
 void hellwm_config_keybindings_free(hellwm_config_manager_keybindings *keybindings)
