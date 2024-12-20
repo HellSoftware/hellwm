@@ -79,6 +79,8 @@ bind("Super_L, p", "workspace", 4, true, 8)
 
 bind("Super_L, r", "reload_config")     -- Reload config
 
+bind("Super_L, f", "set_fullscreen")     -- Fullscreens active toplevel
+
 bind("Super_L, q", "kill_active")       -- Kill Active Window
 bind("Super_L, Escape", "kill_server")  -- Kill HellWM
 
