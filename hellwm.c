@@ -1936,9 +1936,14 @@ static void borders_toplevel_create(struct hellwm_toplevel *toplevel)
 
 static void toplevel_borders_set_state(struct hellwm_toplevel *toplevel, enum hellwm_border_state state)
 {
+    if (toplevel == NULL) return;
+    if (toplevel->borders[0] == NULL) return;
+
     const float *border_color = border_get_color(state);
-    for(size_t i = 0; i < 4; i++)
+
+    for(size_t i = 0; i < 4; i++) {
         wlr_scene_rect_set_color(toplevel->borders[i], border_color);
+    }
 }
 
 static void borders_toplevel_update(struct hellwm_toplevel *toplevel)
@@ -2037,6 +2042,12 @@ static void xdg_toplevel_destroy(struct wl_listener *listener, void *data)
     /* Called when the xdg_toplevel is destroyed. */
     struct hellwm_toplevel *toplevel = wl_container_of(listener, toplevel, destroy);
     struct hellwm_server *server = toplevel->server;
+
+    if (toplevel == server->active_workspace->now_focused)
+    {
+        if (server->active_workspace->fullscreened)
+            server->active_workspace->fullscreened = false;
+    }
 
     wl_list_remove(&toplevel->map.link);
     wl_list_remove(&toplevel->unmap.link);
@@ -2755,6 +2766,7 @@ void hellwm_config_manager_reload(struct hellwm_server *server)
     hellwm_config_manager_monitor_reload(server);
     hellwm_config_manager_keyboard_reload(server);
 
+    server->layout_reapply = 1;
     borders_toplevel_update_all(server);
 }
 
