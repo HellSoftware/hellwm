@@ -104,12 +104,11 @@ border_width(0)
 gaps(100)
 
 fade_duration(0.4)
-fade_bezier(0.5, 0.72, 0.58, 21)
 
 animation_duration(0.5)
 animation_bezier(0.5, 1.32, 1.38, 1)
 
-animation_direction("left")
+animation_direction("grow")
 
 -- Border colors
 border_inactive_color("#87554c")

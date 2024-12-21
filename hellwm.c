@@ -224,7 +224,7 @@ struct hellwm_workspace
 
 struct hellwm_toplevel
 {
-    enum hellwm_animation_state animation_state;
+    enum hellwm_animation_state animation_state; // set type of animation to use
 
     struct wl_list link;
     struct timespec fade_start; // for fade animation
@@ -387,7 +387,6 @@ typedef struct
     float master_ratio;
 
     float fade_duration;
-    float fade_bezier[4];
     bool fade_decoration;
 
     float animation_duration;
@@ -454,7 +453,6 @@ int hellwm_lua_add_monitor(lua_State *L);
 int hellwm_lua_add_keyboard(lua_State *L);
 int hellwm_lua_tiling_layout(lua_State *L);
 int hellwm_lua_decoration_gaps(lua_State *L);
-int hellwm_lua_decoration_fade_bezier(lua_State *L);
 int hellwm_lua_decoration_border_width(lua_State *L);
 int hellwm_lua_decoration_border_active(lua_State *L);
 int hellwm_lua_decoration_border_inactive(lua_State *L);
@@ -529,7 +527,6 @@ static bool handle_keybinding(struct hellwm_server *server, uint32_t modifiers, 
 
 struct hellwm_view *root_parent_surface(struct wlr_surface *wlr_surface);
 struct hellwm_view *desktop_view_at(struct hellwm_server *server, double lx, double ly, struct wlr_surface **surface, double *sx, double *sy);
-//static struct hellwm_toplevel *desktop_toplevel_at(struct hellwm_server *server, double lx, double ly, struct wlr_surface **surface, double *sx, double *sy); //obselete
 
 static void hellwm_server_kill(struct hellwm_server *server);
 static void hellwm_toplevel_fullscreen(struct hellwm_server *server);
@@ -540,6 +537,7 @@ static void hellwm_focus_next_toplevel(struct hellwm_server *server);
 static void hellwm_focus_prev_toplevel(struct hellwm_server *server);
 static void hellwm_focus_prev_toplevel_center(struct hellwm_server *server);
 static void hellwm_focus_next_toplevel_center(struct hellwm_server *server);
+static void hellwm_focus_next_toplevel_ONLY_FOCUS(struct hellwm_server *server);
 
 static void keyboard_handle_key(struct wl_listener *listener, void *data);
 static void keyboard_handle_destroy(struct wl_listener *listener, void *data);
@@ -829,6 +827,24 @@ void check_usage(int argc, char**argv)
     }
 }
 
+static void start_animation_toplevel(struct hellwm_toplevel *toplevel)
+{
+    if (toplevel == NULL) return;
+    clock_gettime(CLOCK_MONOTONIC, &toplevel->animation_start);
+}
+
+static void toplevel_animation_set_type(struct hellwm_toplevel *toplevel, enum hellwm_animation_state state)
+{
+    if (toplevel == NULL) return;
+    toplevel->animation_state = state;
+}
+
+static void toplevel_fade_start(struct hellwm_toplevel *toplevel)
+{
+    if (toplevel == NULL) return;
+    clock_gettime(CLOCK_MONOTONIC, &toplevel->fade_start);
+}
+
 hellwm_config_manager_monitor *hellwm_config_manager_monitor_create()
 {
     hellwm_config_manager_monitor *monitor_manager = calloc(1, sizeof(hellwm_config_manager_monitor));
@@ -904,10 +920,6 @@ hellwm_config_manager_decoration *hellwm_config_manager_decoration_create()
 
     /* fade animation duration */
     decoration->fade_duration = 0.4f;
-    decoration->fade_bezier[0] = 0.0f;
-    decoration->fade_bezier[1] = 0.9f;
-    decoration->fade_bezier[2] = 0.1f;
-    decoration->fade_bezier[3] = 1.0f;
     decoration->fade_decoration = true;
 
     decoration->animation_duration = 0.4f;
@@ -1106,8 +1118,19 @@ static void hellwm_focus_next_toplevel(struct hellwm_server *server)
     if (wl_list_length(&server->active_workspace->toplevels) < 1)
         return;
 
-    server->active_workspace->now_focused->animation_state = HELLWM_ANIMATION_SHRINK;
-    clock_gettime(CLOCK_MONOTONIC, &server->active_workspace->now_focused->animation_start);
+    toplevel_animation_set_type(server->active_workspace->now_focused, HELLWM_ANIMATION_SHRINK);
+    start_animation_toplevel(server->active_workspace->now_focused);
+
+    hellwm_focus_next_toplevel_ONLY_FOCUS(server);
+
+    toplevel_animation_set_type(server->active_workspace->now_focused, HELLWM_ANIMATION_GROW);
+    start_animation_toplevel(server->active_workspace->now_focused);
+
+}
+static void hellwm_focus_next_toplevel_ONLY_FOCUS(struct hellwm_server *server)
+{
+    if (wl_list_length(&server->active_workspace->toplevels) < 1)
+        return;
 
     struct hellwm_toplevel *next_toplevel = wl_container_of(server->active_workspace->toplevels.prev, next_toplevel, link);
     if (next_toplevel)
@@ -1122,8 +1145,6 @@ static void hellwm_focus_next_toplevel(struct hellwm_server *server)
             break;
         }
     }
-    server->active_workspace->now_focused->animation_state = HELLWM_ANIMATION_GROW;
-    clock_gettime(CLOCK_MONOTONIC, &server->active_workspace->now_focused->animation_start);
 }
 
 /* 
@@ -1154,6 +1175,7 @@ static void hellwm_focus_prev_toplevel(struct hellwm_server *server)
 
 static void hellwm_focus_next_toplevel_center(struct hellwm_server *server)
 {
+
     hellwm_focus_next_toplevel(server);
     server->layout_reapply = 1;
 }
@@ -1193,7 +1215,7 @@ static void hellwm_toplevel_fullscreen(struct hellwm_server *server)
     else
         toplevel_set_fullscreen(server->active_workspace->now_focused);
 
-    clock_gettime(CLOCK_MONOTONIC, &server->active_workspace->now_focused->animation_start);
+    start_animation_toplevel(server->active_workspace->now_focused);
 }
 
 static void hellwm_server_kill(struct hellwm_server *server)
@@ -1507,34 +1529,6 @@ static void seat_request_set_selection(struct wl_listener *listener, void *data)
     struct wlr_seat_request_set_selection_event *event = data;
     wlr_seat_set_selection(server->seat, event->source, event->serial);
 }
-
-//static struct hellwm_toplevel *desktop_toplevel_at(struct hellwm_server *server, double lx, double ly, struct wlr_surface **surface, double *sx, double *sy)
-//{
-//    /* This returns the topmost node in the scene at the given layout coords.
-//     * We only care about surface nodes as we are specifically looking for a
-//     * surface in the surface tree of a hellwm_toplevel. */
-//    struct wlr_scene_node *node = wlr_scene_node_at(&server->scene->tree.node, lx, ly, sx, sy);
-//    if (node == NULL || node->type != WLR_SCENE_NODE_BUFFER)
-//        return NULL;
-//
-//    struct wlr_scene_buffer *scene_buffer = wlr_scene_buffer_from_node(node);
-//    struct wlr_scene_surface *scene_surface = wlr_scene_surface_try_from_buffer(scene_buffer);
-//
-//    if (!scene_surface)
-//        return NULL;
-//
-//    *surface = scene_surface->surface;
-//    if (surface == NULL)
-//        return NULL;
-//
-//    /* Find the node corresponding to the hellwm_toplevel at the root of this
-//     * surface tree, it is the only one for which we set the data field. */
-//    struct wlr_scene_tree *tree = node->parent;
-//    while (tree != NULL && tree->node.data == NULL)
-//        tree = tree->node.parent;
-//
-//    return tree->node.data;
-//}
 
 static void reset_cursor_mode(struct hellwm_server *server)
 {
@@ -1935,12 +1929,6 @@ static void output_frame(struct wl_listener *listener, void *data)
 
     struct wlr_scene_output *scene_output = wlr_scene_get_scene_output(scene, output->wlr_output);
 
-    if (output->server->layout_reapply == 1)
-    {
-        apply_layout(output->server->active_workspace, output->server->active_workspace->layout);
-        output->server->layout_reapply = 0;
-    }
-
     struct timespec now;
     clock_gettime(CLOCK_MONOTONIC, &now);
 
@@ -1994,18 +1982,23 @@ static void output_frame(struct wl_listener *listener, void *data)
                     float *f = GLOBAL_SERVER->config_manager->decoration->animation_bezier;
                     float bezier_value = cubic_bezier(t, f[0], f[1], f[2], f[3]);
 
-                    float smoothed_value = smooth(bezier_value, previous_value, 2.f); // Adjust alpha as needed
+                    float smoothed_value = smooth(bezier_value, previous_value, 2.f);
                     previous_value = smoothed_value;
 
                     animate_toplevel(toplevel, t, bezier_value);
                 }
             }
-            else {
+            else
                 wlr_scene_node_set_position(&toplevel->scene_tree->node, toplevel->current_geom.x, toplevel->current_geom.y);
-            }
 
             borders_toplevel_update(toplevel);
         }
+    }
+
+    if (output->server->layout_reapply == 1)
+    {
+        apply_layout(output->server->active_workspace, output->server->active_workspace->layout);
+        output->server->layout_reapply = 0;
     }
 
     wlr_scene_output_commit(scene_output, NULL);
@@ -2264,10 +2257,10 @@ static void xdg_toplevel_commit(struct wl_listener *listener, void *data)
                 toplevel->server->active_output->wlr_output->width,
                 toplevel->server->active_output->wlr_output->height);
 
-        clock_gettime(CLOCK_MONOTONIC, &toplevel->fade_start);
-        clock_gettime(CLOCK_MONOTONIC, &toplevel->animation_start);
+        toplevel_fade_start(toplevel);
+        start_animation_toplevel(toplevel);
 
-        toplevel->animation_state = HELLWM_ANIMATION_GROW;
+        toplevel->animation_state = GLOBAL_SERVER->config_manager->decoration->default_animation;
         return;
     }
 }
@@ -2386,8 +2379,8 @@ static void toplevel_unset_fullscreen(struct hellwm_toplevel *toplevel)
     wlr_xdg_toplevel_set_fullscreen(toplevel->xdg_toplevel, false);
 
     GLOBAL_SERVER->active_workspace->fullscreened = false;
+    toplevel_animation_set_type(toplevel, HELLWM_ANIMATION_SHRINK);
     toplevel_borders_set_state(toplevel, HELLWM_BORDER_ACTIVE);
-    toplevel->animation_state = HELLWM_ANIMATION_SHRINK;
 }
 
 static void toplevel_set_fullscreen(struct hellwm_toplevel *toplevel)
@@ -2411,8 +2404,8 @@ static void toplevel_set_fullscreen(struct hellwm_toplevel *toplevel)
     wlr_xdg_toplevel_set_fullscreen(toplevel->xdg_toplevel, true);
 
     toplevel_borders_set_state(toplevel, HELLWM_BORDER_INVISIBLE);
+    toplevel_animation_set_type(toplevel, HELLWM_ANIMATION_GROW);
     GLOBAL_SERVER->active_workspace->fullscreened = true;
-    toplevel->animation_state = HELLWM_ANIMATION_GROW;
 }
 
 static void xdg_toplevel_request_fullscreen(struct wl_listener *listener, void *data)
@@ -3068,7 +3061,7 @@ int hellwm_lua_add_keyboard(lua_State *L)
     hellwm_config_keyboard *keyboard = calloc(1, sizeof(hellwm_config_keyboard));
     if (keyboard == NULL) {
         LOG("Memory allocation failed for keyboard.\n");
-        return 0; // Early return on allocation failure
+        return 0;
     }
 
     keyboard->name = NULL;
@@ -3421,33 +3414,6 @@ int hellwm_lua_decoration_fade_duration(lua_State *L)
     return 0;
 }
 
-int hellwm_lua_decoration_fade_bezier(lua_State *L)
-{
-    int nargs = lua_gettop(L);
-
-    for (int i = 1; i<=nargs; i++)
-    {
-        switch (i)
-        {
-            case 1:
-                GLOBAL_SERVER->config_manager->decoration->fade_bezier[0] = lua_tonumber(L, i);
-                break;
-            case 2:
-                GLOBAL_SERVER->config_manager->decoration->fade_bezier[1] = lua_tonumber(L, i);
-                break;
-            case 3:
-                GLOBAL_SERVER->config_manager->decoration->fade_bezier[2] = lua_tonumber(L, i);
-                break;
-            case 4:
-                GLOBAL_SERVER->config_manager->decoration->fade_bezier[3] = lua_tonumber(L, i);
-                break;
-            default:
-                LOG("Provided to much arguments to fade_duration() function!\n");
-        }
-    }
-    return 0;
-}
-
 int hellwm_lua_decoration_animation_duration(lua_State *L)
 {
     int nargs = lua_gettop(L);
@@ -3612,9 +3578,6 @@ void hellwm_config_manager_load_from_file(char * filename)
 
     lua_pushcfunction(L, hellwm_lua_decoration_fade_duration);
     lua_setglobal(L, "fade_duration");
-
-    lua_pushcfunction(L, hellwm_lua_decoration_fade_bezier);
-    lua_setglobal(L, "fade_bezier");
 
     lua_pushcfunction(L, hellwm_lua_decoration_animation_duration);
     lua_setglobal(L, "animation_duration");
@@ -3956,7 +3919,7 @@ void hellwm_function_expose(struct hellwm_server *server)
 {
     hellwm_function_add_to_map(server, "kill_server",   hellwm_server_kill);
 
-    hellwm_function_add_to_map(server, "focus_next",    hellwm_focus_next_toplevel);
+    hellwm_function_add_to_map(server, "focus_next",    hellwm_focus_next_toplevel_ONLY_FOCUS);
     hellwm_function_add_to_map(server, "focus_prev",    hellwm_focus_prev_toplevel);
 
     hellwm_function_add_to_map(server, "focus_next_center",    hellwm_focus_next_toplevel_center);
