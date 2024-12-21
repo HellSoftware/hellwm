@@ -106,13 +106,15 @@ bind("Super_L, p", "workspace", 4, true, 8, false) -- Key 'p' represents Binary 
 
 ## TODO:
 - [ ] xwayland
+- [ ] optimization in output_frame
 
 ## DONE:
 - [x] config
+- [x] tiling
+- [x] borders
 - [x] workspaces
 - [x] wlr-layer-shell
 - [x] binary workspaces
-- [x] tiling (kinda?, **TODO**: rewrite using nodes.)
 
 # Special thanks
 

@@ -151,11 +151,14 @@ struct hellwm_server
     struct wlr_server_decoration_manager *wlr_server_decoration_manager;
 
     struct hellwm_layer_surface *layer_exclusive_keyboard;
-    struct wlr_scene_tree *layers[4]; /*
-                                         0 -> background
-                                         1 -> bottom
-                                         2 -> top
-                                         3 -> overlay */
+
+    struct wlr_scene_tree *background_tree; 
+    struct wlr_scene_tree *tile_tree; 
+    struct wlr_scene_tree *floating_tree; 
+    struct wlr_scene_tree *bottom_tree; 
+    struct wlr_scene_tree *top_tree; 
+    struct wlr_scene_tree *overlay_tree; 
+    struct wlr_scene_tree *fullscreen_tree; 
 
     struct wlr_layer_shell_v1 *layer_shell;
     struct wlr_xdg_decoration_manager_v1 *xdg_decoration_manager;
@@ -224,7 +227,18 @@ struct hellwm_workspace
 
 struct hellwm_toplevel
 {
-    enum hellwm_animation_state animation_state; // set type of animation to use
+    int order;
+
+    bool floating;
+    bool fullscreen;
+    bool set_fade_clock;
+    bool borders_visible;
+    bool set_animation_clock;
+
+    float previous_bezier;
+
+    enum hellwm_border_state border_state; // type of border state
+    enum hellwm_animation_state animation_state; // type of animation to use
 
     struct wl_list link;
     struct timespec fade_start; // for fade animation
@@ -235,6 +249,7 @@ struct hellwm_toplevel
 
     struct wlr_box last_state; // used for example for fullscreen
     struct wlr_box current_geom;
+    struct wlr_box pending_geom;
     struct wlr_scene_rect *borders[4];
     struct wlr_scene_tree *scene_tree;
     struct wlr_xdg_toplevel *xdg_toplevel;
@@ -386,6 +401,9 @@ typedef struct
 {
     float master_ratio;
 
+    uint32_t inner_gap;
+    uint32_t outer_gap;
+
     float fade_duration;
     bool fade_decoration;
 
@@ -393,8 +411,6 @@ typedef struct
     float animation_bezier[4];
     bool animations_decoration;
     enum hellwm_animation_state default_animation;
-
-    uint32_t gaps;
 
     uint32_t border_width;
     float active_border_color[4];
@@ -452,7 +468,8 @@ int hellwm_lua_add_keybind(lua_State *L);
 int hellwm_lua_add_monitor(lua_State *L);
 int hellwm_lua_add_keyboard(lua_State *L);
 int hellwm_lua_tiling_layout(lua_State *L);
-int hellwm_lua_decoration_gaps(lua_State *L);
+int hellwm_lua_decoration_outer_gap(lua_State *L);
+int hellwm_lua_decoration_inner_gap(lua_State *L);
 int hellwm_lua_decoration_border_width(lua_State *L);
 int hellwm_lua_decoration_border_active(lua_State *L);
 int hellwm_lua_decoration_border_inactive(lua_State *L);
@@ -609,35 +626,49 @@ static void server_new_xdg_toplevel(struct wl_listener *listener, void *data);
 /* Global Variables */
 struct hellwm_server *GLOBAL_SERVER = NULL;
 
-/* 
- * WARNING: TEMPORARY LAYOUTS AND REALLY BAD TILING - TODO: REMOVE THIS ekhm.. BEAUTIFUL CODE
- */
+// TODO: outer_gap
 void layout_horizontal_split(struct hellwm_workspace *workspace)
 {
-    if (workspace->fullscreened) return;
-
     int i = 0;
     int count = wl_list_length(&workspace->toplevels);
-    if (count == 0) return;
+    if (workspace->fullscreened == true) count--;
+    if (count <= 0) return;
 
-    int gaps = workspace->server->config_manager->decoration->gaps;
+    //int inner_gap = workspace->server->config_manager->decoration->inner_gap;
+    int outer_gap = workspace->server->config_manager->decoration->outer_gap;
     int border = workspace->server->config_manager->decoration->border_width;
 
     struct hellwm_output *output = workspace->output;
-    int window_width = output->wlr_output->width / count;
-    int window_height = output->wlr_output->height;
+    int output_width = output->wlr_output->width;
+    int output_height = output->wlr_output->height;
+
+    int window_width = output_width / count;
+    int window_height = output_height;
 
     struct hellwm_toplevel *toplevel;
     wl_list_for_each(toplevel, &workspace->toplevels, link)
     {
+        toplevel->borders_visible = true;
+        if (toplevel->fullscreen == true)
+            continue;
+
         int xx = i * window_width;
         int yy = 0;
         
-        int x = xx + gaps + border;
-        int y = yy + output->usable_area.y + gaps + border;
+        int x = xx + output->usable_area.x + outer_gap + border;
+        int y = yy + output->usable_area.y + outer_gap + border;
 
-        int width = window_width - border*2 - gaps*2;
-        int height = window_height - output->usable_area.y - border*2 - gaps*2;
+        int width = window_width - border * 2 - outer_gap * 2;
+        int height = window_height - output->usable_area.y - border * 2 - outer_gap * 2;
+
+        if (x < 0) x = 0;
+        if (y < 0) y = 0;
+
+        if (width < 0) width = 0;
+        if (height < 0) height = 0;
+
+        if (x + width > output_width) width = output_width - x;
+        if (y + height > output_height) height = output_height - y;
 
         toplevel->current_geom.x = x;
         toplevel->current_geom.y = y;
@@ -646,8 +677,89 @@ void layout_horizontal_split(struct hellwm_workspace *workspace)
 
         wlr_scene_node_set_position(&toplevel->scene_tree->node, x, y);
         wlr_xdg_toplevel_set_size(toplevel->xdg_toplevel, width, height);
+
+        toplevel->borders_visible = true;
         i++;
     }
+}
+void layout_dwindle(struct hellwm_workspace *workspace)
+{
+    int count = wl_list_length(&workspace->toplevels);
+    if (workspace->fullscreened == true) count--;
+    if (count <= 0) return;
+
+    int inner_gap = workspace->server->config_manager->decoration->inner_gap;
+    int outer_gap = workspace->server->config_manager->decoration->outer_gap;
+    int border = workspace->server->config_manager->decoration->border_width;
+
+    struct hellwm_output *output = workspace->output;
+    int usable_x = output->usable_area.x + border + outer_gap;
+    int usable_y = output->usable_area.y + border + outer_gap;
+    int usable_width = output->usable_area.width - border * 2 - outer_gap * 2;
+    int usable_height = output->usable_area.height - border * 2 - outer_gap * 2;
+
+    bool vertical_split = true;
+    struct hellwm_toplevel *toplevel;
+    wl_list_for_each(toplevel, &workspace->toplevels, link)
+    {
+        toplevel->borders_visible = true;
+        if (toplevel->fullscreen == true)
+            continue;
+
+        if (count == 1)
+        {
+            // single window
+            int final_width = usable_width;
+            int final_height = usable_height;
+
+            toplevel->current_geom.x = usable_x;
+            toplevel->current_geom.y = usable_y;
+            toplevel->current_geom.width = final_width;
+            toplevel->current_geom.height = final_height;
+            break;
+        }
+
+        if (vertical_split)
+        {
+            int new_width = usable_width / 2 - inner_gap;
+            new_width = new_width > 0 ? new_width : 0;
+
+            toplevel->current_geom.x = usable_x;
+            toplevel->current_geom.y = usable_y;
+            toplevel->current_geom.width = new_width;
+            toplevel->current_geom.height = usable_height;
+
+            usable_x += new_width + inner_gap;
+            usable_width -= new_width + inner_gap;
+        }
+        else
+        {
+            int new_height = usable_height / 2 - inner_gap;
+            new_height = new_height > 0 ? new_height : 0;
+
+            toplevel->current_geom.x = usable_x;
+            toplevel->current_geom.y = usable_y;
+            toplevel->current_geom.width = usable_width;
+            toplevel->current_geom.height = new_height;
+
+            usable_y += new_height + inner_gap;
+            usable_height -= new_height + inner_gap;
+        }
+
+        vertical_split = !vertical_split;
+        count--;
+    }
+}
+
+void switch_toplevels(struct hellwm_workspace *workspace, struct hellwm_toplevel *a, struct hellwm_toplevel *b)
+{
+    if (a == NULL || b == NULL || a == b) return;
+
+    int temp_order = a->order;
+    a->order = b->order;
+    b->order = temp_order;
+
+    layout_dwindle(workspace);
 }
 
 void apply_layout(struct hellwm_workspace *workspace, int layout_type)
@@ -661,6 +773,9 @@ void apply_layout(struct hellwm_workspace *workspace, int layout_type)
     {
         case 1:
             layout_horizontal_split(workspace);
+            break;
+        case 2:
+            layout_dwindle(workspace);
             break;
         default:
             layout_horizontal_split(workspace);
@@ -830,7 +945,7 @@ void check_usage(int argc, char**argv)
 static void start_animation_toplevel(struct hellwm_toplevel *toplevel)
 {
     if (toplevel == NULL) return;
-    clock_gettime(CLOCK_MONOTONIC, &toplevel->animation_start);
+    toplevel->set_animation_clock = true;
 }
 
 static void toplevel_animation_set_type(struct hellwm_toplevel *toplevel, enum hellwm_animation_state state)
@@ -842,7 +957,7 @@ static void toplevel_animation_set_type(struct hellwm_toplevel *toplevel, enum h
 static void toplevel_fade_start(struct hellwm_toplevel *toplevel)
 {
     if (toplevel == NULL) return;
-    clock_gettime(CLOCK_MONOTONIC, &toplevel->fade_start);
+    toplevel->set_fade_clock = true;
 }
 
 hellwm_config_manager_monitor *hellwm_config_manager_monitor_create()
@@ -916,7 +1031,8 @@ hellwm_config_manager_decoration *hellwm_config_manager_decoration_create()
     decoration->master_ratio = 0.7;
 
     /* gaps */
-    decoration->gaps = 20;
+    decoration->inner_gap = 20;
+    decoration->outer_gap = 30;
 
     /* fade animation duration */
     decoration->fade_duration = 0.4f;
@@ -1118,13 +1234,23 @@ static void hellwm_focus_next_toplevel(struct hellwm_server *server)
     if (wl_list_length(&server->active_workspace->toplevels) < 1)
         return;
 
+    bool fullscreen_next = false;
+
     toplevel_animation_set_type(server->active_workspace->now_focused, HELLWM_ANIMATION_SHRINK);
     start_animation_toplevel(server->active_workspace->now_focused);
+
+    if (server->active_workspace->now_focused->fullscreen) {
+        toplevel_unset_fullscreen(server->active_workspace->now_focused);
+        fullscreen_next = true;
+    }
 
     hellwm_focus_next_toplevel_ONLY_FOCUS(server);
 
     toplevel_animation_set_type(server->active_workspace->now_focused, HELLWM_ANIMATION_GROW);
     start_animation_toplevel(server->active_workspace->now_focused);
+
+    if (fullscreen_next)
+        toplevel_set_fullscreen(server->active_workspace->now_focused);
 
 }
 static void hellwm_focus_next_toplevel_ONLY_FOCUS(struct hellwm_server *server)
@@ -1818,7 +1944,10 @@ void animate_from_left(struct hellwm_toplevel *toplevel, float t, float bezier_v
     int final_x = toplevel->current_geom.x;
     int current_x = initial_x + bezier_value * (final_x - initial_x);
 
-    wlr_scene_node_set_position(&toplevel->scene_tree->node, current_x, toplevel->current_geom.y);
+    toplevel->pending_geom.width = toplevel->current_geom.width;
+    toplevel->pending_geom.height = toplevel->current_geom.height;
+    toplevel->pending_geom.x = current_x;
+    toplevel->pending_geom.y = toplevel->current_geom.y;
 }
 
 void animate_from_right(struct hellwm_toplevel *toplevel, float t, float bezier_value)
@@ -1827,7 +1956,10 @@ void animate_from_right(struct hellwm_toplevel *toplevel, float t, float bezier_
     int final_x = toplevel->current_geom.x;
     int current_x = initial_x - bezier_value * (initial_x - final_x);
 
-    wlr_scene_node_set_position(&toplevel->scene_tree->node, current_x, toplevel->current_geom.y);
+    toplevel->pending_geom.width = toplevel->current_geom.width;
+    toplevel->pending_geom.height = toplevel->current_geom.height;
+    toplevel->pending_geom.x = current_x;
+    toplevel->pending_geom.y = toplevel->current_geom.y;
 }
 
 void animate_from_up(struct hellwm_toplevel *toplevel, float t, float bezier_value)
@@ -1836,7 +1968,10 @@ void animate_from_up(struct hellwm_toplevel *toplevel, float t, float bezier_val
     int final_y = toplevel->current_geom.y;
     int current_y = initial_y + bezier_value * (final_y - initial_y);
 
-    wlr_scene_node_set_position(&toplevel->scene_tree->node, toplevel->current_geom.x, current_y);
+    toplevel->pending_geom.width = toplevel->current_geom.width;
+    toplevel->pending_geom.height = toplevel->current_geom.height;
+    toplevel->pending_geom.x = toplevel->current_geom.x;
+    toplevel->pending_geom.y = current_y;
 }
 
 void animate_from_down(struct hellwm_toplevel *toplevel, float t, float bezier_value)
@@ -1845,7 +1980,10 @@ void animate_from_down(struct hellwm_toplevel *toplevel, float t, float bezier_v
     int final_y = toplevel->current_geom.y;
     int current_y = initial_y - bezier_value * (initial_y - final_y);
 
-    wlr_scene_node_set_position(&toplevel->scene_tree->node, toplevel->current_geom.x, current_y);
+    toplevel->pending_geom.width = toplevel->current_geom.width;
+    toplevel->pending_geom.height = toplevel->current_geom.height;
+    toplevel->pending_geom.x = toplevel->current_geom.x;
+    toplevel->pending_geom.y = current_y;
 }
 
 void animate_from_middle(struct hellwm_toplevel *toplevel, float t, float bezier_value)
@@ -1861,8 +1999,10 @@ void animate_from_middle(struct hellwm_toplevel *toplevel, float t, float bezier
     int current_x = toplevel->current_geom.x - (current_width - toplevel->current_geom.width) / 2;
     int current_y = toplevel->current_geom.y - (current_height - toplevel->current_geom.height) / 2;
 
-    wlr_scene_node_set_position(&toplevel->scene_tree->node, current_x, current_y);
-    wlr_xdg_toplevel_set_size(toplevel->xdg_toplevel, current_width, current_height);
+    toplevel->pending_geom.width = current_width;
+    toplevel->pending_geom.height = current_height;
+    toplevel->pending_geom.x = current_x;
+    toplevel->pending_geom.y = current_y;
 }
 
 void animate_to_middle(struct hellwm_toplevel *toplevel, float t, float bezier_value)
@@ -1882,8 +2022,10 @@ void animate_to_middle(struct hellwm_toplevel *toplevel, float t, float bezier_v
     int current_x = toplevel->current_geom.x - delta_width;
     int current_y = toplevel->current_geom.y - delta_height;
 
-    wlr_scene_node_set_position(&toplevel->scene_tree->node, current_x, current_y);
-    wlr_xdg_toplevel_set_size(toplevel->xdg_toplevel, current_width, current_height);
+    toplevel->pending_geom.width = current_width;
+    toplevel->pending_geom.height = current_height;
+    toplevel->pending_geom.x = current_x;
+    toplevel->pending_geom.y = current_y;
 }
 
 void animate_toplevel(struct hellwm_toplevel *toplevel, float t, float bezier_value)
@@ -1919,9 +2061,10 @@ void animate_toplevel(struct hellwm_toplevel *toplevel, float t, float bezier_va
         default:
             break;
     }
+    wlr_scene_node_set_position(&toplevel->scene_tree->node, toplevel->pending_geom.x, toplevel->pending_geom.y);
+    wlr_xdg_toplevel_set_size(toplevel->xdg_toplevel, toplevel->pending_geom.width, toplevel->pending_geom.height);
 }
 
-static float previous_value = 0.0f;
 static void output_frame(struct wl_listener *listener, void *data)
 {
     struct hellwm_output *output = wl_container_of(listener, output, frame);
@@ -1938,65 +2081,72 @@ static void output_frame(struct wl_listener *listener, void *data)
     bool fade = output->server->config_manager->decoration->fade_decoration;
     bool animations = output->server->config_manager->decoration->animations_decoration;
 
-
-    if (!output->server->active_workspace->fullscreened)
+    struct hellwm_toplevel *toplevel;
+    wl_list_for_each(toplevel, &GLOBAL_SERVER->active_workspace->toplevels, link)
     {
-        struct hellwm_toplevel *toplevel;
-        wl_list_for_each(toplevel, &GLOBAL_SERVER->active_workspace->toplevels, link)
+        wlr_scene_node_set_enabled(&toplevel->scene_tree->node, true);
+        struct wlr_scene_buffer *scene_buffer = surface_find_buffer(&toplevel->scene_tree->node, toplevel->xdg_toplevel->base->surface);
+
+        if (fade == true && fade_duration > 0.0f)
         {
-            wlr_scene_node_set_enabled(&toplevel->scene_tree->node, true);
-            struct wlr_scene_buffer *scene_buffer = surface_find_buffer(&toplevel->scene_tree->node, toplevel->xdg_toplevel->base->surface);
-
-            if (fade== true && fade_duration > 0.0f)
+            if (toplevel->set_fade_clock)
             {
-                double elapsed = (now.tv_sec - toplevel->fade_start.tv_sec) +
-                                 (now.tv_nsec - toplevel->fade_start.tv_nsec) / 1e9;
-
-                if (elapsed >= fade_duration)
-                {
-                    wlr_scene_buffer_set_opacity(scene_buffer, 1.0f);
-                }
-                else
-                {
-                    float t = elapsed / fade_duration;
-                    wlr_scene_buffer_set_opacity(scene_buffer, t);
-                }
+                toplevel->fade_start = now;
+                toplevel->set_fade_clock = false;
             }
-            else {
+
+            double elapsed = (now.tv_sec - toplevel->fade_start.tv_sec) +
+                (now.tv_nsec - toplevel->fade_start.tv_nsec) / 1e9;
+
+            if (elapsed >= fade_duration)
+            {
                 wlr_scene_buffer_set_opacity(scene_buffer, 1.0f);
             }
-
-            if (animations == true && anim_duration > 0.0f)
+            else
             {
+                float t = elapsed / fade_duration;
+                wlr_scene_buffer_set_opacity(scene_buffer, t);
+            }
+        }
+        else {
+            wlr_scene_buffer_set_opacity(scene_buffer, 1.0f);
+        }
 
-                double elapsed = (now.tv_sec - toplevel->animation_start.tv_sec) +
-                                 (now.tv_nsec - toplevel->animation_start.tv_nsec) / 1e9;
+        if (animations == true && anim_duration > 0.0f)
+        {
+            if (toplevel->set_animation_clock)
+            {
+                toplevel->animation_start = now;
+                toplevel->set_animation_clock = false;
+            }
 
-                if (elapsed >= anim_duration)
-                {
-                    wlr_scene_node_set_position(&toplevel->scene_tree->node, toplevel->current_geom.x, toplevel->current_geom.y);
-                }
-                else
-                {
-                    float t = elapsed / anim_duration;
-                    float *f = GLOBAL_SERVER->config_manager->decoration->animation_bezier;
-                    float bezier_value = cubic_bezier(t, f[0], f[1], f[2], f[3]);
+            double elapsed = (now.tv_sec - toplevel->animation_start.tv_sec) +
+                (now.tv_nsec - toplevel->animation_start.tv_nsec) / 1e9;
 
-                    float smoothed_value = smooth(bezier_value, previous_value, 2.f);
-                    previous_value = smoothed_value;
-
-                    animate_toplevel(toplevel, t, bezier_value);
-                }
+            if (elapsed >= anim_duration)
+            {
+                wlr_scene_node_set_position(&toplevel->scene_tree->node, toplevel->current_geom.x, toplevel->current_geom.y);
+                wlr_xdg_toplevel_set_size(toplevel->xdg_toplevel, toplevel->current_geom.width, toplevel->current_geom.height);
             }
             else
-                wlr_scene_node_set_position(&toplevel->scene_tree->node, toplevel->current_geom.x, toplevel->current_geom.y);
-
-            borders_toplevel_update(toplevel);
+            {
+                float t = elapsed / anim_duration;
+                float *f = GLOBAL_SERVER->config_manager->decoration->animation_bezier;
+                float bezier_value = cubic_bezier(t, f[0], f[1], f[2], f[3]);
+                animate_toplevel(toplevel, t, bezier_value);
+            }
         }
+        else
+        {
+            wlr_xdg_toplevel_set_size(toplevel->xdg_toplevel, toplevel->current_geom.width, toplevel->current_geom.height);
+            wlr_scene_node_set_position(&toplevel->scene_tree->node, toplevel->current_geom.x, toplevel->current_geom.y);
+        }
+
+        if (toplevel->borders_visible)
+            borders_toplevel_update(toplevel);
     }
 
-    if (output->server->layout_reapply == 1)
-    {
+    if (output->server->layout_reapply == 1) {
         apply_layout(output->server->active_workspace, output->server->active_workspace->layout);
         output->server->layout_reapply = 0;
     }
@@ -2136,6 +2286,7 @@ static void borders_toplevel_create(struct hellwm_toplevel *toplevel)
         return;
 
     uint32_t width, height;
+    toplevel->borders_visible = false;
     width = toplevel->current_geom.width;
     height = toplevel->current_geom.height;
 
@@ -2159,10 +2310,12 @@ static void borders_toplevel_create(struct hellwm_toplevel *toplevel)
 static void toplevel_borders_set_state(struct hellwm_toplevel *toplevel, enum hellwm_border_state state)
 {
     if (toplevel == NULL) return;
-    if (toplevel->borders[0] == NULL) return;
+    toplevel->border_state = state;
+}
 
+static void border_toplevel_set_color(struct hellwm_toplevel *toplevel, enum hellwm_border_state state)
+{
     const float *border_color = border_get_color(state);
-
     for(size_t i = 0; i < 4; i++) {
         wlr_scene_rect_set_color(toplevel->borders[i], border_color);
     }
@@ -2170,18 +2323,17 @@ static void toplevel_borders_set_state(struct hellwm_toplevel *toplevel, enum he
 
 static void borders_toplevel_update(struct hellwm_toplevel *toplevel)
 {
-    if (toplevel == NULL)
-        return;
+    if (toplevel == NULL) return;
+    if (toplevel->borders[0] == NULL) return;
 
     uint32_t width, height;
-
-    struct wlr_box box;
-    wlr_xdg_surface_get_geometry(toplevel->xdg_toplevel->base, &box);
+    uint32_t border_width = GLOBAL_SERVER->config_manager->decoration->border_width;
+    struct wlr_box box; wlr_xdg_surface_get_geometry(toplevel->xdg_toplevel->base, &box);
 
     width = box.width;
     height = box.height;
 
-    uint32_t border_width = GLOBAL_SERVER->config_manager->decoration->border_width;
+    border_toplevel_set_color(toplevel, toplevel->border_state);
 
     wlr_scene_node_set_position(&toplevel->borders[1]->node, width, 0);
     wlr_scene_node_set_position(&toplevel->borders[2]->node, -border_width, height);
@@ -2214,6 +2366,7 @@ static void xdg_toplevel_map(struct wl_listener *listener, void *data)
     /* Called when the surface is mapped, or ready to display on-screen. */
     struct hellwm_toplevel *toplevel = wl_container_of(listener, toplevel, map);
 
+    /* add this toplevel to the scene tree */
     struct hellwm_view *view = calloc(1, sizeof(*view));
     view->view_type = HELLWM_VIEW_TOPLEVEL;
     view->toplevel = toplevel;
@@ -2224,7 +2377,7 @@ static void xdg_toplevel_map(struct wl_listener *listener, void *data)
 
     hellwm_focus_toplevel(toplevel);
 
-    apply_layout(toplevel->server->active_workspace, toplevel->server->active_workspace->layout);
+    GLOBAL_SERVER->layout_reapply = 1;
 }
 
 static void xdg_toplevel_unmap(struct wl_listener *listener, void *data)
@@ -2239,7 +2392,7 @@ static void xdg_toplevel_unmap(struct wl_listener *listener, void *data)
     }
 
     wl_list_remove(&toplevel->link);
-    apply_layout(toplevel->server->active_workspace, toplevel->server->active_workspace->layout);
+    GLOBAL_SERVER->layout_reapply = 1;
 }
 
 static void xdg_toplevel_commit(struct wl_listener *listener, void *data) 
@@ -2259,11 +2412,16 @@ static void xdg_toplevel_commit(struct wl_listener *listener, void *data)
                 toplevel->server->active_output->wlr_output->width,
                 toplevel->server->active_output->wlr_output->height);
 
-        toplevel_fade_start(toplevel);
-        start_animation_toplevel(toplevel);
-        borders_toplevel_create(toplevel);
+        toplevel->fullscreen = false;
+        toplevel->previous_bezier = 0.0f;
+        toplevel->set_animation_clock = false;
 
+        toplevel_fade_start(toplevel);
+        borders_toplevel_create(toplevel);
+        start_animation_toplevel(toplevel);
+        toplevel->border_state = HELLWM_BORDER_INVISIBLE;
         toplevel->animation_state = GLOBAL_SERVER->config_manager->decoration->default_animation;
+
         return;
     }
 }
@@ -2274,11 +2432,7 @@ static void xdg_toplevel_destroy(struct wl_listener *listener, void *data)
     struct hellwm_toplevel *toplevel = wl_container_of(listener, toplevel, destroy);
     struct hellwm_server *server = toplevel->server;
 
-    if (toplevel == server->active_workspace->now_focused)
-    {
-        if (server->active_workspace->fullscreened)
-            server->active_workspace->fullscreened = false;
-    }
+    toplevel_unset_fullscreen(toplevel);
 
     wl_list_remove(&toplevel->map.link);
     wl_list_remove(&toplevel->unmap.link);
@@ -2374,16 +2528,20 @@ static void toplevel_unset_fullscreen(struct hellwm_toplevel *toplevel)
     if (toplevel == NULL || toplevel->xdg_toplevel == NULL)
         return;
 
-    struct wlr_box prev = toplevel->last_state;
-
-    wlr_scene_node_set_position(&toplevel->scene_tree->node, prev.x, prev.y);
-    wlr_xdg_toplevel_set_size(toplevel->xdg_toplevel, prev.width, prev.height);
-
-    wlr_xdg_toplevel_set_fullscreen(toplevel->xdg_toplevel, false);
-
-    GLOBAL_SERVER->active_workspace->fullscreened = false;
     toplevel_animation_set_type(toplevel, HELLWM_ANIMATION_SHRINK);
     toplevel_borders_set_state(toplevel, HELLWM_BORDER_ACTIVE);
+
+    toplevel->current_geom.width = toplevel->last_state.width;
+    toplevel->current_geom.height = toplevel->last_state.height;
+    toplevel->current_geom.x = toplevel->last_state.x;
+    toplevel->current_geom.y = toplevel->last_state.y;
+
+    toplevel_borders_set_state(toplevel, HELLWM_BORDER_ACTIVE);
+    toplevel_animation_set_type(toplevel, HELLWM_ANIMATION_SHRINK);
+
+    wlr_scene_node_reparent(&toplevel->scene_tree->node, toplevel->server->tile_tree);
+    GLOBAL_SERVER->active_workspace->fullscreened = false;
+    toplevel->fullscreen = false;
 }
 
 static void toplevel_set_fullscreen(struct hellwm_toplevel *toplevel)
@@ -2395,20 +2553,25 @@ static void toplevel_set_fullscreen(struct hellwm_toplevel *toplevel)
     if (output == NULL)
         return;
 
-    struct wlr_box *output_box = &output->total_area;
+    struct wlr_box output_box;
+     wlr_output_layout_get_box(toplevel->server->output_layout, output->wlr_output, &output_box);
 
-    toplevel->last_state.x = toplevel->scene_tree->node.x;
-    toplevel->last_state.y = toplevel->scene_tree->node.y;
-    toplevel->last_state.width = toplevel->xdg_toplevel->current.width;
-    toplevel->last_state.height = toplevel->xdg_toplevel->current.height;
+    toplevel->last_state.x = toplevel->current_geom.x;
+    toplevel->last_state.y = toplevel->current_geom.y;
+    toplevel->last_state.width = toplevel->current_geom.width;
+    toplevel->last_state.height = toplevel->current_geom.height;
 
-    wlr_scene_node_set_position(&toplevel->scene_tree->node, output_box->x, output_box->y);
-    wlr_xdg_toplevel_set_size(toplevel->xdg_toplevel, output_box->width, output_box->height);
-    wlr_xdg_toplevel_set_fullscreen(toplevel->xdg_toplevel, true);
+    toplevel->current_geom.width = output_box.width;
+    toplevel->current_geom.height = output_box.height;
+    toplevel->current_geom.x = output_box.x;
+    toplevel->current_geom.y = output_box.y;
 
     toplevel_borders_set_state(toplevel, HELLWM_BORDER_INVISIBLE);
     toplevel_animation_set_type(toplevel, HELLWM_ANIMATION_GROW);
+
+    wlr_scene_node_reparent(&toplevel->scene_tree->node, toplevel->server->fullscreen_tree);
     GLOBAL_SERVER->active_workspace->fullscreened = true;
+    toplevel->fullscreen = true;
 }
 
 static void xdg_toplevel_request_fullscreen(struct wl_listener *listener, void *data)
@@ -2449,11 +2612,16 @@ static void server_new_xdg_toplevel(struct wl_listener *listener, void *data)
 
     /* Allocate a hellwm_toplevel for this surface */
     struct hellwm_toplevel *toplevel = calloc(1, sizeof(*toplevel));
-    toplevel->server = server;
     toplevel->xdg_toplevel = xdg_toplevel;
-    toplevel->scene_tree = wlr_scene_xdg_surface_create(&toplevel->server->scene->tree, xdg_toplevel->base);
+    toplevel->server = server;
+
+    toplevel->scene_tree = wlr_scene_xdg_surface_create(toplevel->server->tile_tree, toplevel->xdg_toplevel->base);
     toplevel->scene_tree->node.data = toplevel;
-    xdg_toplevel->base->data = toplevel->scene_tree;
+    toplevel->xdg_toplevel->base->data = toplevel->scene_tree;
+
+    /* output at 0, 0 would get this toplevel flashed if its on some other output,
+     * so we disable it until the next frame */
+    wlr_scene_node_set_enabled(&toplevel->scene_tree->node, false);
 
     /* Listen to the various events it can emit */
     toplevel->map.notify = xdg_toplevel_map;
@@ -2669,7 +2837,10 @@ static void layer_surface_map_func(struct hellwm_layer_surface *layer_surface)
     wlr_scene_layer_surface_v1_configure(layer_surface->scene, &output_box, &output->usable_area);
 
     focus_layer_surface(layer_surface);
-    server->layout_reapply = 1;
+
+    //* TODO - LOOK HERE
+    if(output_box.width != output->usable_area.width || output_box.height != output->usable_area.height)
+        server->layout_reapply = 1;
 }
 
 static void layer_surface_handle_unmap(struct wl_listener *listener, void *data)
@@ -2793,16 +2964,16 @@ static void handle_new_layer_surface(struct wl_listener *listener, void *data)
     switch(wlr_layer_surface->pending.layer)
     {
         case ZWLR_LAYER_SHELL_V1_LAYER_BACKGROUND:
-            layer_surface->scene = wlr_scene_layer_surface_v1_create(server->layers[0], wlr_layer_surface);
+            layer_surface->scene = wlr_scene_layer_surface_v1_create(server->background_tree, wlr_layer_surface);
             break;
         case ZWLR_LAYER_SHELL_V1_LAYER_TOP:
-            layer_surface->scene = wlr_scene_layer_surface_v1_create(server->layers[1], wlr_layer_surface);
+            layer_surface->scene = wlr_scene_layer_surface_v1_create(server->top_tree, wlr_layer_surface);
             break;
         case ZWLR_LAYER_SHELL_V1_LAYER_BOTTOM:
-            layer_surface->scene = wlr_scene_layer_surface_v1_create(server->layers[2], wlr_layer_surface);
+            layer_surface->scene = wlr_scene_layer_surface_v1_create(server->bottom_tree, wlr_layer_surface);
             break;
         case ZWLR_LAYER_SHELL_V1_LAYER_OVERLAY:
-            layer_surface->scene = wlr_scene_layer_surface_v1_create(server->layers[3], wlr_layer_surface);
+            layer_surface->scene = wlr_scene_layer_surface_v1_create(server->overlay_tree, wlr_layer_surface);
             break;
     }
 
@@ -3347,7 +3518,7 @@ int hellwm_lua_decoration_border_width(lua_State *L)
     return 0;
 }
 
-int hellwm_lua_decoration_gaps(lua_State *L)
+int hellwm_lua_decoration_inner_gap(lua_State *L)
 {
     int nargs = lua_gettop(L);
 
@@ -3356,14 +3527,33 @@ int hellwm_lua_decoration_gaps(lua_State *L)
         switch (i)
         {
             case 1:
-                GLOBAL_SERVER->config_manager->decoration->gaps = lua_tointeger(L, i);
+                GLOBAL_SERVER->config_manager->decoration->inner_gap = lua_tointeger(L, i);
                 break;
             default:
-                LOG("Provided to much arguments to gaps() function!\n");
+                LOG("Provided to much arguments to inner_gap() function!\n");
         }
     }
     return 0;
 }
+
+int hellwm_lua_decoration_outer_gap(lua_State *L)
+{
+    int nargs = lua_gettop(L);
+
+    for (int i = 1; i<=nargs; i++)
+    {
+        switch (i)
+        {
+            case 1:
+                GLOBAL_SERVER->config_manager->decoration->outer_gap = lua_tointeger(L, i);
+                break;
+            default:
+                LOG("Provided to much arguments to outer_gap() function!\n");
+        }
+    }
+    return 0;
+}
+
 
 int hellwm_lua_decoration_border_active(lua_State *L)
 {
@@ -3570,8 +3760,11 @@ void hellwm_config_manager_load_from_file(char * filename)
     lua_pushcfunction(L, hellwm_lua_decoration_border_width);
     lua_setglobal(L, "border_width");
 
-    lua_pushcfunction(L, hellwm_lua_decoration_gaps);
-    lua_setglobal(L, "gaps");
+    lua_pushcfunction(L, hellwm_lua_decoration_inner_gap);
+    lua_setglobal(L, "inner_gap");
+
+    lua_pushcfunction(L, hellwm_lua_decoration_outer_gap);
+    lua_setglobal(L, "outer_gap");
 
     lua_pushcfunction(L, hellwm_lua_decoration_border_active);
     lua_setglobal(L, "border_active_color");
@@ -3874,7 +4067,8 @@ void hellwm_config_print(struct hellwm_config_manager *config)
         hellwm_config_manager_decoration *dec = config->decoration;
 
         LOG("\tstruct hellwm_config_manager_decoration* decoration\n\t{\n");
-        LOG("\t\tgaps             = %d\n", dec->gaps);
+        LOG("\t\tinner_gap             = %d\n", dec->inner_gap);
+        LOG("\t\touter_gap             = %d\n", dec->outer_gap);
         LOG("\t\tborder_width     = %d\n", dec->border_width);
         LOG("\t\tactive_border_color = {%f, %f, %f, %f}\n", 
             dec->active_border_color[0], dec->active_border_color[1], 
@@ -4190,9 +4384,13 @@ int main(int argc, char *argv[])
     server->scene = wlr_scene_create();
     server->scene_layout = wlr_scene_attach_output_layout(server->scene, server->output_layout);
 
-    for (size_t i = 0; i < HELLWM_LAYER_COUNT; i++) {
-        server->layers[i] = wlr_scene_tree_create(&server->scene->tree);
-    }
+    server->background_tree = wlr_scene_tree_create(&server->scene->tree); 
+    server->tile_tree = wlr_scene_tree_create(&server->scene->tree); 
+    server->floating_tree = wlr_scene_tree_create(&server->scene->tree); 
+    server->bottom_tree = wlr_scene_tree_create(&server->scene->tree); 
+    server->top_tree = wlr_scene_tree_create(&server->scene->tree); 
+    server->overlay_tree = wlr_scene_tree_create(&server->scene->tree); 
+    server->fullscreen_tree = wlr_scene_tree_create(&server->scene->tree); 
 
     /* xdg_shell */
     server->xdg_shell = wlr_xdg_shell_create(server->wl_display, 6);

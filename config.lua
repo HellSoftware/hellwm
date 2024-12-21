@@ -99,16 +99,20 @@ exec("swww init")
 exec("waybar")
 exec("alacritty")
 
+-- Tiling layout
+layout(2)
+
 -- Decoration
 border_width(0)
-gaps(100)
+inner_gap(10)
+outer_gap(50)
 
 fade_duration(0.4)
 
-animation_duration(0.5)
-animation_bezier(0.5, 1.32, 1.38, 1)
+animation_duration(0.4)
+animation_bezier(0.2, 1.12, 1.18, 1)
 
-animation_direction("grow")
+animation_direction("left")
 
 -- Border colors
 border_inactive_color("#87554c")
