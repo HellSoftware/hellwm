@@ -96,6 +96,17 @@ enum hellwm_border_state
     HELLWM_BORDER_ACTIVE
 };
 
+enum hellwm_animation_state
+{
+    HELLWM_ANIMATION_GROW,
+    HELLWM_ANIMATION_SHRINK,
+    HELLWM_ANIMATION_LEFT,
+    HELLWM_ANIMATION_RIGHT,
+    HELLWM_ANIMATION_UP,
+    HELLWM_ANIMATION_DOWN,
+    HELLWM_ANIMATION_COUNT
+};
+
 struct hellwm_server
 {
     char **exec_args;
@@ -213,8 +224,11 @@ struct hellwm_workspace
 
 struct hellwm_toplevel
 {
+    enum hellwm_animation_state animation_state;
+
     struct wl_list link;
-    struct timespec fade_animation_start; // for fade animation
+    struct timespec fade_start; // for fade animation
+    struct timespec animation_start; // for fade animation
 
     struct hellwm_server *server;
     struct hellwm_workspace *workspace;
@@ -371,7 +385,15 @@ typedef struct
 typedef struct 
 {
     float master_ratio;
+
     float fade_duration;
+    float fade_bezier[4];
+    bool fade_decoration;
+
+    float animation_duration;
+    float animation_bezier[4];
+    bool animations_decoration;
+    enum hellwm_animation_state default_animation;
 
     uint32_t gaps;
 
@@ -432,10 +454,13 @@ int hellwm_lua_add_monitor(lua_State *L);
 int hellwm_lua_add_keyboard(lua_State *L);
 int hellwm_lua_tiling_layout(lua_State *L);
 int hellwm_lua_decoration_gaps(lua_State *L);
+int hellwm_lua_decoration_fade_bezier(lua_State *L);
 int hellwm_lua_decoration_border_width(lua_State *L);
 int hellwm_lua_decoration_border_active(lua_State *L);
 int hellwm_lua_decoration_border_inactive(lua_State *L);
-int hellwm_lua_decoration_fade_animation_duration(lua_State *L);
+int hellwm_lua_decoration_animation_bezier(lua_State *L);
+int hellwm_lua_decoration_animation_duration(lua_State *L);
+int hellwm_lua_decoration_fade_duration(lua_State *L);
 
 void hellwm_config_print(struct hellwm_config_manager *config);
 bool hellwm_function_find(const char* name, struct hellwm_server* server, union hellwm_function *func);
@@ -879,6 +904,19 @@ hellwm_config_manager_decoration *hellwm_config_manager_decoration_create()
 
     /* fade animation duration */
     decoration->fade_duration = 0.4f;
+    decoration->fade_bezier[0] = 0.0f;
+    decoration->fade_bezier[1] = 0.9f;
+    decoration->fade_bezier[2] = 0.1f;
+    decoration->fade_bezier[3] = 1.0f;
+    decoration->fade_decoration = true;
+
+    decoration->animation_duration = 0.4f;
+    decoration->animation_bezier[0] = 0.0f;
+    decoration->animation_bezier[1] = 0.9f;
+    decoration->animation_bezier[2] = 0.1f;
+    decoration->animation_bezier[3] = 1.0f;
+    decoration->animations_decoration = true;
+    decoration->default_animation = HELLWM_ANIMATION_GROW;
 
     /* border */
     decoration->border_width = 2;
@@ -970,7 +1008,6 @@ static void hellwm_focus_toplevel(struct hellwm_toplevel *toplevel)
             server->active_workspace->prev_focused = server->active_workspace->now_focused;
 
             toplevel_borders_set_state(server->active_workspace->prev_focused, HELLWM_BORDER_INACTIVE);
-
             wlr_xdg_toplevel_set_activated(prev_toplevel, false);
         }
     }
@@ -1069,6 +1106,9 @@ static void hellwm_focus_next_toplevel(struct hellwm_server *server)
     if (wl_list_length(&server->active_workspace->toplevels) < 1)
         return;
 
+    server->active_workspace->now_focused->animation_state = HELLWM_ANIMATION_SHRINK;
+    clock_gettime(CLOCK_MONOTONIC, &server->active_workspace->now_focused->animation_start);
+
     struct hellwm_toplevel *next_toplevel = wl_container_of(server->active_workspace->toplevels.prev, next_toplevel, link);
     if (next_toplevel)
         hellwm_focus_toplevel(next_toplevel);
@@ -1077,10 +1117,13 @@ static void hellwm_focus_next_toplevel(struct hellwm_server *server)
         struct hellwm_toplevel *toplevel;
         wl_list_for_each(toplevel, &server->active_workspace->toplevels, link)
         {
+
             hellwm_focus_toplevel(next_toplevel);
-            return;
+            break;
         }
     }
+    server->active_workspace->now_focused->animation_state = HELLWM_ANIMATION_GROW;
+    clock_gettime(CLOCK_MONOTONIC, &server->active_workspace->now_focused->animation_start);
 }
 
 /* 
@@ -1149,6 +1192,8 @@ static void hellwm_toplevel_fullscreen(struct hellwm_server *server)
         toplevel_unset_fullscreen(server->active_workspace->now_focused);
     else
         toplevel_set_fullscreen(server->active_workspace->now_focused);
+
+    clock_gettime(CLOCK_MONOTONIC, &server->active_workspace->now_focused->animation_start);
 }
 
 static void hellwm_server_kill(struct hellwm_server *server)
@@ -1759,10 +1804,132 @@ struct wlr_scene_buffer *surface_find_buffer(struct wlr_scene_node *node, struct
     return NULL;
 }
 
+float smooth(float current, float previous, float alpha)
+{
+    return previous + alpha * (current - previous);
+}
+
+float cubic_bezier(float t, float p0, float p1, float p2, float p3)
+{
+    if (t < 0.0f) t = 0.0f;
+    if (t > 1.0f) t = 1.0f;
+
+    float u = 1.0f - t;
+    return (u * u * u * p0) + (3 * u * u * t * p1) + (3 * u * t * t * p2) + (t * t * t * p3);
+}
+
+void animate_from_left(struct hellwm_toplevel *toplevel, float t, float bezier_value)
+{
+    int initial_x = toplevel->current_geom.x - 300; // Start 300px to the left
+    int final_x = toplevel->current_geom.x;
+    int current_x = initial_x + bezier_value * (final_x - initial_x);
+
+    wlr_scene_node_set_position(&toplevel->scene_tree->node, current_x, toplevel->current_geom.y);
+}
+
+void animate_from_right(struct hellwm_toplevel *toplevel, float t, float bezier_value)
+{
+    int initial_x = toplevel->current_geom.x + 300; // Start 300px to the right
+    int final_x = toplevel->current_geom.x;
+    int current_x = initial_x - bezier_value * (initial_x - final_x);
+
+    wlr_scene_node_set_position(&toplevel->scene_tree->node, current_x, toplevel->current_geom.y);
+}
+
+void animate_from_up(struct hellwm_toplevel *toplevel, float t, float bezier_value)
+{
+    int initial_y = toplevel->current_geom.y - 300; // Start 300px above
+    int final_y = toplevel->current_geom.y;
+    int current_y = initial_y + bezier_value * (final_y - initial_y);
+
+    wlr_scene_node_set_position(&toplevel->scene_tree->node, toplevel->current_geom.x, current_y);
+}
+
+void animate_from_down(struct hellwm_toplevel *toplevel, float t, float bezier_value)
+{
+    int initial_y = toplevel->current_geom.y + 300; // Start 300px below
+    int final_y = toplevel->current_geom.y;
+    int current_y = initial_y - bezier_value * (initial_y - final_y);
+
+    wlr_scene_node_set_position(&toplevel->scene_tree->node, toplevel->current_geom.x, current_y);
+}
+
+void animate_from_middle(struct hellwm_toplevel *toplevel, float t, float bezier_value)
+{
+    int initial_width = toplevel->current_geom.width / 2;  // Start at half size
+    int initial_height = toplevel->current_geom.height / 2;
+    int final_width = toplevel->current_geom.width;
+    int final_height = toplevel->current_geom.height;
+
+    int current_width = initial_width + bezier_value * (final_width - initial_width);
+    int current_height = initial_height + bezier_value * (final_height - initial_height);
+
+    int current_x = toplevel->current_geom.x - (current_width - toplevel->current_geom.width) / 2;
+    int current_y = toplevel->current_geom.y - (current_height - toplevel->current_geom.height) / 2;
+
+    wlr_scene_node_set_position(&toplevel->scene_tree->node, current_x, current_y);
+    wlr_xdg_toplevel_set_size(toplevel->xdg_toplevel, current_width, current_height);
+}
+
+void animate_to_middle(struct hellwm_toplevel *toplevel, float t, float bezier_value)
+{
+    int final_width = toplevel->current_geom.width;
+    int final_height = toplevel->current_geom.height;
+
+    int initial_width = final_width / 2;
+    int initial_height = final_height / 2;
+
+    int current_width = initial_width + bezier_value * (final_width - initial_width); // Grow towards full size
+    int current_height = initial_height + bezier_value * (final_height - initial_height); // Grow towards full size
+
+    int delta_width = (final_width - current_width) / 2;
+    int delta_height = (final_height - current_height) / 2;
+
+    int current_x = toplevel->current_geom.x - delta_width;
+    int current_y = toplevel->current_geom.y - delta_height;
+
+    wlr_scene_node_set_position(&toplevel->scene_tree->node, current_x, current_y);
+    wlr_xdg_toplevel_set_size(toplevel->xdg_toplevel, current_width, current_height);
+}
+
+void animate_toplevel(struct hellwm_toplevel *toplevel, float t, float bezier_value)
+{
+    enum hellwm_animation_state animation_state = toplevel->animation_state;
+
+    switch (animation_state)
+    {
+        case HELLWM_ANIMATION_GROW:
+            animate_from_middle(toplevel, t, bezier_value);
+            break;
+
+        case HELLWM_ANIMATION_SHRINK:
+            animate_to_middle(toplevel, t, bezier_value);
+            break;
+
+        case HELLWM_ANIMATION_LEFT:
+            animate_from_left(toplevel, t, bezier_value);
+            break;
+
+        case HELLWM_ANIMATION_RIGHT:
+            animate_from_right(toplevel, t, bezier_value);
+            break;
+
+        case HELLWM_ANIMATION_UP:
+            animate_from_up(toplevel, t, bezier_value);
+            break;
+
+        case HELLWM_ANIMATION_DOWN:
+            animate_from_down(toplevel, t, bezier_value);
+            break;
+
+        default:
+            break;
+    }
+}
+
+static float previous_value = 0.0f;
 static void output_frame(struct wl_listener *listener, void *data)
 {
-    /* This function is called every time an output is ready to display a frame,
-     * generally at the output's refresh rate (e.g. 60Hz). */
     struct hellwm_output *output = wl_container_of(listener, output, frame);
     struct wlr_scene *scene = output->server->scene;
 
@@ -1777,7 +1944,12 @@ static void output_frame(struct wl_listener *listener, void *data)
     struct timespec now;
     clock_gettime(CLOCK_MONOTONIC, &now);
 
-    float duration = output->server->config_manager->decoration->fade_duration;
+    float fade_duration = output->server->config_manager->decoration->fade_duration;
+    float anim_duration = output->server->config_manager->decoration->animation_duration;
+
+    bool fade = output->server->config_manager->decoration->fade_decoration;
+    bool animations = output->server->config_manager->decoration->animations_decoration;
+
 
     if (!output->server->active_workspace->fullscreened)
     {
@@ -1786,30 +1958,56 @@ static void output_frame(struct wl_listener *listener, void *data)
         {
             wlr_scene_node_set_enabled(&toplevel->scene_tree->node, true);
             struct wlr_scene_buffer *scene_buffer = surface_find_buffer(&toplevel->scene_tree->node, toplevel->xdg_toplevel->base->surface);
-            //wlr_scene_buffer_set_dest_size(scene_buffer, toplevel->current_geom.width, toplevel->current_geom.height);
 
-            if (duration > 0.0f)
+            if (fade== true && fade_duration > 0.0f)
             {
-                double elapsed = (now.tv_sec - toplevel->fade_animation_start.tv_sec) +
-                    (now.tv_nsec - toplevel->fade_animation_start.tv_nsec) / 1e9;
+                double elapsed = (now.tv_sec - toplevel->fade_start.tv_sec) +
+                                 (now.tv_nsec - toplevel->fade_start.tv_nsec) / 1e9;
 
-                if (elapsed >= duration)
+                if (elapsed >= fade_duration)
                 {
-                    // Animation complete
-                    wlr_scene_buffer_set_opacity(scene_buffer, 1.f);
+                    wlr_scene_buffer_set_opacity(scene_buffer, 1.0f);
                 }
                 else
                 {
-                    // Interpolate opacity (0.0 to 1.0)
-                    float opacity = elapsed / duration;
-                    wlr_scene_buffer_set_opacity(scene_buffer, opacity);
+                    float t = elapsed / fade_duration;
+                    wlr_scene_buffer_set_opacity(scene_buffer, t);
                 }
             }
+            else {
+                wlr_scene_buffer_set_opacity(scene_buffer, 1.0f);
+            }
+
+            if (animations == true && anim_duration > 0.0f)
+            {
+
+                double elapsed = (now.tv_sec - toplevel->animation_start.tv_sec) +
+                                 (now.tv_nsec - toplevel->animation_start.tv_nsec) / 1e9;
+
+                if (elapsed >= anim_duration)
+                {
+                    wlr_scene_node_set_position(&toplevel->scene_tree->node, toplevel->current_geom.x, toplevel->current_geom.y);
+                }
+                else
+                {
+                    float t = elapsed / anim_duration;
+                    float *f = GLOBAL_SERVER->config_manager->decoration->animation_bezier;
+                    float bezier_value = cubic_bezier(t, f[0], f[1], f[2], f[3]);
+
+                    float smoothed_value = smooth(bezier_value, previous_value, 2.f); // Adjust alpha as needed
+                    previous_value = smoothed_value;
+
+                    animate_toplevel(toplevel, t, bezier_value);
+                }
+            }
+            else {
+                wlr_scene_node_set_position(&toplevel->scene_tree->node, toplevel->current_geom.x, toplevel->current_geom.y);
+            }
+
             borders_toplevel_update(toplevel);
         }
     }
 
-    /* Render the scene if needed and commit the output */
     wlr_scene_output_commit(scene_output, NULL);
     wlr_scene_output_send_frame_done(scene_output, &now);
 }
@@ -2066,7 +2264,10 @@ static void xdg_toplevel_commit(struct wl_listener *listener, void *data)
                 toplevel->server->active_output->wlr_output->width,
                 toplevel->server->active_output->wlr_output->height);
 
-        clock_gettime(CLOCK_MONOTONIC, &toplevel->fade_animation_start);
+        clock_gettime(CLOCK_MONOTONIC, &toplevel->fade_start);
+        clock_gettime(CLOCK_MONOTONIC, &toplevel->animation_start);
+
+        toplevel->animation_state = HELLWM_ANIMATION_GROW;
         return;
     }
 }
@@ -2186,6 +2387,7 @@ static void toplevel_unset_fullscreen(struct hellwm_toplevel *toplevel)
 
     GLOBAL_SERVER->active_workspace->fullscreened = false;
     toplevel_borders_set_state(toplevel, HELLWM_BORDER_ACTIVE);
+    toplevel->animation_state = HELLWM_ANIMATION_SHRINK;
 }
 
 static void toplevel_set_fullscreen(struct hellwm_toplevel *toplevel)
@@ -2210,6 +2412,7 @@ static void toplevel_set_fullscreen(struct hellwm_toplevel *toplevel)
 
     toplevel_borders_set_state(toplevel, HELLWM_BORDER_INVISIBLE);
     GLOBAL_SERVER->active_workspace->fullscreened = true;
+    toplevel->animation_state = HELLWM_ANIMATION_GROW;
 }
 
 static void xdg_toplevel_request_fullscreen(struct wl_listener *listener, void *data)
@@ -2955,7 +3158,6 @@ int hellwm_lua_add_keyboard(lua_State *L)
     return 0;
 }
 
-
 int hellwm_lua_add_monitor(lua_State *L)
 {
     hellwm_config_monitor *monitor = calloc(1, sizeof(hellwm_config_monitor));
@@ -3201,7 +3403,7 @@ int hellwm_lua_decoration_border_active(lua_State *L)
     return 0;
 }
 
-int hellwm_lua_decoration_fade_animation_duration(lua_State *L)
+int hellwm_lua_decoration_fade_duration(lua_State *L)
 {
     int nargs = lua_gettop(L);
 
@@ -3211,6 +3413,78 @@ int hellwm_lua_decoration_fade_animation_duration(lua_State *L)
         {
             case 1:
                 GLOBAL_SERVER->config_manager->decoration->fade_duration = lua_tonumber(L, i);
+                break;
+            default:
+                LOG("Provided to much arguments to fade_duration() function!\n");
+        }
+    }
+    return 0;
+}
+
+int hellwm_lua_decoration_fade_bezier(lua_State *L)
+{
+    int nargs = lua_gettop(L);
+
+    for (int i = 1; i<=nargs; i++)
+    {
+        switch (i)
+        {
+            case 1:
+                GLOBAL_SERVER->config_manager->decoration->fade_bezier[0] = lua_tonumber(L, i);
+                break;
+            case 2:
+                GLOBAL_SERVER->config_manager->decoration->fade_bezier[1] = lua_tonumber(L, i);
+                break;
+            case 3:
+                GLOBAL_SERVER->config_manager->decoration->fade_bezier[2] = lua_tonumber(L, i);
+                break;
+            case 4:
+                GLOBAL_SERVER->config_manager->decoration->fade_bezier[3] = lua_tonumber(L, i);
+                break;
+            default:
+                LOG("Provided to much arguments to fade_duration() function!\n");
+        }
+    }
+    return 0;
+}
+
+int hellwm_lua_decoration_animation_duration(lua_State *L)
+{
+    int nargs = lua_gettop(L);
+
+    for (int i = 1; i<=nargs; i++)
+    {
+        switch (i)
+        {
+            case 1:
+                GLOBAL_SERVER->config_manager->decoration->animation_duration = lua_tonumber(L, i);
+                break;
+            default:
+                LOG("Provided to much arguments to fade_duration() function!\n");
+        }
+    }
+    return 0;
+}
+
+int hellwm_lua_decoration_animation_bezier(lua_State *L)
+{
+    int nargs = lua_gettop(L);
+
+    for (int i = 1; i<=nargs; i++)
+    {
+        switch (i)
+        {
+            case 1:
+                GLOBAL_SERVER->config_manager->decoration->animation_bezier[0] = lua_tonumber(L, i);
+                break;
+            case 2:
+                GLOBAL_SERVER->config_manager->decoration->animation_bezier[1] = lua_tonumber(L, i);
+                break;
+            case 3:
+                GLOBAL_SERVER->config_manager->decoration->animation_bezier[2] = lua_tonumber(L, i);
+                break;
+            case 4:
+                GLOBAL_SERVER->config_manager->decoration->animation_bezier[3] = lua_tonumber(L, i);
                 break;
             default:
                 LOG("Provided to much arguments to fade_duration() function!\n");
@@ -3253,6 +3527,52 @@ int hellwm_lua_decoration_border_inactive(lua_State *L)
     return 0;
 }
 
+int hellwm_lua_decoration_animation_direction(lua_State *L)
+{
+    char *animation_string = NULL;
+    enum hellwm_animation_state animation_state;
+    int nargs = lua_gettop(L);
+
+    for (int i = 1; i<=nargs; i++)
+    {
+        switch (i)
+        {
+            case 1:
+                if (lua_isstring(L, i)) {
+                    animation_string  = strdup(lua_tostring(L, i));
+                } else {
+                    LOG("Invalid argument for 'animation_direction', expected string.\n");
+                    return 1;
+                }
+                break;
+            default:
+                LOG("Provided to much arguments to animation_direction() function!\n");
+                return 1;
+        }
+    }
+    
+    if (animation_string == NULL)
+        return 1;
+
+     if (strcmp(animation_string, "grow") == 0)
+        animation_state = HELLWM_ANIMATION_GROW;
+    else if (strcmp(animation_string, "shrink") == 0)
+        animation_state = HELLWM_ANIMATION_SHRINK;
+    else if (strcmp(animation_string, "left") == 0)
+        animation_state = HELLWM_ANIMATION_LEFT;
+    else if (strcmp(animation_string, "right") == 0)
+        animation_state = HELLWM_ANIMATION_RIGHT;
+    else if (strcmp(animation_string, "up") == 0)
+        animation_state = HELLWM_ANIMATION_UP;
+    else if (strcmp(animation_string, "down") == 0)
+        animation_state = HELLWM_ANIMATION_DOWN;
+    else
+        return 1;
+
+    GLOBAL_SERVER->config_manager->decoration->default_animation = animation_state;
+    return 0;
+}
+
 void hellwm_config_manager_load_from_file(char * filename)
 {
     LOG("Loading config from: %s\n", filename);
@@ -3290,8 +3610,20 @@ void hellwm_config_manager_load_from_file(char * filename)
     lua_pushcfunction(L, hellwm_lua_decoration_border_inactive);
     lua_setglobal(L, "border_inactive_color");
 
-    lua_pushcfunction(L, hellwm_lua_decoration_fade_animation_duration);
+    lua_pushcfunction(L, hellwm_lua_decoration_fade_duration);
     lua_setglobal(L, "fade_duration");
+
+    lua_pushcfunction(L, hellwm_lua_decoration_fade_bezier);
+    lua_setglobal(L, "fade_bezier");
+
+    lua_pushcfunction(L, hellwm_lua_decoration_animation_duration);
+    lua_setglobal(L, "animation_duration");
+
+    lua_pushcfunction(L, hellwm_lua_decoration_animation_bezier);
+    lua_setglobal(L, "animation_bezier");
+
+    lua_pushcfunction(L, hellwm_lua_decoration_animation_direction);
+    lua_setglobal(L, "animation_direction");
 
     if (luaL_loadfile(L, filename) || lua_pcall(L, 0, 0, 0))
         // TODO > Create dummy config manager to store all vars from config, so in case of an error it instead of crash it will just not apply.
