@@ -2175,8 +2175,11 @@ static void borders_toplevel_update(struct hellwm_toplevel *toplevel)
 
     uint32_t width, height;
 
-    width = toplevel->current_geom.width;
-    height = toplevel->current_geom.height;
+    struct wlr_box box;
+    wlr_xdg_surface_get_geometry(toplevel->xdg_toplevel->base, &box);
+
+    width = box.width;
+    height = box.height;
 
     uint32_t border_width = GLOBAL_SERVER->config_manager->decoration->border_width;
 
@@ -2219,7 +2222,6 @@ static void xdg_toplevel_map(struct wl_listener *listener, void *data)
 
     hellwm_workspace_add_toplevel(toplevel->server->active_workspace, toplevel);
 
-    borders_toplevel_create(toplevel);
     hellwm_focus_toplevel(toplevel);
 
     apply_layout(toplevel->server->active_workspace, toplevel->server->active_workspace->layout);
@@ -2259,6 +2261,7 @@ static void xdg_toplevel_commit(struct wl_listener *listener, void *data)
 
         toplevel_fade_start(toplevel);
         start_animation_toplevel(toplevel);
+        borders_toplevel_create(toplevel);
 
         toplevel->animation_state = GLOBAL_SERVER->config_manager->decoration->default_animation;
         return;
