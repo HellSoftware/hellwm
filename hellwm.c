@@ -8,6 +8,7 @@
 #include <string.h>
 #include <unistd.h>
 #include <stdbool.h>
+#include <cairo/cairo.h>
 
 #include <lua.h>
 #include <lauxlib.h>
@@ -105,6 +106,14 @@ enum hellwm_animation_state
     HELLWM_ANIMATION_UP,
     HELLWM_ANIMATION_DOWN,
     HELLWM_ANIMATION_COUNT
+};
+
+enum hellwm_direction
+{
+    HELLWM_UP,
+    HELLWM_DOWN,
+    HELLWM_LEFT,
+    HELLWM_RIGHT
 };
 
 struct hellwm_server
@@ -231,6 +240,7 @@ struct hellwm_toplevel
 
     bool floating;
     bool fullscreen;
+    bool in_animation;
     bool set_fade_clock;
     bool borders_visible;
     bool set_animation_clock;
@@ -539,6 +549,7 @@ void hellwm_config_manager_monitor_add(hellwm_config_manager_monitor *monitor_ma
 void hellwm_config_manager_keyboard_add(hellwm_config_manager_keyboard *keyboard_manager, hellwm_config_keyboard *keyboard);
 
 static uint32_t hellwm_xkb_keysym_to_wlr_modifier(xkb_keysym_t sym);
+static bool toplevel_should_float(struct hellwm_toplevel *toplevel);
 static bool handle_keybinding_binary_workspaces(struct hellwm_server *server, xkb_keysym_t sym);
 static bool handle_keybinding(struct hellwm_server *server, uint32_t modifiers, xkb_keysym_t sym);
 
@@ -606,6 +617,7 @@ static void xdg_toplevel_request_resize(struct wl_listener *listener, void *data
 static void xdg_toplevel_request_maximize(struct wl_listener *listener, void *data);
 static void xdg_toplevel_request_fullscreen(struct wl_listener *listener, void *data);
 
+static void toplevel_center(struct hellwm_toplevel *toplevel);
 static void toplevel_set_fullscreen(struct hellwm_toplevel *toplevel);
 static void toplevel_unset_fullscreen(struct hellwm_toplevel *toplevel);
 
@@ -649,7 +661,7 @@ void layout_horizontal_split(struct hellwm_workspace *workspace)
     wl_list_for_each(toplevel, &workspace->toplevels, link)
     {
         toplevel->borders_visible = true;
-        if (toplevel->fullscreen == true)
+        if (toplevel->fullscreen == true || toplevel->floating)
             continue;
 
         int xx = i * window_width;
@@ -703,7 +715,7 @@ void layout_dwindle(struct hellwm_workspace *workspace)
     wl_list_for_each(toplevel, &workspace->toplevels, link)
     {
         toplevel->borders_visible = true;
-        if (toplevel->fullscreen == true)
+        if (toplevel->fullscreen == true || toplevel->floating)
             continue;
 
         if (count == 1)
@@ -760,6 +772,13 @@ void switch_toplevels(struct hellwm_workspace *workspace, struct hellwm_toplevel
     b->order = temp_order;
 
     layout_dwindle(workspace);
+}
+
+struct hellwm_toplevel *layout_find_closest_tiled_toplevel(struct hellwm_toplevel *target, const char *direction)
+{
+
+    //TODO:
+    return NULL;
 }
 
 void apply_layout(struct hellwm_workspace *workspace, int layout_type)
@@ -1235,23 +1254,21 @@ static void hellwm_focus_next_toplevel(struct hellwm_server *server)
         return;
 
     bool fullscreen_next = false;
-
-    toplevel_animation_set_type(server->active_workspace->now_focused, HELLWM_ANIMATION_SHRINK);
-    start_animation_toplevel(server->active_workspace->now_focused);
-
     if (server->active_workspace->now_focused->fullscreen) {
         toplevel_unset_fullscreen(server->active_workspace->now_focused);
         fullscreen_next = true;
     }
 
-    hellwm_focus_next_toplevel_ONLY_FOCUS(server);
-
-    toplevel_animation_set_type(server->active_workspace->now_focused, HELLWM_ANIMATION_GROW);
+    toplevel_animation_set_type(server->active_workspace->now_focused, HELLWM_ANIMATION_SHRINK);
     start_animation_toplevel(server->active_workspace->now_focused);
+
+    hellwm_focus_next_toplevel_ONLY_FOCUS(server);
 
     if (fullscreen_next)
         toplevel_set_fullscreen(server->active_workspace->now_focused);
 
+    toplevel_animation_set_type(server->active_workspace->now_focused, HELLWM_ANIMATION_GROW);
+    start_animation_toplevel(server->active_workspace->now_focused);
 }
 static void hellwm_focus_next_toplevel_ONLY_FOCUS(struct hellwm_server *server)
 {
@@ -2065,6 +2082,7 @@ void animate_toplevel(struct hellwm_toplevel *toplevel, float t, float bezier_va
     wlr_xdg_toplevel_set_size(toplevel->xdg_toplevel, toplevel->pending_geom.width, toplevel->pending_geom.height);
 }
 
+//* TODO: OPTIMIZE 
 static void output_frame(struct wl_listener *listener, void *data)
 {
     struct hellwm_output *output = wl_container_of(listener, output, frame);
@@ -2120,8 +2138,7 @@ static void output_frame(struct wl_listener *listener, void *data)
                 toplevel->set_animation_clock = false;
             }
 
-            double elapsed = (now.tv_sec - toplevel->animation_start.tv_sec) +
-                (now.tv_nsec - toplevel->animation_start.tv_nsec) / 1e9;
+            double elapsed = (now.tv_sec - toplevel->animation_start.tv_sec) + (now.tv_nsec - toplevel->animation_start.tv_nsec) / 1e9;
 
             if (elapsed >= anim_duration)
             {
@@ -2361,10 +2378,51 @@ static void borders_toplevel_update_all(struct hellwm_server *server)
     }
 }
 
+static void toplevel_center(struct hellwm_toplevel *toplevel)
+{
+    struct wlr_box ob;
+    wlr_output_layout_get_box(toplevel->server->output_layout, toplevel->workspace->output->wlr_output, &ob);
+
+    int x = ob.x + (toplevel->workspace->output->total_area.width) / 2;
+    int y = ob.y + (toplevel->workspace->output->total_area.height) / 2;
+
+    toplevel->current_geom.x = x - toplevel->xdg_toplevel->base->current.geometry.width/2;
+    toplevel->current_geom.y = y - toplevel->xdg_toplevel->base->current.geometry.height/2;
+
+    LOG("RES: %d, %d\n", toplevel->current_geom.x, toplevel->current_geom.y);
+}
+
 static void xdg_toplevel_map(struct wl_listener *listener, void *data) 
 {
     /* Called when the surface is mapped, or ready to display on-screen. */
     struct hellwm_toplevel *toplevel = wl_container_of(listener, toplevel, map);
+
+    toplevel->fullscreen = false;
+    toplevel->previous_bezier = 0.0f;
+    toplevel->set_animation_clock = false;
+    toplevel->server->layout_reapply = 1;
+    toplevel->border_state = HELLWM_BORDER_INVISIBLE;
+    toplevel->floating = toplevel_should_float(toplevel);
+    toplevel->animation_state = GLOBAL_SERVER->config_manager->decoration->default_animation;
+    hellwm_workspace_add_toplevel(toplevel->server->active_workspace, toplevel);
+
+    /* TODO: Fix floating, add funtion to make every toplevel float */
+    if (toplevel->floating)
+    {
+        toplevel->scene_tree = wlr_scene_xdg_surface_create(toplevel->server->floating_tree, toplevel->xdg_toplevel->base);
+        toplevel->xdg_toplevel->base->data = toplevel->scene_tree;
+        toplevel_center(toplevel);
+    }
+    else
+    {
+        toplevel->scene_tree = wlr_scene_xdg_surface_create(toplevel->server->tile_tree, toplevel->xdg_toplevel->base);
+        toplevel->xdg_toplevel->base->data = toplevel->scene_tree;
+        wlr_scene_node_set_enabled(&toplevel->scene_tree->node, false);
+    }
+
+    toplevel_fade_start(toplevel);
+    borders_toplevel_create(toplevel);
+    start_animation_toplevel(toplevel);
 
     /* add this toplevel to the scene tree */
     struct hellwm_view *view = calloc(1, sizeof(*view));
@@ -2373,11 +2431,9 @@ static void xdg_toplevel_map(struct wl_listener *listener, void *data)
 
     toplevel->scene_tree->node.data = view;
 
-    hellwm_workspace_add_toplevel(toplevel->server->active_workspace, toplevel);
-
     hellwm_focus_toplevel(toplevel);
-
     GLOBAL_SERVER->layout_reapply = 1;
+
 }
 
 static void xdg_toplevel_unmap(struct wl_listener *listener, void *data)
@@ -2395,6 +2451,16 @@ static void xdg_toplevel_unmap(struct wl_listener *listener, void *data)
     GLOBAL_SERVER->layout_reapply = 1;
 }
 
+static bool toplevel_should_float(struct hellwm_toplevel *toplevel)
+{
+    /* if fixed size toplevel is floating */
+    bool b = (toplevel->xdg_toplevel->current.max_height && toplevel->xdg_toplevel->current.max_height == toplevel->xdg_toplevel->current.min_height)
+        || (toplevel->xdg_toplevel->current.max_width && toplevel->xdg_toplevel->current.max_width == toplevel->xdg_toplevel->current.min_width)
+        || toplevel->xdg_toplevel->parent != NULL;
+
+    return b;
+}
+
 static void xdg_toplevel_commit(struct wl_listener *listener, void *data) 
 {
     /* Called when a new surface state is committed. */
@@ -2408,20 +2474,7 @@ static void xdg_toplevel_commit(struct wl_listener *listener, void *data)
          * dimensions itself. */
 
         wlr_xdg_toplevel_set_wm_capabilities(toplevel->xdg_toplevel, WLR_XDG_TOPLEVEL_WM_CAPABILITIES_FULLSCREEN);
-        wlr_xdg_toplevel_set_size(toplevel->xdg_toplevel,
-                toplevel->server->active_output->wlr_output->width,
-                toplevel->server->active_output->wlr_output->height);
-
-        toplevel->fullscreen = false;
-        toplevel->previous_bezier = 0.0f;
-        toplevel->set_animation_clock = false;
-
-        toplevel_fade_start(toplevel);
-        borders_toplevel_create(toplevel);
-        start_animation_toplevel(toplevel);
-        toplevel->border_state = HELLWM_BORDER_INVISIBLE;
-        toplevel->animation_state = GLOBAL_SERVER->config_manager->decoration->default_animation;
-
+        wlr_xdg_toplevel_set_size(toplevel->xdg_toplevel, 0, 0);
         return;
     }
 }
@@ -2537,9 +2590,10 @@ static void toplevel_unset_fullscreen(struct hellwm_toplevel *toplevel)
     toplevel->current_geom.y = toplevel->last_state.y;
 
     toplevel_borders_set_state(toplevel, HELLWM_BORDER_ACTIVE);
-    toplevel_animation_set_type(toplevel, HELLWM_ANIMATION_SHRINK);
+    toplevel_animation_set_type(toplevel, HELLWM_ANIMATION_DOWN);
 
     wlr_scene_node_reparent(&toplevel->scene_tree->node, toplevel->server->tile_tree);
+    wlr_xdg_toplevel_set_fullscreen(toplevel->xdg_toplevel, false);
     GLOBAL_SERVER->active_workspace->fullscreened = false;
     toplevel->fullscreen = false;
 }
@@ -2567,9 +2621,10 @@ static void toplevel_set_fullscreen(struct hellwm_toplevel *toplevel)
     toplevel->current_geom.y = output_box.y;
 
     toplevel_borders_set_state(toplevel, HELLWM_BORDER_INVISIBLE);
-    toplevel_animation_set_type(toplevel, HELLWM_ANIMATION_GROW);
+    toplevel_animation_set_type(toplevel, HELLWM_ANIMATION_UP);
 
     wlr_scene_node_reparent(&toplevel->scene_tree->node, toplevel->server->fullscreen_tree);
+    wlr_xdg_toplevel_set_fullscreen(toplevel->xdg_toplevel, true);
     GLOBAL_SERVER->active_workspace->fullscreened = true;
     toplevel->fullscreen = true;
 }
@@ -2612,16 +2667,8 @@ static void server_new_xdg_toplevel(struct wl_listener *listener, void *data)
 
     /* Allocate a hellwm_toplevel for this surface */
     struct hellwm_toplevel *toplevel = calloc(1, sizeof(*toplevel));
-    toplevel->xdg_toplevel = xdg_toplevel;
     toplevel->server = server;
-
-    toplevel->scene_tree = wlr_scene_xdg_surface_create(toplevel->server->tile_tree, toplevel->xdg_toplevel->base);
-    toplevel->scene_tree->node.data = toplevel;
-    toplevel->xdg_toplevel->base->data = toplevel->scene_tree;
-
-    /* output at 0, 0 would get this toplevel flashed if its on some other output,
-     * so we disable it until the next frame */
-    wlr_scene_node_set_enabled(&toplevel->scene_tree->node, false);
+    toplevel->xdg_toplevel = xdg_toplevel;
 
     /* Listen to the various events it can emit */
     toplevel->map.notify = xdg_toplevel_map;
@@ -4112,6 +4159,24 @@ bool hellwm_function_find(const char* name, struct hellwm_server* server, union 
     return false;
 }
 
+void hellwm_focus_right_toplevel(struct hellwm_server *server)
+{
+    struct hellwm_toplevel *t = layout_find_closest_tiled_toplevel(server->active_workspace->now_focused, "right");
+    
+    if (t !=NULL) {
+        hellwm_focus_toplevel(t);
+    }
+}
+
+void hellwm_focus_left_toplevel(struct hellwm_server *server)
+{
+    struct hellwm_toplevel *t = layout_find_closest_tiled_toplevel(server->active_workspace->now_focused, "left");
+    
+    if (t !=NULL) {
+        hellwm_focus_toplevel(t);
+    }
+}
+
 void hellwm_function_expose(struct hellwm_server *server)
 {
     hellwm_function_add_to_map(server, "kill_server",   hellwm_server_kill);
@@ -4121,6 +4186,9 @@ void hellwm_function_expose(struct hellwm_server *server)
 
     hellwm_function_add_to_map(server, "focus_next_center",    hellwm_focus_next_toplevel_center);
     hellwm_function_add_to_map(server, "focus_prev_center",    hellwm_focus_prev_toplevel_center);
+
+    hellwm_function_add_to_map(server, "focus_right",   hellwm_focus_right_toplevel);
+    hellwm_function_add_to_map(server, "focus_left",    hellwm_focus_left_toplevel);
 
     hellwm_function_add_to_map(server, "kill_active",   hellwm_toplevel_kill_active);
     hellwm_function_add_to_map(server, "reload_config", hellwm_config_manager_reload);

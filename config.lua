@@ -54,6 +54,14 @@ bind("Alt_L, XF86AudioLowerVolume", "brightnessctl s 1%-")
     -- Volume Controls
 bind("XF86AudioRaiseVolume", "wpctl set-volume -l 1.5 @DEFAULT_AUDIO_SINK@ 5%+")
 bind("XF86AudioLowerVolume", "wpctl set-volume -l 1.5 @DEFAULT_AUDIO_SINK@ 5%-")
+bind("XF86AudioMute", "wpctl set-mute @DEFAULT_AUDIO_SINK@ toggle")
+bind("XF86AudioPlay", "playerctl play-pause")
+bind("XF86AudioNext", "playerctl next")
+bind("XF86AudioPrev", "playerctl previous")
+bind("XF86AudioStop", "playerctl stop")
+
+    -- Screenshots
+bind("Super_L, Shift_L, S", "grim -g \"$(slurp -d)\" - | tee >(swappy -f - -o - | wl-copy) | wl-copy")
 
 
 bind(
@@ -86,6 +94,9 @@ bind("Super_L, Escape", "kill_server")  -- Kill HellWM
 
 bind("Super_L, n", "focus_next")        -- Focus next Window
 bind("Alt_L, n", "focus_next_center")   -- Focus next and center Window
+
+bind("Super_L, h", "focus_left")        -- Focus next Window
+bind("Super_L, l", "focus_right")        -- Focus next Window
 --bind("Super_L, p", "focus_prev")
 --bind("Alt_L, p", "focus_prev_center")
 
@@ -97,6 +108,13 @@ env("GTK_THEME", "Nordic")
 -- Exec daemons etc.
 exec("swww init")
 exec("waybar")
+exec("alacritty")
+exec("alacritty")
+exec("alacritty")
+exec("alacritty")
+exec("alacritty")
+exec("alacritty")
+exec("alacritty")
 exec("alacritty")
 
 -- Tiling layout
