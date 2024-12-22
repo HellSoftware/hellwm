@@ -8,7 +8,6 @@
 #include <string.h>
 #include <unistd.h>
 #include <stdbool.h>
-#include <cairo/cairo.h>
 
 #include <lua.h>
 #include <lauxlib.h>
