@@ -622,7 +622,7 @@ static void toplevel_unset_fullscreen(struct hellwm_toplevel *toplevel);
 
 float *border_get_color(enum hellwm_border_state state);
 static void borders_toplevel_update(struct hellwm_toplevel *toplevel);
-static void borders_toplevel_update_all(struct hellwm_server *server);
+static void borders_toplevel_set_all(struct hellwm_server *server);
 static void borders_toplevel_create(struct hellwm_toplevel *toplevel);
 static void toplevel_borders_set_state(struct hellwm_toplevel *toplevel, enum hellwm_border_state state);
 
@@ -637,7 +637,6 @@ static void server_new_xdg_toplevel(struct wl_listener *listener, void *data);
 /* Global Variables */
 struct hellwm_server *GLOBAL_SERVER = NULL;
 
-// TODO: outer_gap
 void layout_horizontal_split(struct hellwm_workspace *workspace)
 {
     int i = 0;
@@ -645,7 +644,7 @@ void layout_horizontal_split(struct hellwm_workspace *workspace)
     if (workspace->fullscreened == true) count--;
     if (count <= 0) return;
 
-    //int inner_gap = workspace->server->config_manager->decoration->inner_gap;
+    int inner_gap = workspace->server->config_manager->decoration->inner_gap;
     int outer_gap = workspace->server->config_manager->decoration->outer_gap;
     int border = workspace->server->config_manager->decoration->border_width;
 
@@ -653,24 +652,26 @@ void layout_horizontal_split(struct hellwm_workspace *workspace)
     int output_width = output->wlr_output->width;
     int output_height = output->wlr_output->height;
 
-    int window_width = output_width / count;
-    int window_height = output_height;
+    int total_inner_gap = (count > 1) ? inner_gap * (count - 1) : 0;
+    int usable_width = output_width - total_inner_gap - border * 2 - outer_gap * 2;
+    int usable_height = output_height - border * 2 - outer_gap * 2;
+
+    int window_width = count > 0 ? usable_width / count : 0;
 
     struct hellwm_toplevel *toplevel;
     wl_list_for_each(toplevel, &workspace->toplevels, link)
     {
-        toplevel->borders_visible = true;
         if (toplevel->fullscreen == true || toplevel->floating)
             continue;
 
-        int xx = i * window_width;
+        int xx = i * (window_width + inner_gap);
         int yy = 0;
-        
+
         int x = xx + output->usable_area.x + outer_gap + border;
         int y = yy + output->usable_area.y + outer_gap + border;
 
-        int width = window_width - border * 2 - outer_gap * 2;
-        int height = window_height - output->usable_area.y - border * 2 - outer_gap * 2;
+        int width = window_width;
+        int height = usable_height;
 
         if (x < 0) x = 0;
         if (y < 0) y = 0;
@@ -686,10 +687,10 @@ void layout_horizontal_split(struct hellwm_workspace *workspace)
         toplevel->desired_geom.width = width;
         toplevel->desired_geom.height = height;
 
-        toplevel->borders_visible = true;
         i++;
     }
 }
+
 void layout_dwindle(struct hellwm_workspace *workspace)
 {
     int count = wl_list_length(&workspace->toplevels);
@@ -706,30 +707,30 @@ void layout_dwindle(struct hellwm_workspace *workspace)
     int usable_width = output->usable_area.width - border * 2 - outer_gap * 2;
     int usable_height = output->usable_area.height - border * 2 - outer_gap * 2;
 
+    int adjusted_inner_gap = (count > 1) ? inner_gap : 0;
+
     bool vertical_split = true;
     struct hellwm_toplevel *toplevel;
     wl_list_for_each(toplevel, &workspace->toplevels, link)
     {
-        toplevel->borders_visible = true;
-        if (toplevel->fullscreen == true || toplevel->floating)
+        if (toplevel->fullscreen == true || toplevel->floating == true)
+        {
+            count--;
             continue;
+        }
 
         if (count == 1)
         {
-            // single window
-            int final_width = usable_width;
-            int final_height = usable_height;
-
             toplevel->desired_geom.x = usable_x;
             toplevel->desired_geom.y = usable_y;
-            toplevel->desired_geom.width = final_width;
-            toplevel->desired_geom.height = final_height;
+            toplevel->desired_geom.width = usable_width;
+            toplevel->desired_geom.height = usable_height;
             break;
         }
 
         if (vertical_split)
         {
-            int new_width = usable_width / 2 - inner_gap;
+            int new_width = (usable_width - adjusted_inner_gap) / 2;
             new_width = new_width > 0 ? new_width : 0;
 
             toplevel->desired_geom.x = usable_x;
@@ -737,12 +738,12 @@ void layout_dwindle(struct hellwm_workspace *workspace)
             toplevel->desired_geom.width = new_width;
             toplevel->desired_geom.height = usable_height;
 
-            usable_x += new_width + inner_gap;
-            usable_width -= new_width + inner_gap;
+            usable_x += new_width + adjusted_inner_gap;
+            usable_width -= new_width + adjusted_inner_gap;
         }
         else
         {
-            int new_height = usable_height / 2 - inner_gap;
+            int new_height = (usable_height - adjusted_inner_gap) / 2;
             new_height = new_height > 0 ? new_height : 0;
 
             toplevel->desired_geom.x = usable_x;
@@ -750,12 +751,117 @@ void layout_dwindle(struct hellwm_workspace *workspace)
             toplevel->desired_geom.width = usable_width;
             toplevel->desired_geom.height = new_height;
 
-            usable_y += new_height + inner_gap;
-            usable_height -= new_height + inner_gap;
+            usable_y += new_height + adjusted_inner_gap;
+            usable_height -= new_height + adjusted_inner_gap;
         }
 
         vertical_split = !vertical_split;
         count--;
+    }
+}
+
+void layout_master_stack(struct hellwm_workspace *workspace)
+{
+    int count = wl_list_length(&workspace->toplevels);
+    if (workspace->fullscreened == true) count--;
+    if (count <= 0) return;
+
+    int inner_gap = workspace->server->config_manager->decoration->inner_gap;
+    int outer_gap = workspace->server->config_manager->decoration->outer_gap;
+    int border = workspace->server->config_manager->decoration->border_width;
+
+    struct hellwm_output *output = workspace->output;
+    int usable_x = output->usable_area.x + border + outer_gap;
+    int usable_y = output->usable_area.y + border + outer_gap;
+    int usable_width = output->usable_area.width - border * 2 - outer_gap * 2;
+    int usable_height = output->usable_area.height - border * 2 - outer_gap * 2;
+
+    int master_width = (count > 1) ? usable_width / 2 : usable_width;
+
+    struct hellwm_toplevel *toplevel;
+    int i = 0;
+
+    wl_list_for_each(toplevel, &workspace->toplevels, link)
+    {
+        if (toplevel->fullscreen || toplevel->floating) continue;
+
+        if (i == 0)
+        {
+            toplevel->desired_geom.x = usable_x;
+            toplevel->desired_geom.y = usable_y;
+            toplevel->desired_geom.width = master_width - inner_gap;
+            toplevel->desired_geom.height = usable_height;
+        }
+        else
+        {
+            int stack_x = usable_x + master_width + inner_gap;
+            int stack_y = usable_y + (i - 1) * (usable_height / (count - 1));
+            int stack_width = usable_width - master_width - inner_gap;
+            int stack_height = (usable_height / (count - 1)) - inner_gap;
+
+            toplevel->desired_geom.x = stack_x;
+            toplevel->desired_geom.y = stack_y;
+            toplevel->desired_geom.width = stack_width;
+            toplevel->desired_geom.height = stack_height;
+        }
+        i++;
+    }
+}
+
+void layout_monocle(struct hellwm_workspace *workspace)
+{
+    struct hellwm_toplevel *toplevel;
+    wl_list_for_each(toplevel, &workspace->toplevels, link)
+    {
+        if (toplevel->fullscreen || toplevel->floating) continue;
+
+        toplevel->desired_geom.x = workspace->output->usable_area.x;
+        toplevel->desired_geom.y = workspace->output->usable_area.y;
+        toplevel->desired_geom.width = workspace->output->usable_area.width;
+        toplevel->desired_geom.height = workspace->output->usable_area.height;
+    }
+}
+
+void layout_grid(struct hellwm_workspace *workspace)
+{
+    int count = wl_list_length(&workspace->toplevels);
+    if (workspace->fullscreened == true) count--;
+    if (count <= 0) return;
+
+    int inner_gap = workspace->server->config_manager->decoration->inner_gap;
+    int outer_gap = workspace->server->config_manager->decoration->outer_gap;
+    int border = workspace->server->config_manager->decoration->border_width;
+
+    struct hellwm_output *output = workspace->output;
+    int usable_x = output->usable_area.x + border + outer_gap;
+    int usable_y = output->usable_area.y + border + outer_gap;
+    int usable_width = output->usable_area.width - border * 2 - outer_gap * 2;
+    int usable_height = output->usable_area.height - border * 2 - outer_gap * 2;
+
+    int cols = ceil(sqrt(count));
+    int rows = ceil((float)count / cols);
+
+    int cell_width = (usable_width - (cols - 1) * inner_gap) / cols;
+    int cell_height = (usable_height - (rows - 1) * inner_gap) / rows;
+
+    int i = 0;
+    struct hellwm_toplevel *toplevel;
+    wl_list_for_each(toplevel, &workspace->toplevels, link)
+    {
+        if (toplevel->fullscreen || toplevel->floating) continue;
+
+        int row = i / cols;
+        int col = i % cols;
+
+        int x = usable_x + col * (cell_width + inner_gap);
+        int y = usable_y + row * (cell_height + inner_gap);
+
+        toplevel->desired_geom.x = x;
+        toplevel->desired_geom.y = y;
+        toplevel->desired_geom.width = cell_width;
+        toplevel->desired_geom.height = cell_height;
+
+        i++;
     }
 }
 
@@ -791,6 +897,15 @@ void apply_layout(struct hellwm_workspace *workspace, int layout_type)
             break;
         case 2:
             layout_dwindle(workspace);
+            break;
+        case 3:
+            layout_master_stack(workspace);
+            break;
+        case 4:
+            layout_monocle(workspace);
+            break;
+        case 5:
+            layout_grid(workspace);
             break;
         default:
             layout_horizontal_split(workspace);
@@ -2119,6 +2234,12 @@ static void output_frame(struct wl_listener *listener, void *data)
     bool fade = output->server->config_manager->decoration->fade_decoration;
     bool animations = output->server->config_manager->decoration->animations_decoration;
 
+    if (output->server->layout_reapply == 1) 
+    {
+        apply_layout(output->server->active_workspace, output->server->active_workspace->layout);
+        output->server->layout_reapply = 0;
+    }
+
     struct hellwm_toplevel *toplevel;
     wl_list_for_each(toplevel, &GLOBAL_SERVER->active_workspace->toplevels, link)
     {
@@ -2204,16 +2325,10 @@ static void output_frame(struct wl_listener *listener, void *data)
             else
                 wlr_scene_subsurface_tree_set_clip(&toplevel->scene_tree->node, NULL);
 
-            //TODO: fix borders
-            //borders_toplevel_update(toplevel);
+            toplevel->borders_visible = true;
             toplevel->pending_geom.width = -1;
         }
-    }
-
-    if (output->server->layout_reapply == 1) 
-    {
-        apply_layout(output->server->active_workspace, output->server->active_workspace->layout);
-        output->server->layout_reapply = 0;
+        borders_toplevel_update(toplevel);
     }
 
     wlr_scene_output_commit(scene_output, NULL);
@@ -2394,7 +2509,8 @@ static void borders_toplevel_update(struct hellwm_toplevel *toplevel)
 
     uint32_t width, height;
     uint32_t border_width = GLOBAL_SERVER->config_manager->decoration->border_width;
-    struct wlr_box box; wlr_xdg_surface_get_geometry(toplevel->xdg_toplevel->base, &box);
+
+    struct wlr_box box = toplevel->current_geom;
 
     width = box.width;
     height = box.height;
@@ -2410,7 +2526,7 @@ static void borders_toplevel_update(struct hellwm_toplevel *toplevel)
     wlr_scene_rect_set_size(toplevel->borders[3], border_width, height);
 }
 
-static void borders_toplevel_update_all(struct hellwm_server *server)
+static void borders_toplevel_set_all(struct hellwm_server *server)
 {
     if (server->active_workspace == NULL)
         return;
@@ -2422,8 +2538,6 @@ static void borders_toplevel_update_all(struct hellwm_server *server)
             toplevel_borders_set_state(toplevel, HELLWM_BORDER_ACTIVE);
         else
             toplevel_borders_set_state(toplevel, HELLWM_BORDER_INACTIVE);
-
-        borders_toplevel_update(toplevel);
     }
 }
 
@@ -3260,7 +3374,7 @@ void hellwm_config_manager_reload(struct hellwm_server *server)
     hellwm_config_manager_keyboard_reload(server);
 
     server->layout_reapply = 1;
-    borders_toplevel_update_all(server);
+    borders_toplevel_set_all(server);
 }
 
 void hellwm_config_keybindings_free(hellwm_config_manager_keybindings *keybindings)

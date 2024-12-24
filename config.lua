@@ -109,15 +109,14 @@ env("GTK_THEME", "Nordic")
 exec("swww init")
 exec("waybar")
 exec("alacritty")
-exec("alacritty")
 
 -- Tiling layout
-layout(2)
+layout(6)
 
 -- Decoration
-border_width(3)
-inner_gap(10)
-outer_gap(50)
+border_width(0)
+inner_gap(30)
+outer_gap(40)
 
 fade_duration(0.3)
 
@@ -131,6 +130,6 @@ border_inactive_color("#87554c")
 border_active_color("233, 23, 52, 128")
 
 -- Border colors imported from hellwal
-dofile(os.getenv("HOME") .. "/.cache/hellwal/hellwm.lua")
-border_inactive_color(background)
-border_active_color(foreground)
+--dofile(os.getenv("HOME") .. "/.cache/hellwal/hellwm.lua")
+--border_inactive_color(background)
+--border_active_color(foreground)
