@@ -976,6 +976,22 @@ static void toplevel_fade_start(struct hellwm_toplevel *toplevel)
     toplevel->set_fade_clock = true;
 }
 
+static void toplevel_get_clip(struct hellwm_toplevel *toplevel, struct wlr_box *clip)
+{
+    struct wlr_box xdg_geom = {0};
+    *clip = (struct wlr_box){
+        .x = 0,
+        .y = 0,
+        .width = toplevel->current_geom.width,
+        .height = toplevel->current_geom.height,
+    };
+
+
+    wlr_xdg_surface_get_geometry(toplevel->xdg_toplevel->base, &xdg_geom);
+    clip->x = xdg_geom.x;
+    clip->y = xdg_geom.y;
+}
+
 hellwm_config_manager_monitor *hellwm_config_manager_monitor_create()
 {
     hellwm_config_manager_monitor *monitor_manager = calloc(1, sizeof(hellwm_config_manager_monitor));
@@ -2173,17 +2189,23 @@ static void output_frame(struct wl_listener *listener, void *data)
         {
             toplevel->current_geom = toplevel->pending_geom;
 
-            struct wlr_box t;
-            t.x=0;
-            t.y=0;
-            t.width=toplevel->desired_geom.width;
-            t.height=toplevel->desired_geom.height;
-            wlr_scene_subsurface_tree_set_clip(&toplevel->scene_tree->node, &t); // crop the buffer, to keep tiling right - some apps does not allow us to change size, like discord
-
             wlr_scene_node_set_position(&toplevel->scene_tree->node, toplevel->current_geom.x, toplevel->current_geom.y);
             wlr_xdg_toplevel_set_size(toplevel->xdg_toplevel, toplevel->current_geom.width, toplevel->current_geom.height);
             wlr_scene_node_set_enabled(&toplevel->scene_tree->node, true);
 
+            // crop the node, to keep tiling right - some apps does not allow us to change size, like discord
+            struct wlr_box clip;
+            toplevel_get_clip(toplevel, &clip);
+            if (toplevel->desired_geom.width != toplevel->xdg_toplevel->current.width ||
+                    toplevel->desired_geom.height != toplevel->xdg_toplevel->current.height) 
+            {
+                wlr_scene_subsurface_tree_set_clip(&toplevel->scene_tree->node, &clip);
+            }
+            else
+                wlr_scene_subsurface_tree_set_clip(&toplevel->scene_tree->node, NULL);
+
+            //TODO: fix borders
+            //borders_toplevel_update(toplevel);
             toplevel->pending_geom.width = -1;
         }
     }
@@ -2643,7 +2665,7 @@ static void toplevel_set_fullscreen(struct hellwm_toplevel *toplevel)
     toplevel_animation_set_type(toplevel, HELLWM_ANIMATION_GROW);
 
     wlr_scene_node_reparent(&toplevel->scene_tree->node, toplevel->server->fullscreen_tree);
-    wlr_xdg_toplevel_set_fullscreen(toplevel->xdg_toplevel, true);
+    //wlr_xdg_toplevel_set_fullscreen(toplevel->xdg_toplevel, true);
     GLOBAL_SERVER->active_workspace->fullscreened = true;
     GLOBAL_SERVER->layout_reapply = 1;
     toplevel->fullscreen = true;
