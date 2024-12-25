@@ -2771,6 +2771,7 @@ static void toplevel_unset_fullscreen(struct hellwm_toplevel *toplevel)
     toplevel_borders_set_state(toplevel, HELLWM_BORDER_ACTIVE);
     toplevel_animation_set_type(toplevel, HELLWM_ANIMATION_SHRINK);
 
+    // *TODO: fix it - add it to previous node
     hellwm_focus_next_toplevel_ONLY_FOCUS(GLOBAL_SERVER);
 
     add_toplevel_to_tree(toplevel->workspace, toplevel);
@@ -2823,14 +2824,16 @@ static void xdg_toplevel_request_fullscreen(struct wl_listener *listener, void *
     if (toplevel == NULL || toplevel->xdg_toplevel == NULL)
         return;
 
-    if (toplevel->xdg_toplevel->requested.fullscreen)
-    {
-        toplevel_set_fullscreen(toplevel);
-    }
-    else
+    if (toplevel->workspace->fullscreened)
     {
         toplevel_unset_fullscreen(toplevel);
     }
+    else
+    {
+        toplevel_set_fullscreen(toplevel);
+    }
+
+    start_animation_toplevel(toplevel);
 
     if (toplevel->xdg_toplevel->base->initialized)
         wlr_xdg_surface_schedule_configure(toplevel->xdg_toplevel->base);
