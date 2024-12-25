@@ -111,12 +111,12 @@ exec("waybar")
 exec("alacritty")
 
 -- Tiling layout
-layout(6)
+layout(3)
 
 -- Decoration
-border_width(0)
+border_width(3)
 inner_gap(30)
-outer_gap(40)
+outer_gap(12)
 
 fade_duration(0.3)
 
