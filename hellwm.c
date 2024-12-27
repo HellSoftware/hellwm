@@ -49,6 +49,7 @@
 #include <wlr/types/wlr_data_control_v1.h>
 #include <wlr/types/wlr_export_dmabuf_v1.h>
 #include <wlr/types/wlr_xdg_decoration_v1.h>
+#include <wlr/types/wlr_xdg_activation_v1.h>
 #include <wlr/types/wlr_alpha_modifier_v1.h>
 #include <wlr/types/wlr_presentation_time.h>
 #include <wlr/types/wlr_fractional_scale_v1.h>
@@ -1305,9 +1306,12 @@ static void hellwm_focus_toplevel(struct hellwm_toplevel *toplevel)
         if (prev_toplevel != NULL)
         {
             /* store prev focused toplevel to focus it after closing something */
-            server->active_workspace->prev_focused = server->active_workspace->now_focused;
+            if (server->active_workspace->now_focused != NULL)
+            {
+                server->active_workspace->prev_focused = server->active_workspace->now_focused;
+                toplevel_borders_set_state(server->active_workspace->prev_focused, HELLWM_BORDER_INACTIVE);
+            }
 
-            toplevel_borders_set_state(server->active_workspace->prev_focused, HELLWM_BORDER_INACTIVE);
             wlr_xdg_toplevel_set_activated(prev_toplevel, false);
         }
     }
@@ -2329,13 +2333,19 @@ static void output_frame(struct wl_listener *listener, void *data)
 
         if (toplevel->pending_geom.width > -1)
         {
+            LOG("\n\nPending: %d, %d  -  (%d x %d)\n\n",
+                    toplevel->pending_geom.x,
+                    toplevel->pending_geom.y,
+                    toplevel->pending_geom.width,
+                    toplevel->pending_geom.height
+                    );
             toplevel->current_geom = toplevel->pending_geom;
 
             wlr_scene_node_set_position(&toplevel->scene_tree->node, toplevel->current_geom.x, toplevel->current_geom.y);
             wlr_xdg_toplevel_set_size(toplevel->xdg_toplevel, toplevel->current_geom.width, toplevel->current_geom.height);
             wlr_scene_node_set_enabled(&toplevel->scene_tree->node, true);
 
-            // crop the node, to keep tiling right - some apps does not allow us to change size, like discord
+            // crop the node, to keep tiling right - some apps does not allow us to change size, like discord, so we crop them
             struct wlr_box clip;
             toplevel_get_clip(toplevel, &clip);
             if (toplevel->desired_geom.width != toplevel->xdg_toplevel->current.width ||
@@ -2347,8 +2357,8 @@ static void output_frame(struct wl_listener *listener, void *data)
                 wlr_scene_subsurface_tree_set_clip(&toplevel->scene_tree->node, NULL);
 
             toplevel->pending_geom.width = -1;
-            borders_toplevel_update(toplevel);
         }
+        borders_toplevel_update(toplevel);
     }
 
     wlr_scene_output_commit(scene_output, NULL);
@@ -2516,7 +2526,9 @@ static void border_toplevel_set_color(struct hellwm_toplevel *toplevel, enum hel
 {
     if (toplevel == NULL || toplevel->xdg_toplevel == NULL || toplevel->xdg_toplevel->base == NULL) return;
     const float *border_color = border_get_color(state);
-    for(size_t i = 0; i < 4; i++) {
+
+    for(size_t i = 0; i < 4; i++)
+    {
         wlr_scene_rect_set_color(toplevel->borders[i], border_color);
     }
 }
@@ -2529,15 +2541,17 @@ static void borders_toplevel_update(struct hellwm_toplevel *toplevel)
     uint32_t width, height;
     uint32_t border_width = GLOBAL_SERVER->config_manager->decoration->border_width;
 
-    struct wlr_box box = toplevel->current_geom;
+    struct wlr_box box = toplevel->xdg_toplevel->base->current.geometry;
 
     width = box.width;
     height = box.height;
 
     border_toplevel_set_color(toplevel, toplevel->border_state);
 
+    wlr_scene_node_set_position(&toplevel->borders[0]->node, -border_width, -border_width);
     wlr_scene_node_set_position(&toplevel->borders[1]->node, width, 0);
     wlr_scene_node_set_position(&toplevel->borders[2]->node, -border_width, height);
+    wlr_scene_node_set_position(&toplevel->borders[3]->node, -border_width, 0);
 
     wlr_scene_rect_set_size(toplevel->borders[0], width + 2 * border_width, border_width);
     wlr_scene_rect_set_size(toplevel->borders[1], border_width, height);
@@ -2588,11 +2602,10 @@ static void xdg_toplevel_map(struct wl_listener *listener, void *data)
     {
         toplevel->scene_tree = wlr_scene_xdg_surface_create(toplevel->server->tile_tree, toplevel->xdg_toplevel->base);
         toplevel->xdg_toplevel->base->data = toplevel->scene_tree;
+        add_toplevel_to_tree(toplevel->server->active_workspace, toplevel);
     }
 
     hellwm_workspace_add_toplevel(toplevel->server->active_workspace, toplevel);
-    add_toplevel_to_tree(toplevel->server->active_workspace, toplevel);
-    hellwm_focus_toplevel(toplevel);
 
     toplevel->fullscreen = false;
     toplevel->previous_bezier = 0.0f;
@@ -2611,6 +2624,8 @@ static void xdg_toplevel_map(struct wl_listener *listener, void *data)
     toplevel_fade_start(toplevel);
     borders_toplevel_create(toplevel);
     start_animation_toplevel(toplevel);
+
+    hellwm_focus_toplevel(toplevel);
     wlr_scene_node_set_enabled(&toplevel->scene_tree->node, false);
 }
 
@@ -3075,9 +3090,15 @@ static void layer_surface_map_func(struct hellwm_layer_surface *layer_surface)
 
     focus_layer_surface(layer_surface);
 
-    //* TODO - LOOK HERE
     if(output_box.width != output->usable_area.width || output_box.height != output->usable_area.height)
         server->layout_reapply = 1;
+
+    //* TODO - LOOK HERE
+    LOG("USABLE_AREA: %d,%d - (%d, %d)\n\n",
+            output->usable_area.x,
+            output->usable_area.y,
+            output->usable_area.width,
+            output->usable_area.height);
 }
 
 static void layer_surface_handle_unmap(struct wl_listener *listener, void *data)
@@ -4656,6 +4677,15 @@ int main(int argc, char *argv[])
     server->xdg_decoration_manager = wlr_xdg_decoration_manager_v1_create(server->wl_display);
     server->xdg_decoration_new_toplevel_decoration.notify = xdg_decoration_new_toplevel_decoration;
     wl_signal_add(&server->xdg_decoration_manager->events.new_toplevel_decoration, &server->xdg_decoration_new_toplevel_decoration);
+
+    if (!wlr_renderer_init_wl_shm(server->renderer, server->wl_display))
+    {
+        ERR("Failed to initialize shared memory pool!\n");
+    }
+    wlr_linux_dmabuf_v1_create_with_renderer(server->wl_display, 5, server->renderer);
+
+    /* wlr_xdg_activation_v1 */
+    wlr_xdg_activation_v1_create(server->wl_display);
 
 
     /* TODO: idle_notifier */

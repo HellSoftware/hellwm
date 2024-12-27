@@ -114,22 +114,22 @@ exec("alacritty")
 layout(3)
 
 -- Decoration
-border_width(3)
-inner_gap(30)
-outer_gap(12)
+border_width(7)
+inner_gap(10)
+outer_gap(1)
 
 fade_duration(0.3)
 
-animation_duration(0.4)
+animation_duration(5.4)
 animation_bezier(0.2, 1.12, 1.28, 1)
 
-animation_direction("top")
+animation_direction("grow")
 
 -- Border colors
 border_inactive_color("#87554c")
 border_active_color("233, 23, 52, 128")
 
--- Border colors imported from hellwal
+-- Border colors imported from Hellwal
 --dofile(os.getenv("HOME") .. "/.cache/hellwal/hellwm.lua")
 --border_inactive_color(background)
 --border_active_color(foreground)
