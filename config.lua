@@ -93,13 +93,12 @@ bind("Super_L, q", "kill_active")       -- Kill Active Window
 bind("Super_L, Escape", "kill_server")  -- Kill HellWM
 
 bind("Super_L, n", "focus_next")        -- Focus next Window
-bind("Alt_L, n", "focus_next_center")   -- Focus next and center Window
 
-bind("Super_L, h", "focus_left")        -- Focus next Window
-bind("Super_L, l", "focus_right")        -- Focus next Window
---bind("Super_L, p", "focus_prev")
---bind("Alt_L, p", "focus_prev_center")
-
+bind("Super_L, h", "focus_left")
+bind("Super_L, l", "focus_right")
+bind("Super_L, k", "focus_up")
+bind("Super_L, j", "focus_down")
+bind("Super_L, m", "toggle_split") --
 
 -- Set environment variables
 env("EDITOR", "nvim")
@@ -110,26 +109,36 @@ exec("swww init")
 exec("waybar")
 exec("alacritty")
 
--- Tiling layout
+-- Tiling layout -- no matter what only 'dwindle' for now on
 layout(3)
 
 -- Decoration
-border_width(7)
-inner_gap(10)
-outer_gap(1)
+border_width(0)
+inner_gap(0)
+outer_gap(0)
 
 fade_duration(0.3)
 
-animation_duration(5.4)
-animation_bezier(0.2, 1.12, 1.28, 1)
+animation_duration(.4)
+animation_bezier(0.0, 1.12, 1.28, 1)
 
+--animation_duration(1.4)
+--animation_bezier(0.1, 1.12, -0.5, 1) -- Thats funny af, try it :D
+
+    -- Types of animation directions
+--animation_direction("left")
+--animation_direction("right")
+--animation_direction("up")
+--animation_direction("down")
+--animation_direction("shrink")
 animation_direction("grow")
 
--- Border colors
+
+    -- Border colors
 border_inactive_color("#87554c")
 border_active_color("233, 23, 52, 128")
 
--- Border colors imported from Hellwal
+    -- Border colors imported from Hellwal
 --dofile(os.getenv("HOME") .. "/.cache/hellwal/hellwm.lua")
 --border_inactive_color(background)
 --border_active_color(foreground)

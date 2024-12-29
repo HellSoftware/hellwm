@@ -97,14 +97,15 @@ enum hellwm_border_state
     HELLWM_BORDER_ACTIVE
 };
 
-enum hellwm_animation_state
+enum animation_direction
 {
-    HELLWM_ANIMATION_GROW,
-    HELLWM_ANIMATION_SHRINK,
     HELLWM_ANIMATION_LEFT,
     HELLWM_ANIMATION_RIGHT,
     HELLWM_ANIMATION_UP,
     HELLWM_ANIMATION_DOWN,
+    HELLWM_ANIMATION_GROW,
+    HELLWM_ANIMATION_SHRINK,
+    HELLWM_ANIMATION_SOLID,
     HELLWM_ANIMATION_COUNT
 };
 
@@ -218,7 +219,7 @@ struct hellwm_output
     struct wl_listener destroy;
 };
 
-struct hellwm_node 
+struct hellwm_node
 {
     bool is_split;
 
@@ -252,7 +253,7 @@ struct hellwm_workspace
 
     struct hellwm_node *layout_tree;
     struct hellwm_node *focused_node;
-    struct hellwm_node *fullscreened_last_parent_node;
+    struct hellwm_node *next_to_focus_node;
 };
 
 struct hellwm_toplevel
@@ -260,13 +261,13 @@ struct hellwm_toplevel
     bool floating;
     bool fullscreen;
     bool in_animation;
+    bool first_layout;
     bool set_fade_clock;
     bool set_animation_clock;
 
     float previous_bezier;
 
     enum hellwm_border_state border_state; // type of border state
-    enum hellwm_animation_state animation_state; // type of animation to use
 
     struct wl_list link;
     struct timespec fade_start; // for fade animation
@@ -279,6 +280,8 @@ struct hellwm_toplevel
     struct wlr_box current_geom;
     struct wlr_box pending_geom;
     struct wlr_box desired_geom;
+    struct wlr_box animation_start_geom;
+
     struct wlr_scene_rect *borders[4];
     struct wlr_scene_tree *scene_tree;
     struct wlr_xdg_toplevel *xdg_toplevel;
@@ -439,7 +442,7 @@ typedef struct
     float animation_duration;
     float animation_bezier[4];
     bool animations_decoration;
-    enum hellwm_animation_state default_animation;
+    enum animation_direction default_animation;
 
     uint32_t border_width;
     float active_border_color[4];
@@ -576,15 +579,13 @@ struct hellwm_view *root_parent_surface(struct wlr_surface *wlr_surface);
 struct hellwm_view *desktop_view_at(struct hellwm_server *server, double lx, double ly, struct wlr_surface **surface, double *sx, double *sy);
 
 static void hellwm_server_kill(struct hellwm_server *server);
+static void hellwm_focus_next_in_list(struct hellwm_server *server);
 static void hellwm_toplevel_fullscreen(struct hellwm_server *server);
+static void hellwm_focus_next_potential(struct hellwm_server *server);
 static void hellwm_toplevel_kill_active(struct hellwm_server *server);
 
 static void hellwm_focus_toplevel(struct hellwm_toplevel *toplevel);
-static void hellwm_focus_next_toplevel(struct hellwm_server *server);
-static void hellwm_focus_prev_toplevel(struct hellwm_server *server);
-static void hellwm_focus_prev_toplevel_center(struct hellwm_server *server);
-static void hellwm_focus_next_toplevel_center(struct hellwm_server *server);
-static void hellwm_focus_next_toplevel_ONLY_FOCUS(struct hellwm_server *server);
+static void hellwm_cursor_follow_toplevel(struct hellwm_server *s, struct hellwm_toplevel *t);
 
 static void keyboard_handle_key(struct wl_listener *listener, void *data);
 static void keyboard_handle_destroy(struct wl_listener *listener, void *data);
@@ -639,6 +640,12 @@ static void xdg_toplevel_request_fullscreen(struct wl_listener *listener, void *
 static void toplevel_center(struct hellwm_toplevel *toplevel);
 static void toplevel_set_fullscreen(struct hellwm_toplevel *toplevel);
 static void toplevel_unset_fullscreen(struct hellwm_toplevel *toplevel);
+static void toplevel_get_clip(struct hellwm_toplevel *toplevel, struct wlr_box *clip);
+static void toplevel_set_start_geometry(struct hellwm_toplevel *toplevel, struct wlr_box box);
+
+static void toplevel_fade_start(struct hellwm_toplevel *toplevel);
+static void toplevel_animation_start(struct hellwm_toplevel *toplevel);
+static void toplevel_animation_start_with_geom(struct hellwm_toplevel *toplevel, struct wlr_box animation_start);
 
 float *border_get_color(enum hellwm_border_state state);
 static void borders_toplevel_update(struct hellwm_toplevel *toplevel);
@@ -653,6 +660,8 @@ static void xdg_popup_destroy(struct wl_listener *listener, void *data);
 static void server_new_xdg_popup(struct wl_listener *listener, void *data);
 static void server_new_xdg_toplevel(struct wl_listener *listener, void *data);
 
+void layout_dwindle(struct hellwm_workspace *workspace);
+void calculate_layout(struct hellwm_node *node, struct wlr_box *area, int inner_gap, int outer_gap, int border_width);
 
 /* Global Variables */
 struct hellwm_server *GLOBAL_SERVER = NULL;
@@ -677,7 +686,7 @@ bool should_split_vertically(struct hellwm_node *node)
     if (node == NULL) return false;
 
     int depth = 0;
-    while (node->parent)
+    while (node->parent != NULL)
     {
         node = node->parent;
         depth++;
@@ -701,8 +710,8 @@ void add_toplevel_to_tree(struct hellwm_workspace *workspace, struct hellwm_topl
 
     struct hellwm_node *focus = NULL;
 
-    if (workspace->fullscreened == true)
-        focus = workspace->fullscreened_last_parent_node;
+    if (workspace->fullscreened == true && workspace->next_to_focus_node != NULL)
+        focus = workspace->next_to_focus_node;
     else
         focus = workspace->focused_node;
 
@@ -739,6 +748,11 @@ void add_toplevel_to_tree(struct hellwm_workspace *workspace, struct hellwm_topl
     new_split->split.right->parent = new_split;
 
     workspace->focused_node = new_split->split.right;
+
+    if (workspace->focused_node == NULL)
+    {
+        LOG("Error: Focused node is NULL after adding toplevel to tree.\n");
+    }
 }
 
 void remove_toplevel_from_tree(struct hellwm_workspace *workspace, struct hellwm_toplevel *toplevel)
@@ -778,103 +792,31 @@ void remove_toplevel_from_tree(struct hellwm_workspace *workspace, struct hellwm
     free(parent);
 }
 
-struct hellwm_node *move_focus_up(struct hellwm_workspace *workspace)
+struct hellwm_node *node_get_sibling(struct hellwm_node *node)
 {
-    if (!workspace->focused_node) return NULL;
+    if (!node || !node->parent) return NULL;
 
-    struct hellwm_node *focus = workspace->focused_node;
+    struct hellwm_node *parent = node->parent;
 
-    if (focus->parent)
+    if (parent->is_split)
     {
-        return focus->parent;
+        return (parent->split.left == node) ? parent->split.right : parent->split.left;
     }
     return NULL;
 }
 
-struct hellwm_node *move_focus_down(struct hellwm_workspace *workspace)
+/* TODO */
+void server_focus_left(struct hellwm_server *server)
 {
-    if (!workspace->focused_node) return NULL;
-
-    struct hellwm_node *focus = workspace->focused_node;
-
-    if (focus->is_split)
-    {
-        if (focus->split.left)
-        {
-            return focus->split.left;
-        }
-        else if (focus->split.right)
-        {
-            return focus->split.right;
-        }
-    }
-    return NULL;
 }
-
-struct hellwm_node *move_focus_left(struct hellwm_workspace *workspace)
+void server_focus_right(struct hellwm_server *server)
 {
-    if (!workspace->focused_node) return NULL;
-
-    struct hellwm_node *focus = workspace->focused_node;
-
-    while (focus->parent)
-    {
-        if (focus->parent->split.right == focus && focus->parent->split.left)
-        {
-            return workspace->focused_node;
-        }
-        focus = focus->parent;
-    }
-    return focus;
 }
-
-struct hellwm_node *move_focus_right(struct hellwm_workspace *workspace)
+void server_focus_up(struct hellwm_server *server)
 {
-    if (!workspace->focused_node) return NULL;
-
-    struct hellwm_node *focus = workspace->focused_node;
-
-    while (focus->parent)
-    {
-        if (focus->parent->split.left == focus && focus->parent->split.right)
-        {
-            return focus->parent->split.right;
-        }
-        focus = focus->parent;
-    }
-    return focus;
 }
-
-void server_move_focus_up(struct hellwm_server *server)
+void server_focus_down(struct hellwm_server *server)
 {
-    struct hellwm_toplevel *t = move_focus_up(server->active_workspace)->toplevel;
-
-    if (t!=NULL)
-        hellwm_focus_toplevel(t);
-}
-
-void server_move_focus_down(struct hellwm_server *server)
-{
-    struct hellwm_toplevel *t = move_focus_down(server->active_workspace)->toplevel;
-    
-    if (t!=NULL)
-        hellwm_focus_toplevel(t);
-}
-
-void server_move_focus_right(struct hellwm_server *server)
-{
-    struct hellwm_toplevel *t = move_focus_right(server->active_workspace)->toplevel;
-    
-    if (t!=NULL)
-        hellwm_focus_toplevel(t);
-}
-
-void server_move_focus_left(struct hellwm_server *server)
-{
-    struct hellwm_toplevel *t = move_focus_left(server->active_workspace)->toplevel;
-    
-    if (t!=NULL)
-        hellwm_focus_toplevel(t);
 }
 
 void calculate_layout(struct hellwm_node *node, struct wlr_box *area, int inner_gap, int outer_gap, int border_width)
@@ -883,14 +825,25 @@ void calculate_layout(struct hellwm_node *node, struct wlr_box *area, int inner_
 
     if (!node->is_split)
     {
-        node->toplevel->desired_geom.x = area->x + border_width + outer_gap;
-        node->toplevel->desired_geom.y = area->y + border_width + outer_gap;
-        node->toplevel->desired_geom.width = area->width - 2 * (border_width + outer_gap);
-        node->toplevel->desired_geom.height = area->height - 2 * (border_width + outer_gap);
+        // TODO: instead of skipping toplevel, remove it from layout_tree
+        if (!node->toplevel->fullscreen)
+        {
+            node->toplevel->desired_geom.x = area->x + border_width + outer_gap;
+            node->toplevel->desired_geom.y = area->y + border_width + outer_gap;
+            node->toplevel->desired_geom.width = area->width - 2 * (border_width + outer_gap);
+            node->toplevel->desired_geom.height = area->height - 2 * (border_width + outer_gap);
 
-        if (node->toplevel->desired_geom.width < 0) node->toplevel->desired_geom.width = 0;
-        if (node->toplevel->desired_geom.height < 0) node->toplevel->desired_geom.height = 0;
+            if (node->toplevel->desired_geom.width < 0) node->toplevel->desired_geom.width = 0;
+            if (node->toplevel->desired_geom.height < 0) node->toplevel->desired_geom.height = 0;
 
+            if (node->toplevel->first_layout)
+            {
+                toplevel_set_start_geometry(node->toplevel, node->toplevel->desired_geom);
+                node->toplevel->first_layout = false;
+            }
+        }
+
+        toplevel_animation_start(node->toplevel);
         return;
     }
 
@@ -1099,17 +1052,22 @@ void check_usage(int argc, char**argv)
     }
 }
 
-static void start_animation_toplevel(struct hellwm_toplevel *toplevel)
+static void toplevel_animation_start(struct hellwm_toplevel *toplevel)
 {
     if (toplevel == NULL) return;
     toplevel->set_animation_clock = true;
     toplevel->in_animation = true;
+
+    toplevel->animation_start_geom = toplevel->current_geom;
 }
 
-static void toplevel_animation_set_type(struct hellwm_toplevel *toplevel, enum hellwm_animation_state state)
+static void toplevel_animation_start_with_geom(struct hellwm_toplevel *toplevel, struct wlr_box animation_start)
 {
     if (toplevel == NULL) return;
-    toplevel->animation_state = state;
+    toplevel->set_animation_clock = true;
+    toplevel->in_animation = true;
+
+    toplevel->current_geom = animation_start;
 }
 
 static void toplevel_fade_start(struct hellwm_toplevel *toplevel)
@@ -1132,6 +1090,80 @@ static void toplevel_get_clip(struct hellwm_toplevel *toplevel, struct wlr_box *
     wlr_xdg_surface_get_geometry(toplevel->xdg_toplevel->base, &xdg_geom);
     clip->x = xdg_geom.x;
     clip->y = xdg_geom.y;
+}
+
+static void toplevel_set_start_geometry(struct hellwm_toplevel *toplevel, struct wlr_box box)
+{
+    int x = box.x;
+    int y = box.y;
+
+    int mw = box.x + box.width / 2;
+    int mh = box.y + box.height / 2;
+
+    int tw = box.width;
+    int th = box.height;
+
+    switch (toplevel->server->config_manager->decoration->default_animation)
+    {
+        case HELLWM_ANIMATION_LEFT:
+            toplevel->current_geom.width = tw;
+            toplevel->current_geom.height = th;
+            toplevel->current_geom.x = x - tw / 2;
+            toplevel->current_geom.y = mh - th / 2;
+            break;
+
+        case HELLWM_ANIMATION_RIGHT:
+            toplevel->current_geom.width = tw;
+            toplevel->current_geom.height = th;
+            toplevel->current_geom.x = x + tw / 2;
+            toplevel->current_geom.y = mh - th / 2;
+            break;
+
+        case HELLWM_ANIMATION_UP:
+            toplevel->current_geom.width = tw;
+            toplevel->current_geom.height = th;
+            toplevel->current_geom.x = mw - tw / 2;
+            toplevel->current_geom.y = y - th / 2;
+            break;
+
+        case HELLWM_ANIMATION_DOWN:
+            toplevel->current_geom.width = tw;
+            toplevel->current_geom.height = th;
+            toplevel->current_geom.x = mw - tw / 2;
+            toplevel->current_geom.y = y + th / 2;
+            break;
+
+        case HELLWM_ANIMATION_GROW:
+            toplevel->current_geom.width = 0;
+            toplevel->current_geom.height = 0;
+            toplevel->current_geom.x = mw;
+            toplevel->current_geom.y = mh;
+            break;
+
+        case HELLWM_ANIMATION_SHRINK:
+            tw = toplevel->workspace->output->wlr_output->width;
+            th = toplevel->workspace->output->wlr_output->height;
+
+            toplevel->current_geom.width = tw;
+            toplevel->current_geom.height = th;
+            toplevel->current_geom.x = mw - tw / 2;
+            toplevel->current_geom.y = mh - th / 2;
+            break;
+
+        case HELLWM_ANIMATION_SOLID:
+            toplevel->current_geom.width = tw;
+            toplevel->current_geom.height = th;
+            toplevel->current_geom.x = mw - tw / 2;
+            toplevel->current_geom.y = mh - th / 2;
+            break;
+
+        default:
+            toplevel->current_geom.width = 0;
+            toplevel->current_geom.height = 0;
+            toplevel->current_geom.x = mw;
+            toplevel->current_geom.y = mh;
+            break;
+    }
 }
 
 hellwm_config_manager_monitor *hellwm_config_manager_monitor_create()
@@ -1196,7 +1228,6 @@ hellwm_config_manager_input *hellwm_config_manager_input_create()
     return input;
 }
 
-/* TODO: load from config */
 hellwm_config_manager_decoration *hellwm_config_manager_decoration_create()
 {
     hellwm_config_manager_decoration *decoration = calloc(1, sizeof(hellwm_config_manager_decoration));
@@ -1278,6 +1309,13 @@ struct hellwm_config_manager *hellwm_config_manager_create()
     return config_manager;
 }
 
+static void hellwm_cursor_follow_toplevel(struct hellwm_server* s, struct hellwm_toplevel *t)
+{
+    int x = t->desired_geom.x + t->desired_geom.width / 2;
+    int y = t->desired_geom.y + t->desired_geom.height / 2;
+    wlr_cursor_warp(s->cursor, NULL, x, y);
+}
+
 static void hellwm_focus_toplevel(struct hellwm_toplevel *toplevel)
 {
     if (!toplevel || !toplevel->xdg_toplevel || !toplevel->xdg_toplevel->base)
@@ -1290,22 +1328,18 @@ static void hellwm_focus_toplevel(struct hellwm_toplevel *toplevel)
     struct hellwm_server *server = toplevel->server;
     struct wlr_seat *seat = server->seat;
     struct wlr_surface *prev_surface = seat->keyboard_state.focused_surface;
+
     if (prev_surface == surface)
     {
         /* Don't re-focus an already focused surface. */
         return;
     }
+
     if (prev_surface)
     {
-        /*
-         * Deactivate the previously focused surface. This lets the client know
-         * it no longer has focus and the client will repaint accordingly, e.g.
-         * stop displaying a caret.
-         */
         struct wlr_xdg_toplevel *prev_toplevel = wlr_xdg_toplevel_try_from_wlr_surface(prev_surface);
         if (prev_toplevel != NULL)
         {
-            /* store prev focused toplevel to focus it after closing something */
             if (server->active_workspace->now_focused != NULL)
             {
                 server->active_workspace->prev_focused = server->active_workspace->now_focused;
@@ -1320,6 +1354,7 @@ static void hellwm_focus_toplevel(struct hellwm_toplevel *toplevel)
     toplevel->workspace->focused_node = find_node_by_toplevel(toplevel->workspace->layout_tree, toplevel);
 
     struct wlr_keyboard *keyboard = wlr_seat_get_keyboard(seat);
+
     /* Move the toplevel to the front */
     wlr_scene_node_raise_to_top(&toplevel->scene_tree->node);
 
@@ -1328,16 +1363,13 @@ static void hellwm_focus_toplevel(struct hellwm_toplevel *toplevel)
 
     /* Activate the new surface */
     wlr_xdg_toplevel_set_activated(toplevel->xdg_toplevel, true);
-    /*
-     * Tell the seat to have the keyboard enter this surface. wlroots will keep
-     * track of this and automatically send key events to the appropriate
-     * clients without additional work on your part.
-     */
+
     if (keyboard != NULL)
     {
         wlr_seat_keyboard_notify_enter(seat, toplevel->xdg_toplevel->base->surface, keyboard->keycodes, keyboard->num_keycodes, &keyboard->modifiers);
     }
 
+    hellwm_cursor_follow_toplevel(server, toplevel);
     toplevel_borders_set_state(toplevel, HELLWM_BORDER_ACTIVE);
 }
 
@@ -1406,29 +1438,7 @@ static void focus_layer_surface(struct hellwm_layer_surface *layer_surface)
     }
 }
 
-static void hellwm_focus_next_toplevel(struct hellwm_server *server)
-{
-    if (wl_list_length(&server->active_workspace->toplevels) < 1)
-        return;
-
-    bool fullscreen_next = false;
-    if (server->active_workspace->now_focused->fullscreen) {
-        toplevel_unset_fullscreen(server->active_workspace->now_focused);
-        fullscreen_next = true;
-    }
-
-    toplevel_animation_set_type(server->active_workspace->now_focused, HELLWM_ANIMATION_SHRINK);
-    start_animation_toplevel(server->active_workspace->now_focused);
-
-    hellwm_focus_next_toplevel_ONLY_FOCUS(server);
-
-    if (fullscreen_next)
-        toplevel_set_fullscreen(server->active_workspace->now_focused);
-
-    toplevel_animation_set_type(server->active_workspace->now_focused, HELLWM_ANIMATION_GROW);
-    start_animation_toplevel(server->active_workspace->now_focused);
-}
-static void hellwm_focus_next_toplevel_ONLY_FOCUS(struct hellwm_server *server)
+static void hellwm_focus_next_in_list(struct hellwm_server *server)
 {
     if (wl_list_length(&server->active_workspace->toplevels) < 1)
         return;
@@ -1448,43 +1458,25 @@ static void hellwm_focus_next_toplevel_ONLY_FOCUS(struct hellwm_server *server)
     }
 }
 
-/* 
- * TODO: its not working.
- */
-static void hellwm_focus_prev_toplevel(struct hellwm_server *server)
+static void hellwm_focus_next_potential(struct hellwm_server *server)
 {
-    int count = wl_list_length(&server->active_workspace->toplevels);
-
-    if (count < 1)
-        return;
-
-    struct hellwm_toplevel *prev = NULL;
-    struct hellwm_toplevel *toplevel;
-    wl_list_for_each(toplevel, &server->active_workspace->toplevels, link)
+    /* check if the next to focus node is valid. */
+    if (server->active_workspace->next_to_focus_node != NULL)
     {
-        struct hellwm_toplevel *next_toplevel = wl_container_of(server->active_workspace->toplevels.prev, next_toplevel, link);
-
-        if (prev != NULL && next_toplevel == toplevel)
+        if (server->active_workspace->next_to_focus_node->toplevel)
         {
-            hellwm_focus_toplevel(prev);
-            return;
+            hellwm_focus_toplevel(server->active_workspace->next_to_focus_node->toplevel);
         }
-
-        prev = toplevel;
     }
-}
-
-static void hellwm_focus_next_toplevel_center(struct hellwm_server *server)
-{
-
-    hellwm_focus_next_toplevel(server);
-    server->layout_reapply = 1;
-}
-
-static void hellwm_focus_prev_toplevel_center(struct hellwm_server *server)
-{
-    hellwm_focus_prev_toplevel(server);
-    server->layout_reapply = 1;
+    else
+    {
+        /* if next_to_focus_node is NULL, focus another toplevel or fallback. */
+        if (!wl_list_empty(&server->active_workspace->toplevels))
+        {
+            struct hellwm_toplevel *fallback_toplevel = wl_container_of(server->active_workspace->toplevels.next, fallback_toplevel, link);
+            hellwm_focus_toplevel(fallback_toplevel);
+        }
+    }
 }
 
 static void hellwm_toplevel_kill_active(struct hellwm_server *server)
@@ -1510,7 +1502,7 @@ static void hellwm_toplevel_fullscreen(struct hellwm_server *server)
     else
         toplevel_set_fullscreen(server->active_workspace->now_focused);
 
-    start_animation_toplevel(server->active_workspace->now_focused);
+    toplevel_animation_start(server->active_workspace->now_focused);
 }
 
 static void hellwm_server_kill(struct hellwm_server *server)
@@ -2107,141 +2099,26 @@ float cubic_bezier(float t, float p0, float p1, float p2, float p3)
     return (u * u * u * p0) + (3 * u * u * t * p1) + (3 * u * t * t * p2) + (t * t * t * p3);
 }
 
-void animate_from_left(struct hellwm_toplevel *toplevel, float t, float bezier_value)
+void animate_toplevel(struct hellwm_toplevel *toplevel, float t, float bezier_value)
 {
+    struct wlr_box start = toplevel->animation_start_geom;
     struct wlr_box desired = toplevel->desired_geom;
 
-    int initial_x = desired.x - 300; // Start 300px to the left
-    int final_x = desired.x;
-    int current_x = initial_x + bezier_value * (final_x - initial_x);
-
-    toplevel->pending_geom.width = desired.width;
-    toplevel->pending_geom.height = desired.height;
-    toplevel->pending_geom.x = current_x;
-    toplevel->pending_geom.y = desired.y;
-}
-
-void animate_from_right(struct hellwm_toplevel *toplevel, float t, float bezier_value)
-{
-    struct wlr_box desired = toplevel->desired_geom;
-
-    int initial_x = desired.x + 300; // Start 300px to the right
-    int final_x = desired.x;
-    int current_x = initial_x - bezier_value * (initial_x - final_x);
-
-    toplevel->pending_geom.width = desired.width;
-    toplevel->pending_geom.height = desired.height;
-    toplevel->pending_geom.x = current_x;
-    toplevel->pending_geom.y = desired.y;
-}
-
-void animate_from_up(struct hellwm_toplevel *toplevel, float t, float bezier_value)
-{
-    struct wlr_box desired = toplevel->desired_geom;
-
-    int initial_y = desired.y - 300; // Start 300px above
-    int final_y = desired.y;
-    int current_y = initial_y + bezier_value * (final_y - initial_y);
-
-    toplevel->pending_geom.width = desired.width;
-    toplevel->pending_geom.height = desired.height;
-    toplevel->pending_geom.x = desired.x;
-    toplevel->pending_geom.y = current_y;
-}
-
-void animate_from_down(struct hellwm_toplevel *toplevel, float t, float bezier_value)
-{
-    struct wlr_box desired = toplevel->desired_geom;
-
-    int initial_y = desired.y + 300; // Start 300px below
-    int final_y = desired.y;
-    int current_y = initial_y - bezier_value * (initial_y - final_y);
-
-    toplevel->pending_geom.width = desired.width;
-    toplevel->pending_geom.height = desired.height;
-    toplevel->pending_geom.x = desired.x;
-    toplevel->pending_geom.y = current_y;
-}
-
-void animate_from_middle(struct hellwm_toplevel *toplevel, float t, float bezier_value)
-{
-    struct wlr_box desired = toplevel->desired_geom;
-
-    int initial_width = desired.width / 2;  // Start at half size
-    int initial_height = desired.height / 2;
+    int initial_width = start.width;
+    int initial_height = start.height;
     int final_width = desired.width;
     int final_height = desired.height;
 
     int current_width = initial_width + bezier_value * (final_width - initial_width);
     int current_height = initial_height + bezier_value * (final_height - initial_height);
 
-    int current_x = desired.x - (current_width - desired.width) / 2;
-    int current_y = desired.y - (current_height - desired.height) / 2;
+    int current_x = start.x + bezier_value * (desired.x - start.x);
+    int current_y = start.y + bezier_value * (desired.y - start.y);
 
     toplevel->pending_geom.width = current_width;
     toplevel->pending_geom.height = current_height;
     toplevel->pending_geom.x = current_x;
     toplevel->pending_geom.y = current_y;
-}
-
-void animate_to_middle(struct hellwm_toplevel *toplevel, float t, float bezier_value)
-{
-    struct wlr_box desired = toplevel->desired_geom;
-
-    int final_width = desired.width;
-    int final_height = desired.height;
-
-    int initial_width = final_width / 2;
-    int initial_height = final_height / 2;
-
-    int current_width = initial_width + bezier_value * (final_width - initial_width); // Grow towards full size
-    int current_height = initial_height + bezier_value * (final_height - initial_height); // Grow towards full size
-
-    int delta_width = (final_width - current_width) / 2;
-    int delta_height = (final_height - current_height) / 2;
-
-    int current_x = desired.x - delta_width;
-    int current_y = desired.y - delta_height;
-
-    toplevel->pending_geom.width = current_width;
-    toplevel->pending_geom.height = current_height;
-    toplevel->pending_geom.x = current_x;
-    toplevel->pending_geom.y = current_y;
-}
-
-void animate_toplevel(struct hellwm_toplevel *toplevel, float t, float bezier_value)
-{
-    enum hellwm_animation_state animation_state = toplevel->animation_state;
-
-    switch (animation_state)
-    {
-        case HELLWM_ANIMATION_GROW:
-            animate_from_middle(toplevel, t, bezier_value);
-            break;
-
-        case HELLWM_ANIMATION_SHRINK:
-            animate_to_middle(toplevel, t, bezier_value);
-            break;
-
-        case HELLWM_ANIMATION_LEFT:
-            animate_from_left(toplevel, t, bezier_value);
-            break;
-
-        case HELLWM_ANIMATION_RIGHT:
-            animate_from_right(toplevel, t, bezier_value);
-            break;
-
-        case HELLWM_ANIMATION_UP:
-            animate_from_up(toplevel, t, bezier_value);
-            break;
-
-        case HELLWM_ANIMATION_DOWN:
-            animate_from_down(toplevel, t, bezier_value);
-            break;
-
-        default:
-            break;
-    }
 }
 
 static void output_frame(struct wl_listener *listener, void *data)
@@ -2604,14 +2481,14 @@ static void xdg_toplevel_map(struct wl_listener *listener, void *data)
         toplevel->xdg_toplevel->base->data = toplevel->scene_tree;
         add_toplevel_to_tree(toplevel->server->active_workspace, toplevel);
     }
-
+    wlr_scene_node_set_enabled(&toplevel->scene_tree->node, false);
     hellwm_workspace_add_toplevel(toplevel->server->active_workspace, toplevel);
 
     toplevel->fullscreen = false;
+    toplevel->first_layout = true;
     toplevel->previous_bezier = 0.0f;
     toplevel->set_animation_clock = false;
     toplevel->border_state = HELLWM_BORDER_INVISIBLE;
-    toplevel->animation_state = GLOBAL_SERVER->config_manager->decoration->default_animation;
 
     /* add this toplevel to the scene tree */
     struct hellwm_view *view = calloc(1, sizeof(*view));
@@ -2623,10 +2500,8 @@ static void xdg_toplevel_map(struct wl_listener *listener, void *data)
 
     toplevel_fade_start(toplevel);
     borders_toplevel_create(toplevel);
-    start_animation_toplevel(toplevel);
 
     hellwm_focus_toplevel(toplevel);
-    wlr_scene_node_set_enabled(&toplevel->scene_tree->node, false);
 }
 
 static void xdg_toplevel_unmap(struct wl_listener *listener, void *data)
@@ -2667,22 +2542,22 @@ static void xdg_toplevel_commit(struct wl_listener *listener, void *data)
          * dimensions itself. */
 
           wlr_xdg_toplevel_set_wm_capabilities(toplevel->xdg_toplevel, WLR_XDG_TOPLEVEL_WM_CAPABILITIES_FULLSCREEN);
+          wlr_xdg_toplevel_set_size(toplevel->xdg_toplevel, 0, 0);
+          wlr_xdg_toplevel_set_activated(toplevel->xdg_toplevel, false);
           return;
     }
 }
 
-static void xdg_toplevel_destroy(struct wl_listener *listener, void *data) 
+static void xdg_toplevel_destroy(struct wl_listener *listener, void *data)
 {
     /* Called when the xdg_toplevel is destroyed. */
     struct hellwm_toplevel *toplevel = wl_container_of(listener, toplevel, destroy);
     struct hellwm_server *server = toplevel->server;
 
+    hellwm_focus_next_potential(server);
+
     toplevel_unset_fullscreen(toplevel);
     remove_toplevel_from_tree(toplevel->workspace, toplevel);
-
-    //if (server->active_workspace->prev_focused != NULL)
-    //    hellwm_focus_toplevel(server->active_workspace->prev_focused);
-    hellwm_focus_next_toplevel(server);
 
     wl_list_remove(&toplevel->map.link);
     wl_list_remove(&toplevel->unmap.link);
@@ -2778,24 +2653,19 @@ static void toplevel_unset_fullscreen(struct hellwm_toplevel *toplevel)
     if (toplevel == NULL || toplevel->xdg_toplevel == NULL || toplevel->scene_tree == NULL || toplevel->fullscreen == false)
         return;
 
+    toplevel_borders_set_state(toplevel, HELLWM_BORDER_ACTIVE);
+
     toplevel->desired_geom.width = toplevel->last_state.width;
     toplevel->desired_geom.height = toplevel->last_state.height;
     toplevel->desired_geom.x = toplevel->last_state.x;
     toplevel->desired_geom.y = toplevel->last_state.y;
-
-    toplevel_borders_set_state(toplevel, HELLWM_BORDER_ACTIVE);
-    toplevel_animation_set_type(toplevel, HELLWM_ANIMATION_SHRINK);
-
-    // *TODO: fix it - add it to previous node
-    hellwm_focus_next_toplevel_ONLY_FOCUS(GLOBAL_SERVER);
-
-    add_toplevel_to_tree(toplevel->workspace, toplevel);
 
     wlr_scene_node_reparent(&toplevel->scene_tree->node, toplevel->server->tile_tree);
     wlr_xdg_toplevel_set_fullscreen(toplevel->xdg_toplevel, false);
     GLOBAL_SERVER->active_workspace->fullscreened = false;
     GLOBAL_SERVER->layout_reapply = 1;
     toplevel->fullscreen = false;
+
 }
 
 static void toplevel_set_fullscreen(struct hellwm_toplevel *toplevel)
@@ -2821,9 +2691,6 @@ static void toplevel_set_fullscreen(struct hellwm_toplevel *toplevel)
     toplevel->desired_geom.y = output_box.y;
 
     toplevel_borders_set_state(toplevel, HELLWM_BORDER_INVISIBLE);
-    toplevel_animation_set_type(toplevel, HELLWM_ANIMATION_GROW);
-
-    remove_toplevel_from_tree(toplevel->workspace, toplevel);
 
     wlr_scene_node_reparent(&toplevel->scene_tree->node, toplevel->server->fullscreen_tree);
     wlr_xdg_toplevel_set_fullscreen(toplevel->xdg_toplevel, true);
@@ -2839,7 +2706,7 @@ static void xdg_toplevel_request_fullscreen(struct wl_listener *listener, void *
     if (toplevel == NULL || toplevel->xdg_toplevel == NULL)
         return;
 
-    if (toplevel->workspace->fullscreened)
+    if (GLOBAL_SERVER->active_workspace->fullscreened)
     {
         toplevel_unset_fullscreen(toplevel);
     }
@@ -2848,7 +2715,7 @@ static void xdg_toplevel_request_fullscreen(struct wl_listener *listener, void *
         toplevel_set_fullscreen(toplevel);
     }
 
-    start_animation_toplevel(toplevel);
+    toplevel_animation_start(toplevel);
 
     if (toplevel->xdg_toplevel->base->initialized)
         wlr_xdg_surface_schedule_configure(toplevel->xdg_toplevel->base);
@@ -3947,8 +3814,8 @@ int hellwm_lua_decoration_border_inactive(lua_State *L)
 int hellwm_lua_decoration_animation_direction(lua_State *L)
 {
     char *animation_string = NULL;
-    enum hellwm_animation_state animation_state;
     int nargs = lua_gettop(L);
+    enum animation_direction animation_state;
 
     for (int i = 1; i<=nargs; i++)
     {
@@ -3975,6 +3842,8 @@ int hellwm_lua_decoration_animation_direction(lua_State *L)
         animation_state = HELLWM_ANIMATION_GROW;
     else if (strcmp(animation_string, "shrink") == 0)
         animation_state = HELLWM_ANIMATION_SHRINK;
+    else if (strcmp(animation_string, "solid") == 0)
+        animation_state = HELLWM_ANIMATION_SOLID;
     else if (strcmp(animation_string, "left") == 0)
         animation_state = HELLWM_ANIMATION_LEFT;
     else if (strcmp(animation_string, "right") == 0)
@@ -4374,16 +4243,12 @@ void hellwm_function_expose(struct hellwm_server *server)
 {
     hellwm_function_add_to_map(server, "kill_server",   hellwm_server_kill);
 
-    hellwm_function_add_to_map(server, "focus_next",    hellwm_focus_next_toplevel_ONLY_FOCUS);
-    hellwm_function_add_to_map(server, "focus_prev",    hellwm_focus_prev_toplevel);
+    hellwm_function_add_to_map(server, "focus_next",    hellwm_focus_next_in_list);
 
-    hellwm_function_add_to_map(server, "focus_left",    server_move_focus_left);
-    hellwm_function_add_to_map(server, "focus_right",   server_move_focus_right);
-    hellwm_function_add_to_map(server, "focus_up",      server_move_focus_up);
-    hellwm_function_add_to_map(server, "focus_down",    server_move_focus_down);
-
-    hellwm_function_add_to_map(server, "focus_next_center",    hellwm_focus_next_toplevel_center);
-    hellwm_function_add_to_map(server, "focus_prev_center",    hellwm_focus_prev_toplevel_center);
+    hellwm_function_add_to_map(server, "focus_left",    server_focus_left);
+    hellwm_function_add_to_map(server, "focus_right",   server_focus_right);
+    hellwm_function_add_to_map(server, "focus_up",      server_focus_up);
+    hellwm_function_add_to_map(server, "focus_down",    server_focus_down);
 
     hellwm_function_add_to_map(server, "kill_active",   hellwm_toplevel_kill_active);
     hellwm_function_add_to_map(server, "reload_config", hellwm_config_manager_reload);
@@ -4458,20 +4323,19 @@ static void hellwm_workspace_add_toplevel(struct hellwm_workspace *workspace, st
 /* Note: this function also automatically changes workspace to given id */
 void hellwm_toplevel_move_to_workspace(struct hellwm_server *server, int workspace_id)
 {
+    if (server->active_workspace->now_focused == NULL) return;
     struct hellwm_toplevel *toplevel = server->active_workspace->now_focused;
 
     if (toplevel)
     {
         LOG("Moving toplevel from %d, to %d\n", server->active_workspace->id, workspace_id);
-
         wl_list_remove(&toplevel->link);
-        hellwm_focus_next_toplevel(server);
-        server->layout_reapply = 1;
 
         hellwm_workspace_change(server, workspace_id);
         wl_list_insert(&server->active_workspace->toplevels, &toplevel->link);
-        server->layout_reapply = 1;
+        add_toplevel_to_tree(server->active_workspace, toplevel);
         hellwm_focus_toplevel(toplevel);
+        server->layout_reapply = 1;
     }
     else
         hellwm_workspace_change(server, workspace_id);
@@ -4497,13 +4361,20 @@ static void hellwm_workspace_change(struct hellwm_server *server, int workspace_
             struct hellwm_toplevel *toplevel;
             wl_list_for_each(toplevel, &workspace->toplevels, link)
             {
-                wlr_scene_node_set_enabled(&toplevel->scene_tree->node, true);
-                if (prev_workspace->id > workspace_id)
-                    toplevel_animation_set_type(toplevel, HELLWM_ANIMATION_LEFT);
-                else
-                    toplevel_animation_set_type(toplevel, HELLWM_ANIMATION_RIGHT);
+                struct wlr_box anim_geom = toplevel->current_geom;
 
-                start_animation_toplevel(toplevel);
+                // TODO: expose it to config
+                if (prev_workspace->id > workspace_id)
+                {
+                    anim_geom.x -= workspace->output->wlr_output->width;
+                }
+                else
+                {
+                    anim_geom.x += workspace->output->wlr_output->width;
+                }
+
+                toplevel_animation_start_with_geom(toplevel, anim_geom);
+                wlr_scene_node_set_enabled(&toplevel->scene_tree->node, true);
             }
         }
     }
