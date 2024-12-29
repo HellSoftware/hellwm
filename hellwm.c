@@ -454,6 +454,7 @@ typedef struct
 {
     bool tap_click;
     bool natural_scroll;
+    bool cursor_follow_toplevels;
 } hellwm_config_manager_input;
 
 struct hellwm_binary_workspaces_manager
@@ -842,7 +843,6 @@ void calculate_layout(struct hellwm_node *node, struct wlr_box *area, int inner_
                 node->toplevel->first_layout = false;
             }
         }
-
         toplevel_animation_start(node->toplevel);
         return;
     }
@@ -883,6 +883,7 @@ void layout_dwindle(struct hellwm_workspace *workspace)
     };
 
     calculate_layout(workspace->layout_tree, &area, inner_gap, outer_gap, border_width);
+    hellwm_cursor_follow_toplevel(workspace->server, workspace->now_focused);
 }
 
 void apply_layout(struct hellwm_workspace *workspace)
@@ -1221,9 +1222,8 @@ hellwm_config_manager_input *hellwm_config_manager_input_create()
     hellwm_config_manager_input *input = calloc(1, sizeof(hellwm_config_manager_input));
 
     input->tap_click = true;
-
-    /* inverted scroll */
-    input->natural_scroll = false;
+    input->natural_scroll = false; /* inverted scroll */
+    input->cursor_follow_toplevels = true;
 
     return input;
 }
@@ -1311,6 +1311,8 @@ struct hellwm_config_manager *hellwm_config_manager_create()
 
 static void hellwm_cursor_follow_toplevel(struct hellwm_server* s, struct hellwm_toplevel *t)
 {
+    if (!s->config_manager->input->cursor_follow_toplevels) return;
+
     int x = t->desired_geom.x + t->desired_geom.width / 2;
     int y = t->desired_geom.y + t->desired_geom.height / 2;
     wlr_cursor_warp(s->cursor, NULL, x, y);
@@ -1369,7 +1371,6 @@ static void hellwm_focus_toplevel(struct hellwm_toplevel *toplevel)
         wlr_seat_keyboard_notify_enter(seat, toplevel->xdg_toplevel->base->surface, keyboard->keycodes, keyboard->num_keycodes, &keyboard->modifiers);
     }
 
-    hellwm_cursor_follow_toplevel(server, toplevel);
     toplevel_borders_set_state(toplevel, HELLWM_BORDER_ACTIVE);
 }
 
@@ -1445,17 +1446,21 @@ static void hellwm_focus_next_in_list(struct hellwm_server *server)
 
     struct hellwm_toplevel *next_toplevel = wl_container_of(server->active_workspace->toplevels.prev, next_toplevel, link);
     if (next_toplevel)
+    {
         hellwm_focus_toplevel(next_toplevel);
+    }
     else
     {
         struct hellwm_toplevel *toplevel;
         wl_list_for_each(toplevel, &server->active_workspace->toplevels, link)
         {
 
-            hellwm_focus_toplevel(next_toplevel);
+            hellwm_focus_toplevel(toplevel);
             break;
         }
     }
+
+    hellwm_cursor_follow_toplevel(server, server->active_workspace->now_focused);
 }
 
 static void hellwm_focus_next_potential(struct hellwm_server *server)
@@ -1470,7 +1475,7 @@ static void hellwm_focus_next_potential(struct hellwm_server *server)
     }
     else
     {
-        /* if next_to_focus_node is NULL, focus another toplevel or fallback. */
+        /* if next_to_focus_node is NULL, focus another toplevel */
         if (!wl_list_empty(&server->active_workspace->toplevels))
         {
             struct hellwm_toplevel *fallback_toplevel = wl_container_of(server->active_workspace->toplevels.next, fallback_toplevel, link);
@@ -2210,31 +2215,30 @@ static void output_frame(struct wl_listener *listener, void *data)
 
         if (toplevel->pending_geom.width > -1)
         {
-            LOG("\n\nPending: %d, %d  -  (%d x %d)\n\n",
-                    toplevel->pending_geom.x,
-                    toplevel->pending_geom.y,
-                    toplevel->pending_geom.width,
-                    toplevel->pending_geom.height
-                    );
             toplevel->current_geom = toplevel->pending_geom;
 
             wlr_scene_node_set_position(&toplevel->scene_tree->node, toplevel->current_geom.x, toplevel->current_geom.y);
             wlr_xdg_toplevel_set_size(toplevel->xdg_toplevel, toplevel->current_geom.width, toplevel->current_geom.height);
             wlr_scene_node_set_enabled(&toplevel->scene_tree->node, true);
 
-            // crop the node, to keep tiling right - some apps does not allow us to change size, like discord, so we crop them
-            struct wlr_box clip;
-            toplevel_get_clip(toplevel, &clip);
-            if (toplevel->desired_geom.width != toplevel->xdg_toplevel->current.width ||
-                    toplevel->desired_geom.height != toplevel->xdg_toplevel->current.height) 
-            {
-                wlr_scene_subsurface_tree_set_clip(&toplevel->scene_tree->node, &clip);
-            }
-            else
-                wlr_scene_subsurface_tree_set_clip(&toplevel->scene_tree->node, NULL);
-
             toplevel->pending_geom.width = -1;
         }
+
+        /* crop the node, to keep tiling right
+         *    - some apps does not allow us to change size,
+         *    like discord, so we crop them
+         *
+         *    For some reason it has to be there, because it's not working with fullscreen etc.
+         *    TODO: create some checks*/
+        if (toplevel->desired_geom.width != toplevel->xdg_toplevel->current.width || toplevel->desired_geom.height != toplevel->xdg_toplevel->current.height) 
+        {
+            struct wlr_box clip;
+            toplevel_get_clip(toplevel, &clip);
+            wlr_scene_subsurface_tree_set_clip(&toplevel->scene_tree->node, &clip);
+        }
+        else
+            wlr_scene_subsurface_tree_set_clip(&toplevel->scene_tree->node, NULL);
+
         borders_toplevel_update(toplevel);
     }
 
@@ -2555,6 +2559,7 @@ static void xdg_toplevel_destroy(struct wl_listener *listener, void *data)
     struct hellwm_server *server = toplevel->server;
 
     hellwm_focus_next_potential(server);
+    hellwm_cursor_follow_toplevel(server, toplevel->workspace->now_focused);
 
     toplevel_unset_fullscreen(toplevel);
     remove_toplevel_from_tree(toplevel->workspace, toplevel);
@@ -2691,9 +2696,9 @@ static void toplevel_set_fullscreen(struct hellwm_toplevel *toplevel)
     toplevel->desired_geom.y = output_box.y;
 
     toplevel_borders_set_state(toplevel, HELLWM_BORDER_INVISIBLE);
-
     wlr_scene_node_reparent(&toplevel->scene_tree->node, toplevel->server->fullscreen_tree);
     wlr_xdg_toplevel_set_fullscreen(toplevel->xdg_toplevel, true);
+
     GLOBAL_SERVER->active_workspace->fullscreened = true;
     GLOBAL_SERVER->layout_reapply = 1;
     toplevel->fullscreen = true;
@@ -3912,8 +3917,9 @@ void hellwm_config_manager_load_from_file(char * filename)
     lua_setglobal(L, "animation_direction");
 
     if (luaL_loadfile(L, filename) || lua_pcall(L, 0, 0, 0))
+        ;
         // TODO > Create dummy config manager to store all vars from config, so in case of an error it instead of crash it will just not apply.
-        hellwm_lua_error(L, "Cannot load configuration file: %s\n", lua_tostring(L, -1));
+        //hellwm_lua_error(L, "Cannot load configuration file: %s\n", lua_tostring(L, -1));
     else
     {
         // TODO > if not failed GLOBAL_SERVER->config_manager = dummy config

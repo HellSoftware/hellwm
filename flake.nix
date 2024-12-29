@@ -17,6 +17,7 @@
 
         buildInputs = with pkgs; [
           lua
+          libdrm
           pixman
           wayland
           libinput

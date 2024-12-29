@@ -18,7 +18,7 @@ monitor(
     1,      -- scale
     0       -- transfrom
     )
-monitor("DP-2", false)--, 2560, 1440, 120, 0, 1, 1)
+--monitor("DP-2", true, 2560, 1440, 120, 0, 1, 1)
 monitor("LVDS-1", true, 1920, 1080, 60, 0, 1, 0)
 
 
@@ -114,12 +114,12 @@ layout(3)
 
 -- Decoration
 border_width(0)
-inner_gap(0)
-outer_gap(0)
+inner_gap(50)
+outer_gap(10)
 
 fade_duration(0.3)
 
-animation_duration(.4)
+animation_duration(1)
 animation_bezier(0.0, 1.12, 1.28, 1)
 
 --animation_duration(1.4)
@@ -132,7 +132,6 @@ animation_bezier(0.0, 1.12, 1.28, 1)
 --animation_direction("down")
 --animation_direction("shrink")
 animation_direction("grow")
-
 
     -- Border colors
 border_inactive_color("#87554c")
