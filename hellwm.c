@@ -56,6 +56,7 @@
 #include <wlr/types/wlr_linux_drm_syncobj_v1.h>
 #include <wlr/types/wlr_primary_selection_v1.h>
 #include <wlr/types/wlr_single_pixel_buffer_v1.h>
+#include <wlr/types/wlr_foreign_toplevel_management_v1.h>
 
 #include "wlr-layer-shell-unstable-v1-protocol.h"
 
@@ -172,6 +173,7 @@ struct hellwm_server
 
     struct wlr_layer_shell_v1 *layer_shell;
     struct wlr_xdg_decoration_manager_v1 *xdg_decoration_manager;
+    struct wlr_foreign_toplevel_manager_v1 *foreign_toplevel_manager;
 
     /* listeners */
     struct wl_listener renderer_lost;
@@ -285,6 +287,7 @@ struct hellwm_toplevel
     struct wlr_scene_rect *borders[4];
     struct wlr_scene_tree *scene_tree;
     struct wlr_xdg_toplevel *xdg_toplevel;
+    struct wlr_foreign_toplevel_handle_v1 *foreign_toplevel_handle;
 
     /* listeners */
     struct wl_listener map;
@@ -1311,6 +1314,7 @@ struct hellwm_config_manager *hellwm_config_manager_create()
 
 static void hellwm_cursor_follow_toplevel(struct hellwm_server* s, struct hellwm_toplevel *t)
 {
+    return; //TODO: segfault here
     if (!s->config_manager->input->cursor_follow_toplevels) return;
 
     int x = t->desired_geom.x + t->desired_geom.width / 2;
@@ -2493,6 +2497,7 @@ static void xdg_toplevel_map(struct wl_listener *listener, void *data)
     toplevel->previous_bezier = 0.0f;
     toplevel->set_animation_clock = false;
     toplevel->border_state = HELLWM_BORDER_INVISIBLE;
+    toplevel->foreign_toplevel_handle = wlr_foreign_toplevel_handle_v1_create(toplevel->server->foreign_toplevel_manager);
 
     /* add this toplevel to the scene tree */
     struct hellwm_view *view = calloc(1, sizeof(*view));
@@ -2563,6 +2568,8 @@ static void xdg_toplevel_destroy(struct wl_listener *listener, void *data)
 
     toplevel_unset_fullscreen(toplevel);
     remove_toplevel_from_tree(toplevel->workspace, toplevel);
+
+    wlr_foreign_toplevel_handle_v1_destroy(toplevel->foreign_toplevel_handle);
 
     wl_list_remove(&toplevel->map.link);
     wl_list_remove(&toplevel->unmap.link);
@@ -4520,6 +4527,8 @@ int main(int argc, char *argv[])
     wlr_presentation_create(server->wl_display, server->backend);
     wlr_alpha_modifier_v1_create(server->wl_display);
 
+    /* foreign_toplevel_manager_v1 */
+    server->foreign_toplevel_manager = wlr_foreign_toplevel_manager_v1_create(server->wl_display);
 
     /* output layout */
     server->output_layout = wlr_output_layout_create(server->wl_display);

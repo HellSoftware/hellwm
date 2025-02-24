@@ -7,6 +7,22 @@
                                                                |___/ 
 ]]
 
+MAIN_MOD = "Super_L"
+TERMINAL = "alacritty"
+BROWSER = "firefox"
+LAUNCHER = "rofi"
+BAR = "waybar"
+WALLPAPER_DAEMON = "swww init"
+
+DEV = 0
+
+if os.getenv("DEV") == "1" then
+    MAIN_MOD = "Alt_L"
+    DEV = 1
+end
+
+print(MAIN_MOD)
+
 -- Monitor Settings
 monitor(
     "DP-1", -- name
@@ -18,7 +34,6 @@ monitor(
     1,      -- scale
     0       -- transfrom
     )
---monitor("DP-2", true, 2560, 1440, 120, 0, 1, 1)
 monitor("LVDS-1", true, 1920, 1080, 60, 0, 1, 0)
 
 
@@ -29,23 +44,22 @@ keyboard(
     59,             -- rate
     221             -- delay
     )
-keyboard("default", "us",51,205)
-keyboard("Sleep Button", "de",61,184)
-keyboard("ckb1: CORSAIR K68 RGB Mechanical Gaming Keyboard vKB", "pl",50,200)
+keyboard("default", "us", 51, 205)
+keyboard("Sleep Button", "de", 61, 184)
+keyboard("ckb1: CORSAIR K68 RGB Mechanical Gaming Keyboard vKB", "pl", 50, 200)
 
 
 -- Keybindings
     
 bind(
-    "Super_L, b",     -- keys (for now you can only use combination of max 2
+    MAIN_MOD .. ", b",     -- keys (for now you can only use combination of max 2
     "firefox"         -- program name
     )
-bind("Super_L, Return", "alacritty")
-bind("Super_L, F12", "pavucontrol")
-bind("Super_L, F11", "grim")
-bind("Super_L, w", "setwall")
-bind("Super_L, v", "vesktop")
-bind("Super_L, e", "wofi --show drun")
+bind(MAIN_MOD .. ", Return", TERMINAL)
+bind(MAIN_MOD .. ", F12", "pavucontrol")
+bind(MAIN_MOD .. ", F11", "grim")
+bind(MAIN_MOD .. ", w", "wallset")
+bind(MAIN_MOD .. ", t", LAUNCHER .. " -show drun")
 
     -- Screen Brightness
 bind("Alt_L, XF86AudioRaiseVolume", "brightnessctl s +1%")
@@ -61,53 +75,45 @@ bind("XF86AudioPrev", "playerctl previous")
 bind("XF86AudioStop", "playerctl stop")
 
     -- Screenshots
-bind("Super_L, Shift_L, S", "grim -g \"$(slurp -d)\" - | tee >(swappy -f - -o - | wl-copy) | wl-copy")
+bind(MAIN_MOD .. ", Shift_L, S", "grim -g \"$(slurp -d)\" - | tee >(swappy -f - -o - | wl-copy) | wl-copy")
 
 
 bind(
-    "Super_L, 1",   -- keys
+    MAIN_MOD .. ", 1",   -- keys
     "workspace",    -- specify that it is a workspace
     1,              -- workspace number
     false,          -- binary workspaces enabled
     1,              -- binary workspaces value
     true            -- also move active window to this workspace
     )
-bind("Super_L, 2", "workspace", 2, false, 0)
-bind("Super_L, 3", "workspace", 3, false, 0)
-bind("Super_L, 4", "workspace", 4, false, 0)
-bind("Super_L, 5", "workspace", 5, false, 0)
-bind("Super_L, 6", "workspace", 6, false, 0)
+bind(MAIN_MOD .. ", 2", "workspace", 2, false, 0)
+bind(MAIN_MOD .. ", 3", "workspace", 3, false, 0)
+bind(MAIN_MOD .. ", 4", "workspace", 4, false, 0)
+bind(MAIN_MOD .. ", 5", "workspace", 5, false, 0)
+bind(MAIN_MOD .. ", 6", "workspace", 6, false, 0)
 
 -- Binary workspaces
-bind("Super_L, u", "workspace", 1, true, 1)
-bind("Super_L, i", "workspace", 2, true, 2)
-bind("Super_L, o", "workspace", 3, true, 4)
-bind("Super_L, p", "workspace", 4, true, 8)
+bind(MAIN_MOD .. ", u", "workspace", 1, true, 1)
+bind(MAIN_MOD .. ", i", "workspace", 2, true, 2)
+bind(MAIN_MOD .. ", o", "workspace", 3, true, 4)
+bind(MAIN_MOD .. ", p", "workspace", 4, true, 8)
 
 
-bind("Super_L, r", "reload_config")     -- Reload config
+bind(MAIN_MOD .. ", r", "reload_config")     -- Reload config
+bind(MAIN_MOD .. ", n", "focus_next")        -- Focus next Window
+bind(MAIN_MOD .. ", f", "set_fullscreen")    -- Fullscreens active toplevel
 
-bind("Super_L, f", "set_fullscreen")     -- Fullscreens active toplevel
-
-bind("Super_L, q", "kill_active")       -- Kill Active Window
-bind("Super_L, Escape", "kill_server")  -- Kill HellWM
-
-bind("Super_L, n", "focus_next")        -- Focus next Window
-
-bind("Super_L, h", "focus_left")
-bind("Super_L, l", "focus_right")
-bind("Super_L, k", "focus_up")
-bind("Super_L, j", "focus_down")
-bind("Super_L, m", "toggle_split") --
+bind(MAIN_MOD .. ", q", "kill_active")       -- Kill Active Window
+bind(MAIN_MOD .. ", Escape", "kill_server")  -- Kill HellWM
 
 -- Set environment variables
 env("EDITOR", "nvim")
 env("GTK_THEME", "Nordic")
 
 -- Exec daemons etc.
-exec("swww init")
-exec("waybar")
-exec("alacritty")
+exec(WALLPAPER_DAEMON)
+exec(BAR)
+exec(TERMINAL)
 
 -- Tiling layout -- no matter what only 'dwindle' for now on
 layout(3)
