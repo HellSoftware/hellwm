@@ -279,10 +279,11 @@ struct hellwm_toplevel
     struct hellwm_workspace *workspace;
 
     struct wlr_box last_state; // used for example for fullscreen
-    struct wlr_box current_geom;
-    struct wlr_box pending_geom;
-    struct wlr_box desired_geom;
-    struct wlr_box animation_start_geom;
+    struct wlr_box current_geom;          // current
+    struct wlr_box pending_geom;          // pending -> currnet
+    struct wlr_box desired_geom;          // desired_geom, last one
+    struct wlr_box slide_geom;            // anim_end_geom
+    struct wlr_box animation_start_geom;  // current_geom, when it started
 
     struct wlr_scene_rect *borders[4];
     struct wlr_scene_tree *scene_tree;
@@ -649,7 +650,6 @@ static void toplevel_set_start_geometry(struct hellwm_toplevel *toplevel, struct
 
 static void toplevel_fade_start(struct hellwm_toplevel *toplevel);
 static void toplevel_animation_start(struct hellwm_toplevel *toplevel);
-static void toplevel_animation_start_with_geom(struct hellwm_toplevel *toplevel, struct wlr_box animation_start);
 
 float *border_get_color(enum hellwm_border_state state);
 static void borders_toplevel_update(struct hellwm_toplevel *toplevel);
@@ -1063,15 +1063,6 @@ static void toplevel_animation_start(struct hellwm_toplevel *toplevel)
     toplevel->in_animation = true;
 
     toplevel->animation_start_geom = toplevel->current_geom;
-}
-
-static void toplevel_animation_start_with_geom(struct hellwm_toplevel *toplevel, struct wlr_box animation_start)
-{
-    if (toplevel == NULL) return;
-    toplevel->set_animation_clock = true;
-    toplevel->in_animation = true;
-
-    toplevel->current_geom = animation_start;
 }
 
 static void toplevel_fade_start(struct hellwm_toplevel *toplevel)
@@ -2099,6 +2090,11 @@ float smooth(float current, float previous, float alpha)
     return previous + alpha * (current - previous);
 }
 
+float ease_out_cubic(float t)
+{
+    return 1 - powf(1 - t, 3);
+}
+
 float cubic_bezier(float t, float p0, float p1, float p2, float p3)
 {
     if (t < 0.0f) t = 0.0f;
@@ -2108,9 +2104,9 @@ float cubic_bezier(float t, float p0, float p1, float p2, float p3)
     return (u * u * u * p0) + (3 * u * u * t * p1) + (3 * u * t * t * p2) + (t * t * t * p3);
 }
 
-void animate_toplevel(struct hellwm_toplevel *toplevel, float t, float bezier_value)
+void animate_toplevel(struct hellwm_toplevel *toplevel, float bezier_value)
 {
-    struct wlr_box start = toplevel->animation_start_geom;
+    struct wlr_box start = toplevel->animation_start_geom; // TODO: add current_geom as an option too
     struct wlr_box desired = toplevel->desired_geom;
 
     int initial_width = start.width;
@@ -2197,7 +2193,8 @@ static void output_frame(struct wl_listener *listener, void *data)
                 float t = elapsed / anim_duration;
                 float *f = GLOBAL_SERVER->config_manager->decoration->animation_bezier;
                 float bezier_value = cubic_bezier(t, f[0], f[1], f[2], f[3]);
-                animate_toplevel(toplevel, t, bezier_value);
+                bezier_value = smooth(ease_out_cubic(bezier_value), bezier_value, 0.5);
+                animate_toplevel(toplevel, bezier_value);
             }
             else if (toplevel->in_animation == true)
             {
@@ -2545,14 +2542,8 @@ static void xdg_toplevel_commit(struct wl_listener *listener, void *data)
 
     if (toplevel->xdg_toplevel->base->initial_commit) 
     {
-        /* When an xdg_surface performs an initial commit, the compositor must
-         * reply with a configure so the client can map the surface. hellwm
-         * configures the xdg_toplevel with 0,0 size to let the client pick the
-         * dimensions itself. */
-
           wlr_xdg_toplevel_set_wm_capabilities(toplevel->xdg_toplevel, WLR_XDG_TOPLEVEL_WM_CAPABILITIES_FULLSCREEN);
           wlr_xdg_toplevel_set_size(toplevel->xdg_toplevel, 0, 0);
-          wlr_xdg_toplevel_set_activated(toplevel->xdg_toplevel, false);
           return;
     }
 }
@@ -4374,19 +4365,17 @@ static void hellwm_workspace_change(struct hellwm_server *server, int workspace_
             struct hellwm_toplevel *toplevel;
             wl_list_for_each(toplevel, &workspace->toplevels, link)
             {
-                struct wlr_box anim_geom = toplevel->current_geom;
-
                 // TODO: expose it to config
                 if (prev_workspace->id > workspace_id)
                 {
-                    anim_geom.x -= workspace->output->wlr_output->width;
+                    toplevel->desired_geom.x -= workspace->output->wlr_output->width;
                 }
                 else
                 {
-                    anim_geom.x += workspace->output->wlr_output->width;
+                    toplevel->desired_geom.x += workspace->output->wlr_output->width;
                 }
+                toplevel_animation_start(toplevel);
 
-                toplevel_animation_start_with_geom(toplevel, anim_geom);
                 wlr_scene_node_set_enabled(&toplevel->scene_tree->node, true);
             }
         }
@@ -4405,6 +4394,16 @@ static void hellwm_workspace_change(struct hellwm_server *server, int workspace_
             struct hellwm_toplevel *toplevel;
             wl_list_for_each(toplevel, &prev_workspace->toplevels, link)
             {
+                // TODO: expose it to config
+                if (prev_workspace->id > workspace_id)
+                {
+                    toplevel->desired_geom.x += workspace->output->wlr_output->width;
+                }
+                else
+                {
+                    toplevel->desired_geom.x -= workspace->output->wlr_output->width;
+                }
+                toplevel_animation_start(toplevel);
                 wlr_scene_node_set_enabled(&toplevel->scene_tree->node, false);
             }
         }

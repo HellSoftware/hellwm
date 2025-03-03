@@ -7,6 +7,7 @@
                                                                |___/ 
 ]]
 
+-- Some variables, that can help you define your config
 MAIN_MOD = "Super_L"
 TERMINAL = "alacritty"
 BROWSER = "firefox"
@@ -15,7 +16,6 @@ BAR = "waybar"
 WALLPAPER_DAEMON = "swww init"
 
 DEV = 0
-
 if os.getenv("DEV") == "1" then
     MAIN_MOD = "Alt_L"
     DEV = 1
@@ -46,20 +46,18 @@ keyboard(
     )
 keyboard("default", "us", 51, 205)
 keyboard("Sleep Button", "de", 61, 184)
-keyboard("ckb1: CORSAIR K68 RGB Mechanical Gaming Keyboard vKB", "pl", 50, 200)
 
 
 -- Keybindings
     
 bind(
-    MAIN_MOD .. ", b",     -- keys (for now you can only use combination of max 2
-    "firefox"         -- program name
+    MAIN_MOD .. ", b",     -- keys, after ',' - in this case key is Shift_L, we defined it at the top of this config
+    BROWSER                -- program name, in this case it's firefox, we also defined it at top of our config
     )
 bind(MAIN_MOD .. ", Return", TERMINAL)
-bind(MAIN_MOD .. ", F12", "pavucontrol")
-bind(MAIN_MOD .. ", F11", "grim")
-bind(MAIN_MOD .. ", w", "wallset")
 bind(MAIN_MOD .. ", t", LAUNCHER .. " -show drun")
+bind(MAIN_MOD .. ", F11", "grim")
+bind(MAIN_MOD .. ", F12", "pavucontrol")
 
     -- Screen Brightness
 bind("Alt_L, XF86AudioRaiseVolume", "brightnessctl s +1%")
@@ -106,38 +104,50 @@ bind(MAIN_MOD .. ", f", "set_fullscreen")    -- Fullscreens active toplevel
 bind(MAIN_MOD .. ", q", "kill_active")       -- Kill Active Window
 bind(MAIN_MOD .. ", Escape", "kill_server")  -- Kill HellWM
 
+
 -- Set environment variables
-env("EDITOR", "nvim")
-env("GTK_THEME", "Nordic")
+env("QT_QPA_PLATFORM", "wayland")
+env("XDG_SESSION_TYPE", "wayland")
+
+env("QT_STYLE_OVERRIDE", "kvantum")
+env("QT_AUTO_SCREEN_SCALE_FACTOR", "1")
+env("QT_WAYLAND_DISABLE_WINDOWDECORATION", "1")
+
+env("XCURSOR_SIZE", "24")
+env("MOZ_ENABLE_WAYLAND", "1")
+
+env("XDG_CURRENT_DESKTOP", "hellwm")
+env("XDG_SESSION_DESKTOP", "hellwm")
+env("ELECTRON_OZONE_PLATFORM_HINT", "auto")
+
 
 -- Exec daemons etc.
 exec(WALLPAPER_DAEMON)
 exec(BAR)
 exec(TERMINAL)
 
--- Tiling layout -- no matter what only 'dwindle' for now on
-layout(3)
-
 -- Decoration
-border_width(0)
-inner_gap(50)
+border_width(3)
+inner_gap(10)
 outer_gap(10)
 
 fade_duration(0.3)
 
-animation_duration(1)
-animation_bezier(0.0, 1.12, 1.28, 1)
+animation_duration(0.6)
+animation_bezier(0, 0.5, 1.25, 1)
+-- Other example beziers
+--animation_bezier(0.0, 1, 0.5, 1)
+--animation_bezier(0.0, 1.12, 1.28, 1)
+--animation_bezier(0.1, 1.12, -0.5, 1) -- Thats funny af, try it :)
 
---animation_duration(1.4)
---animation_bezier(0.1, 1.12, -0.5, 1) -- Thats funny af, try it :D
-
-    -- Types of animation directions
---animation_direction("left")
+   -- Types of animation
+animation_direction("left")
 --animation_direction("right")
 --animation_direction("up")
 --animation_direction("down")
 --animation_direction("shrink")
-animation_direction("grow")
+--animation_direction("grow")
+--animation_direction("solid")
 
     -- Border colors
 border_inactive_color("#87554c")
