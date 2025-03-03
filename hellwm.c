@@ -1305,8 +1305,8 @@ struct hellwm_config_manager *hellwm_config_manager_create()
 
 static void hellwm_cursor_follow_toplevel(struct hellwm_server* s, struct hellwm_toplevel *t)
 {
-    return; //TODO: segfault here
     if (!s->config_manager->input->cursor_follow_toplevels) return;
+    if (t == NULL) return;
 
     int x = t->desired_geom.x + t->desired_geom.width / 2;
     int y = t->desired_geom.y + t->desired_geom.height / 2;
