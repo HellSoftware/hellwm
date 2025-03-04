@@ -20,7 +20,7 @@ PKGS      = wlroots-0.18 wayland-server xkbcommon libinput lua $(XLIBS) pixman-1
 HELLWMCFLAGS = `$(PKG_CONFIG) --cflags $(PKGS)` $(CFLAGS) $(DEVCFLAGS)
 LDLIBS    = `$(PKG_CONFIG) --libs $(PKGS)` $(LIBS)
 
-all: hellwm
+all: hellwm hellcli
 hellwm: hellwm.o
 	$(CC) hellwm.o $(LDLIBS) $(LDFLAGS) $(HELLWMCFLAGS) -o $@
 hellwm.o: hellwm.c cursor-shape-v1-protocol.h xdg-shell-protocol.h wlr-layer-shell-unstable-v1-protocol.h
@@ -39,8 +39,11 @@ cursor-shape-v1-protocol.h:
 	$(WAYLAND_SCANNER) server-header \
 		$(WAYLAND_PROTOCOLS)/staging/cursor-shape/cursor-shape-v1.xml $@
 
+hellcli:
+	$(CC) hellcli.c -o $@
+
 clean:
-	rm -f hellwm *.o *-protocol.h *.log
+	rm -f hellwm hellcli *.o *-protocol.h *.log
 
 # CREATE PACKAGE
 release: clean

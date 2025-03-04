@@ -7,7 +7,10 @@
 #include <stdlib.h>
 #include <string.h>
 #include <unistd.h>
+#include <sys/un.h>
 #include <stdbool.h>
+#include <pthread.h>
+#include <sys/socket.h>
 
 #include <lua.h>
 #include <lauxlib.h>
@@ -59,6 +62,10 @@
 #include <wlr/types/wlr_foreign_toplevel_management_v1.h>
 
 #include "wlr-layer-shell-unstable-v1-protocol.h"
+
+#define IPC_SOCKET_PATH "/tmp/hellwm.sock"
+#define IPC_BUFFER_SIZE 256
+
 
 /* structures */
 enum hellwm_cursor_mode
@@ -130,6 +137,7 @@ struct hellwm_server
     double cursor_grab_x, cursor_grab_y;
 
     /* hellwm */
+    pthread_t ipc_thread;
     struct hellwm_output *active_output;
     struct hellwm_toplevel *grabbed_toplevel;
     struct hellwm_workspace *active_workspace;
@@ -488,7 +496,7 @@ struct hellwm_config_manager
 
 /* functions declarations */
 void ERR(const char *format, ...);
-void RUN_EXEC(char *commnad);
+void RUN_EXEC(const char *commnad);
 void LOG(const char *format, ...);
 void check_usage(int argc, char**argv);
 void hellwm_lua_error (lua_State *L, const char *fmt, ...);
@@ -917,6 +925,83 @@ void LOG(const char *format, ...)
     }
 }
 
+void ipc_handle(const char *cmd)
+{
+    if (strncmp(cmd, "execute ", 8) == 0)
+    {
+        RUN_EXEC(cmd + 8);
+    } 
+    else if (strcmp(cmd, "reload") == 0)
+    {
+        hellwm_config_manager_reload(GLOBAL_SERVER);
+    }
+    else if (strncmp(cmd, "workspace ", 10) == 0)
+    {
+        int ws = atoi(cmd + 10);
+        hellwm_workspace_change(GLOBAL_SERVER, ws);
+    }
+    else
+    {
+        LOG("Unknown command: %s\n", cmd);
+    }
+}
+
+void *ipc_listener(void *arg)
+{
+    int server_fd, client_fd;
+    struct sockaddr_un addr;
+    char buffer[IPC_BUFFER_SIZE];
+
+    if ((server_fd = socket(AF_UNIX, SOCK_STREAM, 0)) == -1) {
+        perror("socket");
+        return NULL;
+    }
+
+    memset(&addr, 0, sizeof(addr));
+    addr.sun_family = AF_UNIX;
+    strncpy(addr.sun_path, IPC_SOCKET_PATH, sizeof(addr.sun_path) - 1);
+    unlink(IPC_SOCKET_PATH);
+
+    if (bind(server_fd, (struct sockaddr*)&addr, sizeof(addr)) == -1) {
+        perror("bind");
+        close(server_fd);
+        return NULL;
+    }
+
+    if (listen(server_fd, 5) == -1) {
+        perror("listen");
+        close(server_fd);
+        return NULL;
+    }
+
+    printf("hellwm: Listening for commands...\n");
+
+    while (1) {
+        client_fd = accept(server_fd, NULL, NULL);
+        if (client_fd == -1) {
+            perror("accept");
+            continue;
+        }
+
+        memset(buffer, 0, IPC_BUFFER_SIZE);
+        read(client_fd, buffer, IPC_BUFFER_SIZE - 1);
+        ipc_handle(buffer);
+        close(client_fd);
+    }
+
+    close(server_fd);
+    unlink(IPC_SOCKET_PATH);
+    return NULL;
+}
+
+pthread_t ipc_init()
+{
+    pthread_t thread;
+    pthread_create(&thread, NULL, ipc_listener, NULL);
+    pthread_detach(thread);
+    return thread;
+}
+
 int is_digit_str(const char* str)
 {
     while (*str)
@@ -1010,7 +1095,7 @@ void hellwm_lua_error (lua_State *L, const char *fmt, ...)
     lua_close(L);
 }
 
-void RUN_EXEC(char *commnad)
+void RUN_EXEC(const char *commnad)
 {
     if (fork() == 0)
     {
@@ -3295,8 +3380,9 @@ void hellwm_config_manager_reload(struct hellwm_server *server)
     server->config_manager = hellwm_config_manager_create();
     hellwm_config_manager_load_from_file("./config.lua");
 
-    hellwm_config_manager_monitor_reload(server);
-    hellwm_config_manager_keyboard_reload(server);
+    //TODO: uncomment, for some reason it leads to crash sometimes
+    //hellwm_config_manager_monitor_reload(server);
+    //hellwm_config_manager_keyboard_reload(server);
 
     server->layout_reapply = 1;
     borders_toplevel_set_all(server);
@@ -4458,6 +4544,9 @@ int main(int argc, char *argv[])
     /* server */
     struct hellwm_server *server = calloc(1, sizeof(struct hellwm_server));
     GLOBAL_SERVER = server;
+
+    /* ipc */
+    server->ipc_thread = ipc_init();
 
     /* functions */
     hellwm_function_expose(server);
