@@ -104,6 +104,10 @@ bind(MAIN_MOD .. ", f", "set_fullscreen")    -- Fullscreens active toplevel
 bind(MAIN_MOD .. ", q", "kill_active")       -- Kill Active Window
 bind(MAIN_MOD .. ", Escape", "kill_server")  -- Kill HellWM
 
+-- Input
+tap_click(false)
+natural_scroll(false)
+cursor_follow_toplevels(false)
 
 -- Set environment variables
 env("QT_QPA_PLATFORM", "wayland")

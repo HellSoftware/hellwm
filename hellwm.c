@@ -1295,7 +1295,6 @@ hellwm_config_manager_keybindings *hellwm_config_manager_keybindings_create()
     return keybindings;
 }
 
-/* TODO: load from config */
 hellwm_config_manager_input *hellwm_config_manager_input_create()
 {
     hellwm_config_manager_input *input = calloc(1, sizeof(hellwm_config_manager_input));
@@ -3664,6 +3663,69 @@ int hellwm_lua_env(lua_State *L)
     return 0;
 }
 
+int hellwm_lua_input_tap_click(lua_State *L)
+{
+    int nargs = lua_gettop(L);
+    bool tap_click=true;
+
+    for (int i = 1; i<=nargs; i++)
+    {
+        switch (i)
+        {
+            case 1:
+                tap_click = (bool)lua_toboolean(L, i);
+                break;
+            default:
+                LOG("Provided to much arguments to tap_click() function!\n");
+        }
+    }
+
+    GLOBAL_SERVER->config_manager->input->tap_click = tap_click;
+    return 0;
+}
+
+int hellwm_lua_input_natural_scroll(lua_State *L)
+{
+    int nargs = lua_gettop(L);
+    bool natural_scroll=true;
+
+    for (int i = 1; i<=nargs; i++)
+    {
+        switch (i)
+        {
+            case 1:
+                natural_scroll = (bool)lua_toboolean(L, i);
+                break;
+            default:
+                LOG("Provided to much arguments to natural_scroll() function!\n");
+        }
+    }
+
+    GLOBAL_SERVER->config_manager->input->natural_scroll = natural_scroll;
+    return 0;
+}
+
+int hellwm_lua_input_cursor_follow_toplevels(lua_State *L)
+{
+    int nargs = lua_gettop(L);
+    bool follow_toplevel=true;
+
+    for (int i = 1; i<=nargs; i++)
+    {
+        switch (i)
+        {
+            case 1:
+                follow_toplevel = (bool)lua_toboolean(L, i);
+                break;
+            default:
+                LOG("Provided to much arguments to follow_toplevel() function!\n");
+        }
+    }
+
+    GLOBAL_SERVER->config_manager->input->cursor_follow_toplevels= follow_toplevel;
+    return 0;
+}
+
 int hellwm_lua_exec(lua_State *L)
 {
     int nargs = lua_gettop(L);
@@ -3966,6 +4028,15 @@ void hellwm_config_manager_load_from_file(char * filename)
 
     lua_pushcfunction(L, hellwm_lua_env);
     lua_setglobal(L, "env");
+
+    lua_pushcfunction(L, hellwm_lua_input_tap_click);
+    lua_setglobal(L, "tap_click");
+
+    lua_pushcfunction(L, hellwm_lua_input_natural_scroll);
+    lua_setglobal(L, "natural_scroll");
+
+    lua_pushcfunction(L, hellwm_lua_input_cursor_follow_toplevels);
+    lua_setglobal(L, "cursor_follow_toplevels");
 
     lua_pushcfunction(L, hellwm_lua_exec);
     lua_setglobal(L, "exec");
