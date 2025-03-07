@@ -480,7 +480,6 @@ struct hellwm_binary_workspaces_manager
 
 struct hellwm_config_manager
 {
-    /* Todo : config manger for this */
     unsigned tiling_layout;
 
     /* appearance */
@@ -553,8 +552,14 @@ static void hellwm_binary_workspaces_manager_add_keybind(struct hellwm_binary_wo
 /* add toplevel to specific workspace */
 static void hellwm_workspace_add_toplevel(struct hellwm_workspace *workspace, struct hellwm_toplevel *toplevel);
 
+/* remove toplevel from specific workspace */
+static void hellwm_workspace_remove_toplevel(struct hellwm_workspace *workspace, struct hellwm_toplevel *toplevel);
+
 /* move toplevel from workspace to new active workspace */
 void hellwm_toplevel_move_to_workspace(struct hellwm_server *server, int workspace_id);
+
+/* throw toplevel from workspace to workspace by id */
+void hellwm_toplevel_throw_to_workspace(struct hellwm_server *server, int workspace_id);
 
 void hellwm_config_manager_free(struct hellwm_config_manager *config);
 void hellwm_config_manager_monitor_free(hellwm_config_manager_monitor *monitor);
@@ -804,19 +809,6 @@ void remove_toplevel_from_tree(struct hellwm_workspace *workspace, struct hellwm
     free(parent);
 }
 
-struct hellwm_node *node_get_sibling(struct hellwm_node *node)
-{
-    if (!node || !node->parent) return NULL;
-
-    struct hellwm_node *parent = node->parent;
-
-    if (parent->is_split)
-    {
-        return (parent->split.left == node) ? parent->split.right : parent->split.left;
-    }
-    return NULL;
-}
-
 /* TODO */
 void server_focus_left(struct hellwm_server *server)
 {
@@ -905,6 +897,15 @@ void apply_layout(struct hellwm_workspace *workspace)
     layout_dwindle(workspace);
 }
 
+void switch_top(struct hellwm_workspace *workspace, struct hellwm_toplevel *toplevel)
+{
+    hellwm_workspace_remove_toplevel(workspace, toplevel);
+    remove_toplevel_from_tree(workspace, toplevel);
+
+    add_toplevel_to_tree(workspace, toplevel);
+    hellwm_workspace_add_toplevel(workspace, toplevel);
+}
+
 /* functions implementations */
 void LOG(const char *format, ...)
 {
@@ -939,6 +940,20 @@ void ipc_handle(const char *cmd)
     {
         int ws = atoi(cmd + 10);
         hellwm_workspace_change(GLOBAL_SERVER, ws);
+    }
+    else if (strncmp(cmd, "move ", 5) == 0)
+    {
+        int ws = atoi(cmd + 5);
+        hellwm_toplevel_move_to_workspace(GLOBAL_SERVER, ws);
+    }
+    else if (strncmp(cmd, "throw ", 6) == 0)
+    {
+        int ws = atoi(cmd + 6);
+        hellwm_toplevel_throw_to_workspace(GLOBAL_SERVER, ws);
+    }
+    else if (strncmp(cmd, "switch", 7) == 0)
+    {
+        switch_top(GLOBAL_SERVER->active_workspace, GLOBAL_SERVER->active_workspace->now_focused);
     }
     else
     {
@@ -1663,12 +1678,10 @@ static bool handle_keybinding(struct hellwm_server *server, uint32_t modifiers, 
                     }
                     else
                     {
+                            // TODO: make move_to_workspace work with binary workspaces
                         if (keybindings->keybindings[j]->content->workspace.move_with_active)
                         {
-                            // TODO: make move_to_workspace work with binary workspaces
-                            //hellwm_toplevel_move_to_workspace(server, keybindings->keybindings[j]->content->workspace.workspace_id);
-
-                            hellwm_workspace_change(server, keybindings->keybindings[j]->content->workspace.workspace_id);
+                            hellwm_toplevel_move_to_workspace(server, keybindings->keybindings[j]->content->workspace.workspace_id);
                         }
                         else
                             hellwm_workspace_change(server, keybindings->keybindings[j]->content->workspace.workspace_id);
@@ -3590,6 +3603,7 @@ int hellwm_lua_add_keybind(lua_State *L)
     workspace.workspace_id = -1;
     workspace.binary_workspace_val = -1;
     workspace.binary_workspaces_enabled = false;
+    workspace.move_with_active = false;
 
     for (int i = 1; i<=nargs; i++)
     {
@@ -4481,6 +4495,11 @@ static void hellwm_workspace_add_toplevel(struct hellwm_workspace *workspace, st
     LOG("%s added to workspace: %d\n", toplevel->xdg_toplevel->title, workspace->id);
 }
 
+static void hellwm_workspace_remove_toplevel(struct hellwm_workspace *workspace, struct hellwm_toplevel *toplevel)
+{
+    wl_list_remove(&toplevel->link);
+}
+
 /* Note: this function also automatically changes workspace to given id */
 void hellwm_toplevel_move_to_workspace(struct hellwm_server *server, int workspace_id)
 {
@@ -4489,17 +4508,59 @@ void hellwm_toplevel_move_to_workspace(struct hellwm_server *server, int workspa
 
     if (toplevel)
     {
-        LOG("Moving toplevel from %d, to %d\n", server->active_workspace->id, workspace_id);
-        wl_list_remove(&toplevel->link);
+        LOG("Moving toplevel from workspace %d, to %d\n", server->active_workspace->id, workspace_id);
+
+        hellwm_workspace_remove_toplevel(server->active_workspace, toplevel);
+        remove_toplevel_from_tree(toplevel->workspace, toplevel);
 
         hellwm_workspace_change(server, workspace_id);
-        wl_list_insert(&server->active_workspace->toplevels, &toplevel->link);
+
+        hellwm_workspace_add_toplevel(server->active_workspace, toplevel);
         add_toplevel_to_tree(server->active_workspace, toplevel);
         hellwm_focus_toplevel(toplevel);
+
         server->layout_reapply = 1;
     }
     else
         hellwm_workspace_change(server, workspace_id);
+}
+
+/* this function only puts toplevel in certain workspace without changing current one */
+void hellwm_toplevel_throw_to_workspace(struct hellwm_server *server, int workspace_id)
+{
+    if (server->active_workspace->now_focused == NULL) return;
+    struct hellwm_toplevel *toplevel = server->active_workspace->now_focused;
+
+    if (toplevel)
+    {
+        LOG("Moving toplevel from workspace %d, to %d\n", server->active_workspace->id, workspace_id);
+
+        struct hellwm_workspace *workspace = hellwm_workspace_find(server, workspace_id);
+        if (workspace == NULL)
+        {
+            workspace = hellwm_workspace_create_begin(server, workspace_id);
+            if (workspace == NULL)
+                return;
+
+            workspace->output = server->active_workspace->output;;
+
+            LOG("Creating new workspace: %d\n", workspace_id);
+        }
+
+        if (server->active_workspace->id == workspace_id) return;
+
+        hellwm_workspace_remove_toplevel(server->active_workspace, toplevel);
+        remove_toplevel_from_tree(toplevel->workspace, toplevel);
+
+        hellwm_workspace_add_toplevel(workspace, toplevel);
+        add_toplevel_to_tree(workspace, toplevel);
+
+        wlr_scene_node_set_enabled(&toplevel->scene_tree->node, false);
+        unfocus_focused(server);
+        hellwm_focus_next_in_list(server);
+
+        server->layout_reapply = 1;
+    }
 }
 
 /* Change workspace by it's id */

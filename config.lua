@@ -8,7 +8,7 @@
 ]]
 
 -- Some variables, that can help you define your config
-MAIN_MOD = "Super_L"
+MAIN_MOD = "Alt_L"
 TERMINAL = "alacritty"
 BROWSER = "firefox"
 LAUNCHER = "rofi"
@@ -75,14 +75,13 @@ bind("XF86AudioStop", "playerctl stop")
     -- Screenshots
 bind(MAIN_MOD .. ", Shift_L, S", "grim -g \"$(slurp -d)\" - | tee >(swappy -f - -o - | wl-copy) | wl-copy")
 
-
 bind(
     MAIN_MOD .. ", 1",   -- keys
     "workspace",    -- specify that it is a workspace
     1,              -- workspace number
     false,          -- binary workspaces enabled
     1,              -- binary workspaces value
-    true            -- also move active window to this workspace
+    false           -- also move active window to this workspace
     )
 bind(MAIN_MOD .. ", 2", "workspace", 2, false, 0)
 bind(MAIN_MOD .. ", 3", "workspace", 3, false, 0)
