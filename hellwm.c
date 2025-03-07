@@ -259,6 +259,7 @@ struct hellwm_workspace
     struct hellwm_server *server;
     struct hellwm_output *output;
     struct hellwm_toplevel *now_focused;
+    struct hellwm_toplevel *fullscreened_t;
     struct hellwm_toplevel *prev_focused;
 
     struct hellwm_node *layout_tree;
@@ -830,21 +831,18 @@ void calculate_layout(struct hellwm_node *node, struct wlr_box *area, int inner_
     if (!node->is_split)
     {
         // TODO: instead of skipping toplevel, remove it from layout_tree
-        if (!node->toplevel->fullscreen)
+        node->toplevel->desired_geom.x = area->x + border_width + outer_gap;
+        node->toplevel->desired_geom.y = area->y + border_width + outer_gap;
+        node->toplevel->desired_geom.width = area->width - 2 * (border_width + outer_gap);
+        node->toplevel->desired_geom.height = area->height - 2 * (border_width + outer_gap);
+
+        if (node->toplevel->desired_geom.width < 0) node->toplevel->desired_geom.width = 0;
+        if (node->toplevel->desired_geom.height < 0) node->toplevel->desired_geom.height = 0;
+
+        if (node->toplevel->first_layout)
         {
-            node->toplevel->desired_geom.x = area->x + border_width + outer_gap;
-            node->toplevel->desired_geom.y = area->y + border_width + outer_gap;
-            node->toplevel->desired_geom.width = area->width - 2 * (border_width + outer_gap);
-            node->toplevel->desired_geom.height = area->height - 2 * (border_width + outer_gap);
-
-            if (node->toplevel->desired_geom.width < 0) node->toplevel->desired_geom.width = 0;
-            if (node->toplevel->desired_geom.height < 0) node->toplevel->desired_geom.height = 0;
-
-            if (node->toplevel->first_layout)
-            {
-                toplevel_set_start_geometry(node->toplevel, node->toplevel->desired_geom);
-                node->toplevel->first_layout = false;
-            }
+            toplevel_set_start_geometry(node->toplevel, node->toplevel->desired_geom);
+            node->toplevel->first_layout = false;
         }
         toplevel_animation_start(node->toplevel);
         return;
@@ -926,9 +924,17 @@ void LOG(const char *format, ...)
     }
 }
 
+/* a lot of switch statements for now */
 void ipc_handle(const char *cmd)
 {
-    if (strncmp(cmd, "execute ", 8) == 0)
+    if (strncmp(cmd, "get ", 4) == 0)
+    {
+        if (strcmp(cmd+4, "active_workspace") == 0)
+        {
+
+        }
+    } 
+    else if (strncmp(cmd, "execute ", 8) == 0)
     {
         RUN_EXEC(cmd + 8);
     } 
@@ -1596,12 +1602,27 @@ static void hellwm_toplevel_fullscreen(struct hellwm_server *server)
     if (server->active_workspace->now_focused == NULL)
         return;
 
-    if (server->active_workspace->fullscreened)
-        toplevel_unset_fullscreen(server->active_workspace->now_focused);
-    else
-        toplevel_set_fullscreen(server->active_workspace->now_focused);
+    struct hellwm_toplevel *t = server->active_workspace->now_focused;
 
-    toplevel_animation_start(server->active_workspace->now_focused);
+    if (server->active_workspace->fullscreened)
+    {
+        if (server->active_workspace->fullscreened_t != t)
+        {
+            toplevel_unset_fullscreen(server->active_workspace->fullscreened_t);
+            hellwm_focus_next_potential(server);
+            toplevel_set_fullscreen(t);
+        }
+        else
+        {
+            toplevel_unset_fullscreen(t);
+        }
+    }
+    else
+    {
+        toplevel_set_fullscreen(t);
+    }
+
+    toplevel_animation_start(t);
 }
 
 static void hellwm_server_kill(struct hellwm_server *server)
@@ -2762,10 +2783,14 @@ static void toplevel_unset_fullscreen(struct hellwm_toplevel *toplevel)
 
     wlr_scene_node_reparent(&toplevel->scene_tree->node, toplevel->server->tile_tree);
     wlr_xdg_toplevel_set_fullscreen(toplevel->xdg_toplevel, false);
+    hellwm_focus_next_in_list(toplevel->server);
+
+    add_toplevel_to_tree(toplevel->server->active_workspace, toplevel);
+
     GLOBAL_SERVER->active_workspace->fullscreened = false;
+    GLOBAL_SERVER->active_workspace->fullscreened_t = NULL;
     GLOBAL_SERVER->layout_reapply = 1;
     toplevel->fullscreen = false;
-
 }
 
 static void toplevel_set_fullscreen(struct hellwm_toplevel *toplevel)
@@ -2794,7 +2819,10 @@ static void toplevel_set_fullscreen(struct hellwm_toplevel *toplevel)
     wlr_scene_node_reparent(&toplevel->scene_tree->node, toplevel->server->fullscreen_tree);
     wlr_xdg_toplevel_set_fullscreen(toplevel->xdg_toplevel, true);
 
+    remove_toplevel_from_tree(toplevel->workspace, toplevel);
+
     GLOBAL_SERVER->active_workspace->fullscreened = true;
+    GLOBAL_SERVER->active_workspace->fullscreened_t = toplevel;
     GLOBAL_SERVER->layout_reapply = 1;
     toplevel->fullscreen = true;
 }
