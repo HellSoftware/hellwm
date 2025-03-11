@@ -499,7 +499,6 @@ void ERR(const char *format, ...);
 void RUN_EXEC(const char *commnad);
 void LOG(const char *format, ...);
 void check_usage(int argc, char**argv);
-void hellwm_lua_error (lua_State *L, const char *fmt, ...);
 
 int is_digit_str(const char* str);
 int hex_to_float(const char* hex, float* color);
@@ -830,7 +829,6 @@ void calculate_layout(struct hellwm_node *node, struct wlr_box *area, int inner_
 
     if (!node->is_split)
     {
-        // TODO: instead of skipping toplevel, remove it from layout_tree
         node->toplevel->desired_geom.x = area->x + border_width + outer_gap;
         node->toplevel->desired_geom.y = area->y + border_width + outer_gap;
         node->toplevel->desired_geom.width = area->width - 2 * (border_width + outer_gap);
@@ -895,10 +893,26 @@ void apply_layout(struct hellwm_workspace *workspace)
     layout_dwindle(workspace);
 }
 
-void switch_top(struct hellwm_workspace *workspace, struct hellwm_toplevel *toplevel)
+void switch_toplevels(struct hellwm_workspace *workspace, struct hellwm_toplevel *toplevel)
 {
     hellwm_workspace_remove_toplevel(workspace, toplevel);
     remove_toplevel_from_tree(workspace, toplevel);
+
+    hellwm_focus_next_potential(GLOBAL_SERVER);
+
+    add_toplevel_to_tree(workspace, toplevel);
+    hellwm_workspace_add_toplevel(workspace, toplevel);
+}
+
+void server_switch_toplevels(struct hellwm_server *server)
+{
+    struct hellwm_workspace *workspace = server->active_workspace;
+    struct hellwm_toplevel *toplevel = server->active_workspace->now_focused;
+
+    hellwm_workspace_remove_toplevel(workspace, toplevel);
+    remove_toplevel_from_tree(workspace, toplevel);
+
+    hellwm_focus_next_potential(GLOBAL_SERVER);
 
     add_toplevel_to_tree(workspace, toplevel);
     hellwm_workspace_add_toplevel(workspace, toplevel);
@@ -925,13 +939,20 @@ void LOG(const char *format, ...)
 }
 
 /* a lot of switch statements for now */
-void ipc_handle(const char *cmd)
+void ipc_handle(const char *cmd, char *response)
 {
     if (strncmp(cmd, "get ", 4) == 0)
     {
         if (strcmp(cmd+4, "active_workspace") == 0)
         {
-
+            snprintf(response, IPC_BUFFER_SIZE, "%d", GLOBAL_SERVER->active_workspace->id);
+        }
+        else if (strcmp(cmd+4, "active_toplevel") == 0)
+        {
+            if (wl_list_length(&GLOBAL_SERVER->active_workspace->toplevels) > 0 && GLOBAL_SERVER->active_workspace->now_focused != NULL)
+                strcpy(response, GLOBAL_SERVER->active_workspace->now_focused->xdg_toplevel->title);
+            else
+                strcpy(response, "[*]");
         }
     } 
     else if (strncmp(cmd, "execute ", 8) == 0)
@@ -959,11 +980,12 @@ void ipc_handle(const char *cmd)
     }
     else if (strncmp(cmd, "switch", 7) == 0)
     {
-        switch_top(GLOBAL_SERVER->active_workspace, GLOBAL_SERVER->active_workspace->now_focused);
+        switch_toplevels(GLOBAL_SERVER->active_workspace, GLOBAL_SERVER->active_workspace->now_focused);
     }
     else
     {
-        LOG("Unknown command: %s\n", cmd);
+        strcpy(response, "Unknown command\n");
+        return;
     }
 }
 
@@ -973,7 +995,8 @@ void *ipc_listener(void *arg)
     struct sockaddr_un addr;
     char buffer[IPC_BUFFER_SIZE];
 
-    if ((server_fd = socket(AF_UNIX, SOCK_STREAM, 0)) == -1) {
+    if ((server_fd = socket(AF_UNIX, SOCK_STREAM, 0)) == -1)
+    {
         perror("socket");
         return NULL;
     }
@@ -989,7 +1012,8 @@ void *ipc_listener(void *arg)
         return NULL;
     }
 
-    if (listen(server_fd, 5) == -1) {
+    if (listen(server_fd, 5) == -1)
+    {
         perror("listen");
         close(server_fd);
         return NULL;
@@ -997,16 +1021,23 @@ void *ipc_listener(void *arg)
 
     printf("hellwm: Listening for commands...\n");
 
-    while (1) {
+    while (1)
+    {
         client_fd = accept(server_fd, NULL, NULL);
-        if (client_fd == -1) {
+        if (client_fd == -1)
+        {
             perror("accept");
             continue;
         }
 
         memset(buffer, 0, IPC_BUFFER_SIZE);
         read(client_fd, buffer, IPC_BUFFER_SIZE - 1);
-        ipc_handle(buffer);
+
+        char response[IPC_BUFFER_SIZE];
+        ipc_handle(buffer, response);
+
+        write(client_fd, response, strlen(response));
+
         close(client_fd);
     }
 
@@ -1105,15 +1136,6 @@ void ERR(const char *format, ...)
         fclose(file);
     }
     exit(EXIT_FAILURE);
-}
-
-void hellwm_lua_error (lua_State *L, const char *fmt, ...)
-{
-    va_list argp;
-    va_start(argp, fmt);
-    vfprintf(stderr, fmt, argp);
-    va_end(argp);
-    lua_close(L);
 }
 
 void RUN_EXEC(const char *commnad)
@@ -2224,7 +2246,7 @@ float cubic_bezier(float t, float p0, float p1, float p2, float p3)
 
 void animate_toplevel(struct hellwm_toplevel *toplevel, float bezier_value)
 {
-    struct wlr_box start = toplevel->animation_start_geom; // TODO: add current_geom as an option too
+    struct wlr_box start = toplevel->animation_start_geom;
     struct wlr_box desired = toplevel->desired_geom;
 
     int initial_width = start.width;
@@ -2783,9 +2805,11 @@ static void toplevel_unset_fullscreen(struct hellwm_toplevel *toplevel)
 
     wlr_scene_node_reparent(&toplevel->scene_tree->node, toplevel->server->tile_tree);
     wlr_xdg_toplevel_set_fullscreen(toplevel->xdg_toplevel, false);
-    hellwm_focus_next_in_list(toplevel->server);
 
+    hellwm_focus_next_in_list(toplevel->server);
     add_toplevel_to_tree(toplevel->server->active_workspace, toplevel);
+
+    hellwm_focus_toplevel(toplevel);
 
     GLOBAL_SERVER->active_workspace->fullscreened = false;
     GLOBAL_SERVER->active_workspace->fullscreened_t = NULL;
@@ -3088,7 +3112,6 @@ static void layer_surface_map_func(struct hellwm_layer_surface *layer_surface)
     if(output_box.width != output->usable_area.width || output_box.height != output->usable_area.height)
         server->layout_reapply = 1;
 
-    //* TODO - LOOK HERE
     LOG("USABLE_AREA: %d,%d - (%d, %d)\n\n",
             output->usable_area.x,
             output->usable_area.y,
@@ -3412,12 +3435,10 @@ void hellwm_config_manager_monitor_reload(struct hellwm_server *server)
 
 void hellwm_config_manager_reload(struct hellwm_server *server)
 {
-    hellwm_config_keybindings_free(server->config_manager->keybindings);
-    hellwm_config_manager_monitor_free(server->config_manager->monitor_manager);
-    hellwm_config_manager_keyboard_free(server->config_manager->keyboard_manager);
-    hellwm_config_manager_binary_workspaces_free(server->config_manager->binary_workspaces_manager);
-
+    hellwm_config_manager_free(server->config_manager);
     server->config_manager = hellwm_config_manager_create();
+
+    /* here if successfull it replaces config_manager with dummy */
     hellwm_config_manager_load_from_file("./config.lua");
 
     //TODO: uncomment, for some reason it leads to crash sometimes
@@ -4114,11 +4135,14 @@ void hellwm_config_manager_load_from_file(char * filename)
     lua_setglobal(L, "animation_direction");
 
     if (luaL_loadfile(L, filename) || lua_pcall(L, 0, 0, 0))
-        ;
+    {
         // TODO > Create dummy config manager to store all vars from config, so in case of an error it instead of crash it will just not apply.
-        //hellwm_lua_error(L, "Cannot load configuration file: %s\n", lua_tostring(L, -1));
+        LOG("Cannot load configuration file: %s\n", lua_tostring(L, -1));
+    }
     else
     {
+        LOG("SUCCESSFUL CONFIG! YAY!\n");
+        //hellwm_config_manager_free(server->config_manager);
         // TODO > if not failed GLOBAL_SERVER->config_manager = dummy config
     }
 
@@ -4452,6 +4476,8 @@ void hellwm_function_expose(struct hellwm_server *server)
     hellwm_function_add_to_map(server, "focus_right",   server_focus_right);
     hellwm_function_add_to_map(server, "focus_up",      server_focus_up);
     hellwm_function_add_to_map(server, "focus_down",    server_focus_down);
+
+    hellwm_function_add_to_map(server, "switch_toplevels", server_switch_toplevels);
 
     hellwm_function_add_to_map(server, "kill_active",   hellwm_toplevel_kill_active);
     hellwm_function_add_to_map(server, "reload_config", hellwm_config_manager_reload);

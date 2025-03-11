@@ -6,50 +6,52 @@
 #include <unistd.h>
 
 #define SOCKET_PATH "/tmp/hellwm.sock"
+#define IPC_BUFFER_SIZE 256
 
-void send_command(const char *command)
-{
-    int sock;
-    struct sockaddr_un addr;
-
-    if ((sock = socket(AF_UNIX, SOCK_STREAM, 0)) == -1)
-    {
-        perror("socket");
-        exit(EXIT_FAILURE);
-    }
-
-    memset(&addr, 0, sizeof(addr));
-    addr.sun_family = AF_UNIX;
-    strncpy(addr.sun_path, SOCKET_PATH, sizeof(addr.sun_path) - 1);
-
-    if (connect(sock, (struct sockaddr*)&addr, sizeof(addr)) == -1)
-    {
-        perror("connect");
-        close(sock);
-        exit(EXIT_FAILURE);
-    }
-
-    write(sock, command, strlen(command));
-    close(sock);
-}
-
-int main(int argc, char *argv[])
+int main(int argc, char **argv)
 {
     if (argc < 2)
     {
-        fprintf(stderr, "Usage: %s <command>\n", argv[0]);
-        return EXIT_FAILURE;
+        printf("Usage: %s <cmd>\n", argv[0]);
+        return 1;
     }
+    int client_socket;
+    struct sockaddr_un server_addr;
+    char buffer[IPC_BUFFER_SIZE];
 
-    char command[256] = {0};
-    snprintf(command, sizeof(command), "%s", argv[1]);
-    for (int i = 2; i < argc; i++)
+    client_socket = socket(AF_UNIX, SOCK_STREAM, 0);
+    if (client_socket < 0)
     {
-        strncat(command, " ", sizeof(command) - strlen(command) - 1);
-        strncat(command, argv[i], sizeof(command) - strlen(command) - 1);
+        perror("Socket creation failed");
+        exit(EXIT_FAILURE);
     }
 
-    send_command(command);
-    return EXIT_SUCCESS;
+    memset(&server_addr, 0, sizeof(server_addr));
+    server_addr.sun_family = AF_UNIX;
+    strcpy(server_addr.sun_path, SOCKET_PATH);
+
+    if (connect(client_socket, (struct sockaddr*)&server_addr, sizeof(server_addr)) < 0) {
+        perror("Connection failed");
+        close(client_socket);
+        exit(EXIT_FAILURE);
+    }
+
+    strcpy(buffer, argv[1]);
+    write(client_socket, buffer, strlen(buffer));
+
+    int bytes_read = read(client_socket, buffer, sizeof(buffer) - 1);
+    if (bytes_read < 0)
+    {
+        perror("Read error");
+    }
+    else
+    {
+        buffer[bytes_read] = '\0';
+        printf("%s\n", buffer);
+    }
+
+    close(client_socket);
+    return 0;
 }
+
 
