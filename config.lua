@@ -98,6 +98,12 @@ bind(MAIN_MOD .. ", p", "workspace", 4, true, 8)
 
 bind(MAIN_MOD .. ", r", "reload_config")     -- Reload config
 bind(MAIN_MOD .. ", n", "focus_next")        -- Focus next Window
+
+bind(MAIN_MOD .. ", h", "focus_left")        -- Focus next Window
+bind(MAIN_MOD .. ", l", "focus_right")        -- Focus next Window
+bind(MAIN_MOD .. ", k", "focus_up")        -- Focus next Window
+bind(MAIN_MOD .. ", j", "focus_down")        -- Focus next Window
+
 bind(MAIN_MOD .. ", f", "set_fullscreen")    -- Fullscreens active toplevel
 
 bind(MAIN_MOD .. ", q", "kill_active")       -- Kill Active Window

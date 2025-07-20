@@ -11,6 +11,9 @@
 #include <stdbool.h>
 #include <pthread.h>
 #include <sys/socket.h>
+#include <math.h>
+#include <float.h>
+
 
 #include <lua.h>
 #include <lauxlib.h>
@@ -255,6 +258,8 @@ struct hellwm_workspace
 
     struct wl_list link;
     struct wl_list toplevels;
+    struct wl_list floating_toplevels;
+
 
     struct hellwm_server *server;
     struct hellwm_output *output;
@@ -601,6 +606,13 @@ static void hellwm_focus_next_in_list(struct hellwm_server *server);
 static void hellwm_toplevel_fullscreen(struct hellwm_server *server);
 static void hellwm_focus_next_potential(struct hellwm_server *server);
 static void hellwm_toplevel_kill_active(struct hellwm_server *server);
+static void server_swap_toplevels(struct hellwm_server *server);
+static void server_focus_left(struct hellwm_server *server);
+static void server_focus_right(struct hellwm_server *server);
+static void server_focus_up(struct hellwm_server *server);
+static void server_focus_down(struct hellwm_server *server);
+static void hellwm_toplevel_toggle_floating(struct hellwm_server *server);
+
 
 static void hellwm_focus_toplevel(struct hellwm_toplevel *toplevel);
 static void hellwm_cursor_follow_toplevel(struct hellwm_server *s, struct hellwm_toplevel *t);
@@ -777,6 +789,16 @@ void remove_toplevel_from_tree(struct hellwm_workspace *workspace, struct hellwm
     struct hellwm_node *node = find_node_by_toplevel(workspace->layout_tree, toplevel);
     if (!node) return;
 
+    if (workspace->focused_node == node) {
+        if (node->parent) {
+            workspace->next_to_focus_node = (node->parent->split.left == node) ? node->parent->split.right : node->parent->split.left;
+        } else {
+            workspace->next_to_focus_node = NULL;
+        }
+        workspace->focused_node = NULL;
+    }
+
+
     struct hellwm_node *parent = node->parent;
     if (!parent)
     {
@@ -809,19 +831,124 @@ void remove_toplevel_from_tree(struct hellwm_workspace *workspace, struct hellwm
     free(parent);
 }
 
-/* TODO */
-void server_focus_left(struct hellwm_server *server)
-{
+static double distance(struct hellwm_toplevel *a, struct hellwm_toplevel *b) {
+    double x_a = a->current_geom.x + a->current_geom.width / 2.0;
+    double y_a = a->current_geom.y + a->current_geom.height / 2.0;
+    double x_b = b->current_geom.x + b->current_geom.width / 2.0;
+    double y_b = b->current_geom.y + b->current_geom.height / 2.0;
+    return sqrt(pow(x_a - x_b, 2) + pow(y_a - y_b, 2));
 }
-void server_focus_right(struct hellwm_server *server)
-{
+
+static struct hellwm_toplevel *find_toplevel_in_direction(struct hellwm_server *server, enum hellwm_direction direction) {
+    struct hellwm_workspace *ws = server->active_workspace;
+    if (!ws || !ws->now_focused || ws->now_focused->floating) {
+        return NULL;
+    }
+
+    struct hellwm_toplevel *current = ws->now_focused;
+    struct hellwm_toplevel *best_candidate = NULL;
+    double min_dist = DBL_MAX;
+
+    double current_cx = current->current_geom.x + current->current_geom.width / 2.0;
+    double current_cy = current->current_geom.y + current->current_geom.height / 2.0;
+
+    struct hellwm_toplevel *t;
+    wl_list_for_each(t, &ws->toplevels, link) {
+        if (t == current) {
+            continue;
+        }
+
+        double target_cx = t->current_geom.x + t->current_geom.width / 2.0;
+        double target_cy = t->current_geom.y + t->current_geom.height / 2.0;
+
+        bool is_candidate = false;
+        switch (direction) {
+            case HELLWM_LEFT:
+                if (target_cx < current_cx) is_candidate = true;
+                break;
+            case HELLWM_RIGHT:
+                if (target_cx > current_cx) is_candidate = true;
+                break;
+            case HELLWM_UP:
+                if (target_cy < current_cy) is_candidate = true;
+                break;
+            case HELLWM_DOWN:
+                if (target_cy > current_cy) is_candidate = true;
+                break;
+        }
+
+        if (is_candidate) {
+            double dist = distance(current, t);
+            if (dist < min_dist) {
+                min_dist = dist;
+                best_candidate = t;
+            }
+        }
+    }
+    return best_candidate;
 }
-void server_focus_up(struct hellwm_server *server)
-{
+
+static void hellwm_focus_direction(struct hellwm_server *server, enum hellwm_direction direction) {
+    struct hellwm_toplevel *candidate = find_toplevel_in_direction(server, direction);
+    if (candidate) {
+        hellwm_focus_toplevel(candidate);
+        hellwm_cursor_follow_toplevel(server, candidate);
+    }
 }
-void server_focus_down(struct hellwm_server *server)
-{
+
+
+void server_focus_left(struct hellwm_server *server) {
+    hellwm_focus_direction(server, HELLWM_LEFT);
 }
+
+void server_focus_right(struct hellwm_server *server) {
+    hellwm_focus_direction(server, HELLWM_RIGHT);
+}
+
+void server_focus_up(struct hellwm_server *server) {
+    hellwm_focus_direction(server, HELLWM_UP);
+}
+
+void server_focus_down(struct hellwm_server *server) {
+    hellwm_focus_direction(server, HELLWM_DOWN);
+}
+
+static void swap_node_toplevels(struct hellwm_node *node1, struct hellwm_node *node2) {
+    if (!node1 || !node2 || node1->is_split || node2->is_split) {
+        return;
+    }
+    struct hellwm_toplevel *tmp = node1->toplevel;
+    node1->toplevel = node2->toplevel;
+    node2->toplevel = tmp;
+}
+
+
+void server_swap_toplevels(struct hellwm_server *server) {
+    struct hellwm_workspace *ws = server->active_workspace;
+    if (!ws || !ws->now_focused || ws->now_focused->floating || wl_list_length(&ws->toplevels) < 2) {
+        return;
+    }
+
+    struct hellwm_toplevel *current_toplevel = ws->now_focused;
+    struct wl_list *next_link = current_toplevel->link.next;
+    if (next_link == &ws->toplevels) { // wrap around
+        next_link = ws->toplevels.next;
+    }
+    struct hellwm_toplevel *target_toplevel = wl_container_of(next_link, target_toplevel, link);
+
+    if (current_toplevel == target_toplevel) {
+        return;
+    }
+
+    struct hellwm_node *current_node = find_node_by_toplevel(ws->layout_tree, current_toplevel);
+    struct hellwm_node *target_node = find_node_by_toplevel(ws->layout_tree, target_toplevel);
+
+    if (current_node && target_node) {
+        swap_node_toplevels(current_node, target_node);
+        server->layout_reapply = 1;
+    }
+}
+
 
 void calculate_layout(struct hellwm_node *node, struct wlr_box *area, int inner_gap, int outer_gap, int border_width)
 {
@@ -895,13 +1022,11 @@ void apply_layout(struct hellwm_workspace *workspace)
 
 void switch_toplevels(struct hellwm_workspace *workspace, struct hellwm_toplevel *toplevel)
 {
-    hellwm_workspace_remove_toplevel(workspace, toplevel);
-    remove_toplevel_from_tree(workspace, toplevel);
+    if (!workspace || !toplevel || toplevel->floating) {
+        return;
+    }
 
-    hellwm_focus_next_potential(GLOBAL_SERVER);
-
-    add_toplevel_to_tree(workspace, toplevel);
-    hellwm_workspace_add_toplevel(workspace, toplevel);
+    hellwm_focus_next_in_list(toplevel->server);
 }
 
 void server_switch_toplevels(struct hellwm_server *server)
@@ -1435,8 +1560,8 @@ static void hellwm_cursor_follow_toplevel(struct hellwm_server* s, struct hellwm
     if (!s->config_manager->input->cursor_follow_toplevels) return;
     if (t == NULL) return;
 
-    int x = t->desired_geom.x + t->desired_geom.width / 2;
-    int y = t->desired_geom.y + t->desired_geom.height / 2;
+    int x = t->current_geom.x + t->current_geom.width / 2;
+    int y = t->current_geom.y + t->current_geom.height / 2;
     wlr_cursor_warp(s->cursor, NULL, x, y);
 }
 
@@ -1475,15 +1600,22 @@ static void hellwm_focus_toplevel(struct hellwm_toplevel *toplevel)
     }
 
     toplevel->workspace->now_focused = toplevel;
-    toplevel->workspace->focused_node = find_node_by_toplevel(toplevel->workspace->layout_tree, toplevel);
+    if (!toplevel->floating) {
+        toplevel->workspace->focused_node = find_node_by_toplevel(toplevel->workspace->layout_tree, toplevel);
+    }
+
 
     struct wlr_keyboard *keyboard = wlr_seat_get_keyboard(seat);
 
     /* Move the toplevel to the front */
     wlr_scene_node_raise_to_top(&toplevel->scene_tree->node);
 
-    wl_list_remove(&toplevel->link);
-    wl_list_insert(&server->active_workspace->toplevels, &toplevel->link);
+    if (!toplevel->floating)
+    {
+        wl_list_remove(&toplevel->link);
+        wl_list_insert(&server->active_workspace->toplevels, &toplevel->link);
+    }
+
 
     /* Activate the new surface */
     wlr_xdg_toplevel_set_activated(toplevel->xdg_toplevel, true);
@@ -1563,61 +1695,60 @@ static void focus_layer_surface(struct hellwm_layer_surface *layer_surface)
 
 static void hellwm_focus_next_in_list(struct hellwm_server *server)
 {
-    if (wl_list_length(&server->active_workspace->toplevels) < 1)
+    struct hellwm_workspace *ws = server->active_workspace;
+    if (!ws || wl_list_length(&ws->toplevels) < 1) {
         return;
-
-    struct hellwm_toplevel *next_toplevel = wl_container_of(server->active_workspace->toplevels.prev, next_toplevel, link);
-    if (next_toplevel)
-    {
-        hellwm_focus_toplevel(next_toplevel);
-    }
-    else
-    {
-        struct hellwm_toplevel *toplevel;
-        wl_list_for_each(toplevel, &server->active_workspace->toplevels, link)
-        {
-
-            hellwm_focus_toplevel(toplevel);
-            break;
-        }
     }
 
-    hellwm_cursor_follow_toplevel(server, server->active_workspace->now_focused);
+    struct hellwm_toplevel *current_toplevel = ws->now_focused;
+    if (!current_toplevel || current_toplevel->floating) {
+        hellwm_focus_toplevel(wl_container_of(ws->toplevels.next, current_toplevel, link));
+        return;
+    }
+
+    struct wl_list *next_link = current_toplevel->link.next;
+    if (next_link == &ws->toplevels) { 
+        next_link = ws->toplevels.next;
+    }
+
+    struct hellwm_toplevel *next_toplevel = wl_container_of(next_link, next_toplevel, link);
+    hellwm_focus_toplevel(next_toplevel);
+    hellwm_cursor_follow_toplevel(server, next_toplevel);
 }
+
 
 static void hellwm_focus_next_potential(struct hellwm_server *server)
 {
-    /* check if the next to focus node is valid. */
-    if (server->active_workspace->next_to_focus_node != NULL)
+    if (!server || !server->active_workspace) return;
+    struct hellwm_workspace *ws = server->active_workspace;
+    
+    if (ws->next_to_focus_node && ws->next_to_focus_node->toplevel)
     {
-        if (server->active_workspace->next_to_focus_node->toplevel)
-        {
-            hellwm_focus_toplevel(server->active_workspace->next_to_focus_node->toplevel);
-        }
+        hellwm_focus_toplevel(ws->next_to_focus_node->toplevel);
     }
-    else
+    else if (!wl_list_empty(&ws->toplevels))
     {
-        /* if next_to_focus_node is NULL, focus another toplevel */
-        if (!wl_list_empty(&server->active_workspace->toplevels))
-        {
-            struct hellwm_toplevel *fallback_toplevel = wl_container_of(server->active_workspace->toplevels.next, fallback_toplevel, link);
-            hellwm_focus_toplevel(fallback_toplevel);
-        }
+        struct hellwm_toplevel *fallback_toplevel = wl_container_of(ws->toplevels.next, fallback_toplevel, link);
+        hellwm_focus_toplevel(fallback_toplevel);
+    } else {
+        ws->now_focused = NULL;
     }
 }
 
+
 static void hellwm_toplevel_kill_active(struct hellwm_server *server)
 {
-    if (!server->active_workspace) return;
-    if (wl_list_length(&server->active_workspace->toplevels) < 1) return;
-    if (server->seat->keyboard_state.focused_surface == NULL) return;
+    if (!server->active_workspace || !server->active_workspace->now_focused) {
+        return;
+    }
 
-    struct wlr_xdg_toplevel *toplevel = wlr_xdg_toplevel_try_from_wlr_surface(server->seat->keyboard_state.focused_surface);
+    struct wlr_xdg_toplevel *toplevel = server->active_workspace->now_focused->xdg_toplevel;
     if (!toplevel)
         return;
 
     wlr_xdg_toplevel_send_close(toplevel);
 }
+
 
 static void hellwm_toplevel_fullscreen(struct hellwm_server *server)
 {
@@ -1774,7 +1905,6 @@ static bool handle_keybinding_binary_workspaces(struct hellwm_server *server, xk
         server->config_manager->binary_workspaces_manager->binary_started = false;
         hellwm_workspace_change(server, server->config_manager->binary_workspaces_manager->workspace_sum);
         server->config_manager->binary_workspaces_manager->workspace_sum = 0;
-        true;
     }
 
     return false;
@@ -1981,7 +2111,10 @@ static void process_cursor_move(struct hellwm_server *server, uint32_t time)
 {
     /* Move the grabbed toplevel to the new position. */
     struct hellwm_toplevel *toplevel = server->grabbed_toplevel;
-    wlr_scene_node_set_position(&toplevel->scene_tree->node, server->cursor->x - server->cursor_grab_x, server->cursor->y - server->cursor_grab_y);
+    toplevel->current_geom.x = server->cursor->x - server->cursor_grab_x;
+    toplevel->current_geom.y = server->cursor->y - server->cursor_grab_y;
+    wlr_scene_node_set_position(&toplevel->scene_tree->node, toplevel->current_geom.x, toplevel->current_geom.y);
+
 }
 
 static void process_cursor_resize(struct hellwm_server *server, uint32_t time)
@@ -2382,6 +2515,12 @@ static void output_frame(struct wl_listener *listener, void *data)
 
         borders_toplevel_update(toplevel);
     }
+    
+    wl_list_for_each(toplevel, &GLOBAL_SERVER->active_workspace->floating_toplevels, link)
+    {
+        borders_toplevel_update(toplevel);
+    }
+
 
     wlr_scene_output_commit(scene_output, NULL);
     wlr_scene_output_send_frame_done(scene_output, &now);
@@ -2604,8 +2743,13 @@ static void toplevel_center(struct hellwm_toplevel *toplevel)
     int x = ob.x + (toplevel->server->active_workspace->output->total_area.width) / 2;
     int y = ob.y + (toplevel->server->active_workspace->output->total_area.height) / 2;
 
-    toplevel->desired_geom.x = x - toplevel->xdg_toplevel->base->current.geometry.width/2;
-    toplevel->desired_geom.y = y - toplevel->xdg_toplevel->base->current.geometry.height/2;
+    toplevel->current_geom.x = x - toplevel->xdg_toplevel->base->current.geometry.width/2;
+    toplevel->current_geom.y = y - toplevel->xdg_toplevel->base->current.geometry.height/2;
+    toplevel->current_geom.width = toplevel->xdg_toplevel->base->current.geometry.width;
+    toplevel->current_geom.height = toplevel->xdg_toplevel->base->current.geometry.height;
+
+    wlr_scene_node_set_position(&toplevel->scene_tree->node, toplevel->current_geom.x, toplevel->current_geom.y);
+
 }
 
 static void xdg_toplevel_map(struct wl_listener *listener, void *data) 
@@ -2618,16 +2762,24 @@ static void xdg_toplevel_map(struct wl_listener *listener, void *data)
     {
         toplevel->scene_tree = wlr_scene_xdg_surface_create(toplevel->server->floating_tree, toplevel->xdg_toplevel->base);
         toplevel->xdg_toplevel->base->data = toplevel->scene_tree;
-        toplevel_center(toplevel);
     }
     else
     {
         toplevel->scene_tree = wlr_scene_xdg_surface_create(toplevel->server->tile_tree, toplevel->xdg_toplevel->base);
         toplevel->xdg_toplevel->base->data = toplevel->scene_tree;
-        add_toplevel_to_tree(toplevel->server->active_workspace, toplevel);
     }
-    wlr_scene_node_set_enabled(&toplevel->scene_tree->node, false);
-    hellwm_workspace_add_toplevel(toplevel->server->active_workspace, toplevel);
+
+    toplevel->workspace = toplevel->server->active_workspace;
+    hellwm_workspace_add_toplevel(toplevel->workspace, toplevel);
+    
+    if (toplevel->floating) {
+        toplevel_center(toplevel);
+    } else {
+        add_toplevel_to_tree(toplevel->workspace, toplevel);
+    }
+
+
+    wlr_scene_node_set_enabled(&toplevel->scene_tree->node, true);
 
     toplevel->fullscreen = false;
     toplevel->first_layout = true;
@@ -2660,9 +2812,9 @@ static void xdg_toplevel_unmap(struct wl_listener *listener, void *data)
     {
         reset_cursor_mode(toplevel->server);
     }
+    
+    wlr_scene_node_set_enabled(&toplevel->scene_tree->node, false);
 
-    wl_list_remove(&toplevel->link);
-    GLOBAL_SERVER->layout_reapply = 1;
 }
 
 static bool toplevel_should_float(struct hellwm_toplevel *toplevel)
@@ -2690,15 +2842,23 @@ static void xdg_toplevel_commit(struct wl_listener *listener, void *data)
 
 static void xdg_toplevel_destroy(struct wl_listener *listener, void *data)
 {
-    /* Called when the xdg_toplevel is destroyed. */
     struct hellwm_toplevel *toplevel = wl_container_of(listener, toplevel, destroy);
     struct hellwm_server *server = toplevel->server;
+    struct hellwm_workspace *ws = toplevel->workspace;
 
-    hellwm_focus_next_potential(server);
-    hellwm_cursor_follow_toplevel(server, toplevel->workspace->now_focused);
+    wl_list_remove(&toplevel->link);
 
-    toplevel_unset_fullscreen(toplevel);
-    remove_toplevel_from_tree(toplevel->workspace, toplevel);
+    if (toplevel->fullscreen && ws->fullscreened_t == toplevel) {
+        ws->fullscreened = false;
+        ws->fullscreened_t = NULL;
+    } else if (!toplevel->floating) {
+        remove_toplevel_from_tree(ws, toplevel);
+    }
+    
+    if (ws->now_focused == toplevel) {
+        ws->now_focused = NULL;
+        hellwm_focus_next_potential(server);
+    }
 
     wlr_foreign_toplevel_handle_v1_destroy(toplevel->foreign_toplevel_handle);
 
@@ -2711,10 +2871,18 @@ static void xdg_toplevel_destroy(struct wl_listener *listener, void *data)
     wl_list_remove(&toplevel->request_maximize.link);
     wl_list_remove(&toplevel->request_fullscreen.link);
 
+    struct hellwm_view *view = toplevel->scene_tree->node.data;
+    if(view) {
+        free(view);
+    }
+
+    wlr_scene_node_destroy(&toplevel->scene_tree->node);
     free(toplevel);
 
     server->layout_reapply = 1;
 }
+
+
 
 static void begin_interactive(struct hellwm_toplevel *toplevel, enum hellwm_cursor_mode mode, uint32_t edges) 
 {
@@ -2803,13 +2971,14 @@ static void toplevel_unset_fullscreen(struct hellwm_toplevel *toplevel)
     toplevel->desired_geom.x = toplevel->last_state.x;
     toplevel->desired_geom.y = toplevel->last_state.y;
 
-    wlr_scene_node_reparent(&toplevel->scene_tree->node, toplevel->server->tile_tree);
+    wlr_scene_node_reparent(&toplevel->scene_tree->node, toplevel->floating ? toplevel->server->floating_tree : toplevel->server->tile_tree);
     wlr_xdg_toplevel_set_fullscreen(toplevel->xdg_toplevel, false);
-
-    hellwm_focus_next_in_list(toplevel->server);
-    add_toplevel_to_tree(toplevel->server->active_workspace, toplevel);
-
+    
+    if (!toplevel->floating) {
+        add_toplevel_to_tree(toplevel->server->active_workspace, toplevel);
+    }
     hellwm_focus_toplevel(toplevel);
+
 
     GLOBAL_SERVER->active_workspace->fullscreened = false;
     GLOBAL_SERVER->active_workspace->fullscreened_t = NULL;
@@ -2843,7 +3012,9 @@ static void toplevel_set_fullscreen(struct hellwm_toplevel *toplevel)
     wlr_scene_node_reparent(&toplevel->scene_tree->node, toplevel->server->fullscreen_tree);
     wlr_xdg_toplevel_set_fullscreen(toplevel->xdg_toplevel, true);
 
-    remove_toplevel_from_tree(toplevel->workspace, toplevel);
+    if (!toplevel->floating) {
+        remove_toplevel_from_tree(toplevel->workspace, toplevel);
+    }
 
     GLOBAL_SERVER->active_workspace->fullscreened = true;
     GLOBAL_SERVER->active_workspace->fullscreened_t = toplevel;
@@ -4469,20 +4640,16 @@ bool hellwm_function_find(const char* name, struct hellwm_server* server, union 
 void hellwm_function_expose(struct hellwm_server *server)
 {
     hellwm_function_add_to_map(server, "kill_server",   hellwm_server_kill);
-
     hellwm_function_add_to_map(server, "focus_next",    hellwm_focus_next_in_list);
-
     hellwm_function_add_to_map(server, "focus_left",    server_focus_left);
     hellwm_function_add_to_map(server, "focus_right",   server_focus_right);
     hellwm_function_add_to_map(server, "focus_up",      server_focus_up);
     hellwm_function_add_to_map(server, "focus_down",    server_focus_down);
-
-    hellwm_function_add_to_map(server, "switch_toplevels", server_switch_toplevels);
-
+    hellwm_function_add_to_map(server, "swap_toplevels", server_swap_toplevels);
     hellwm_function_add_to_map(server, "kill_active",   hellwm_toplevel_kill_active);
     hellwm_function_add_to_map(server, "reload_config", hellwm_config_manager_reload);
-
     hellwm_function_add_to_map(server, "set_fullscreen", hellwm_toplevel_fullscreen);
+    hellwm_function_add_to_map(server, "toggle_floating", hellwm_toplevel_toggle_floating);
 }
 
 struct hellwm_workspace *hellwm_workspace_create_begin(struct hellwm_server *server, int workspace_id)
@@ -4496,6 +4663,8 @@ struct hellwm_workspace *hellwm_workspace_create_begin(struct hellwm_server *ser
 
     wl_list_insert(&server->workspaces, &workspace->link);
     wl_list_init(&workspace->toplevels);
+    wl_list_init(&workspace->floating_toplevels);
+
     workspace->now_focused = NULL;
     workspace->prev_focused = NULL;
     workspace->id = workspace_id;
@@ -4543,7 +4712,12 @@ static void hellwm_workspace_destroy(struct hellwm_workspace *workspace)
 
 static void hellwm_workspace_add_toplevel(struct hellwm_workspace *workspace, struct hellwm_toplevel *toplevel)
 {
-    wl_list_insert(&workspace->toplevels, &toplevel->link);
+    if (toplevel->floating) {
+        wl_list_insert(&workspace->floating_toplevels, &toplevel->link);
+    } else {
+        wl_list_insert(&workspace->toplevels, &toplevel->link);
+    }
+
     toplevel->workspace = workspace;
 
     LOG("%s added to workspace: %d\n", toplevel->xdg_toplevel->title, workspace->id);
@@ -4565,12 +4739,17 @@ void hellwm_toplevel_move_to_workspace(struct hellwm_server *server, int workspa
         LOG("Moving toplevel from workspace %d, to %d\n", server->active_workspace->id, workspace_id);
 
         hellwm_workspace_remove_toplevel(server->active_workspace, toplevel);
-        remove_toplevel_from_tree(toplevel->workspace, toplevel);
+        if (!toplevel->floating) {
+             remove_toplevel_from_tree(toplevel->workspace, toplevel);
+        }
 
         hellwm_workspace_change(server, workspace_id);
 
         hellwm_workspace_add_toplevel(server->active_workspace, toplevel);
-        add_toplevel_to_tree(server->active_workspace, toplevel);
+        if (!toplevel->floating) {
+            add_toplevel_to_tree(server->active_workspace, toplevel);
+        }
+        
         hellwm_focus_toplevel(toplevel);
 
         server->layout_reapply = 1;
@@ -4604,10 +4783,16 @@ void hellwm_toplevel_throw_to_workspace(struct hellwm_server *server, int worksp
         if (server->active_workspace->id == workspace_id) return;
 
         hellwm_workspace_remove_toplevel(server->active_workspace, toplevel);
-        remove_toplevel_from_tree(toplevel->workspace, toplevel);
+        if (!toplevel->floating) {
+            remove_toplevel_from_tree(toplevel->workspace, toplevel);
+        }
+
 
         hellwm_workspace_add_toplevel(workspace, toplevel);
-        add_toplevel_to_tree(workspace, toplevel);
+        if (!toplevel->floating) {
+            add_toplevel_to_tree(workspace, toplevel);
+        }
+
 
         wlr_scene_node_set_enabled(&toplevel->scene_tree->node, false);
         unfocus_focused(server);
@@ -4623,72 +4808,62 @@ static void hellwm_workspace_change(struct hellwm_server *server, int workspace_
     struct hellwm_workspace *workspace = hellwm_workspace_find(server, workspace_id);
     struct hellwm_workspace *prev_workspace = server->active_workspace;
 
-    if (workspace == NULL) hellwm_workspace_create(server, workspace_id);
+    if (workspace == NULL) {
+        hellwm_workspace_create(server, workspace_id);
+        workspace = hellwm_workspace_find(server, workspace_id);
+    }
+
     if (server->active_workspace->id == workspace_id) return;
 
     LOG("Changed Workspace from %d to %d\n", server->active_workspace->id, workspace_id);
 
-    /* Enable toplevels */
-    if (workspace)
-    {
-        if (wl_list_length(&workspace->toplevels) != 0)
-        {
-            //LOG("TOPLEVEL_LIST: %d\n", wl_list_length(&workspace->toplevels));
-            struct hellwm_toplevel *toplevel;
-            wl_list_for_each(toplevel, &workspace->toplevels, link)
-            {
-                // TODO: expose it to config
-                if (prev_workspace->id > workspace_id)
-                {
-                    toplevel->desired_geom.x -= workspace->output->wlr_output->width;
-                }
-                else
-                {
-                    toplevel->desired_geom.x += workspace->output->wlr_output->width;
-                }
-                toplevel_animation_start(toplevel);
-
-                wlr_scene_node_set_enabled(&toplevel->scene_tree->node, true);
-            }
+    /* Hide all toplevels on previous workspace */
+    if (prev_workspace) {
+        struct hellwm_toplevel *toplevel;
+        wl_list_for_each(toplevel, &prev_workspace->toplevels, link) {
+            wlr_scene_node_set_enabled(&toplevel->scene_tree->node, false);
+        }
+        wl_list_for_each(toplevel, &prev_workspace->floating_toplevels, link) {
+            wlr_scene_node_set_enabled(&toplevel->scene_tree->node, false);
         }
     }
 
-    /* Disable toplevels */
-    if (prev_workspace)
-    {
-        if (wl_list_length(&prev_workspace->toplevels) == 0)
-        {
-            hellwm_workspace_destroy(prev_workspace);
+    /* Show all toplevels on new workspace */
+    if (workspace) {
+        struct hellwm_toplevel *toplevel;
+        wl_list_for_each(toplevel, &workspace->toplevels, link) {
+            wlr_scene_node_set_enabled(&toplevel->scene_tree->node, true);
         }
-        else
-        {
-            //LOG("PREV_TOPLEVEL_LIST: %d\n", wl_list_length(&prev_workspace->toplevels));
-            struct hellwm_toplevel *toplevel;
-            wl_list_for_each(toplevel, &prev_workspace->toplevels, link)
-            {
-                // TODO: expose it to config
-                if (prev_workspace->id > workspace_id)
-                {
-                    toplevel->desired_geom.x += workspace->output->wlr_output->width;
-                }
-                else
-                {
-                    toplevel->desired_geom.x -= workspace->output->wlr_output->width;
-                }
-                toplevel_animation_start(toplevel);
-                wlr_scene_node_set_enabled(&toplevel->scene_tree->node, false);
-            }
+        wl_list_for_each(toplevel, &workspace->floating_toplevels, link) {
+            wlr_scene_node_set_enabled(&toplevel->scene_tree->node, true);
         }
     }
+
 
     server->active_workspace = workspace;
     if (server->active_workspace->now_focused != NULL)
         hellwm_focus_toplevel(server->active_workspace->now_focused);
     else
-        unfocus_focused(server);
+    {
+        // Try to focus something on the new workspace
+        if (!wl_list_empty(&workspace->toplevels))
+        {
+            //hellwm_focus_toplevel(wl_container_of(workspace->toplevels.next, struct hellwm_toplevel, link));
+        }
+        else if (!wl_list_empty(&workspace->floating_toplevels)) 
+        {
+            //hellwm_focus_toplevel(wl_container_of(workspace->floating_toplevels.next, struct hellwm_toplevel, link));
+        }
+        else
+        {
+            unfocus_focused(server);
+        }
+    }
+
 
     server->layout_reapply = 1;
 }
+
 
 /* Return next id based on count of workspaces */
 static int hellwm_workspace_get_next_id(struct hellwm_server *server)
@@ -4718,6 +4893,37 @@ static void hellwm_binary_workspaces_manager_add_keybind(struct hellwm_binary_wo
 
     manager->keybinds[manager->keybinds_count] = keybind;
     manager->keybinds_count++;
+}
+
+static void hellwm_toplevel_toggle_floating(struct hellwm_server *server) {
+    struct hellwm_workspace *ws = server->active_workspace;
+    if (!ws || !ws->now_focused) {
+        return;
+    }
+
+    struct hellwm_toplevel *toplevel = ws->now_focused;
+
+    if (toplevel->fullscreen) {
+        return;
+    }
+
+    toplevel->floating = !toplevel->floating;
+
+    if (toplevel->floating) {
+        // Tiled -> Floating
+        remove_toplevel_from_tree(ws, toplevel);
+        wl_list_remove(&toplevel->link); // remove from toplevels list
+        wl_list_insert(&ws->floating_toplevels, &toplevel->link);
+        wlr_scene_node_reparent(&toplevel->scene_tree->node, server->floating_tree);
+    } else {
+        // Floating -> Tiled
+        wl_list_remove(&toplevel->link); // remove from floating_toplevels list
+        wl_list_insert(&ws->toplevels, &toplevel->link);
+        add_toplevel_to_tree(ws, toplevel);
+        wlr_scene_node_reparent(&toplevel->scene_tree->node, server->tile_tree);
+    }
+
+    server->layout_reapply = 1;
 }
 
 int main(int argc, char *argv[])
