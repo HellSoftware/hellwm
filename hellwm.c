@@ -2586,6 +2586,11 @@ static void output_frame(struct wl_listener *listener, void *data)
         borders_toplevel_update(toplevel);
     }
 
+    wl_list_for_each(toplevel, &GLOBAL_SERVER->active_workspace->floating_toplevels, link)
+    {
+        borders_toplevel_update(toplevel);
+    }
+
     wlr_scene_output_commit(scene_output, NULL);
     wlr_scene_output_send_frame_done(scene_output, &now);
 }
