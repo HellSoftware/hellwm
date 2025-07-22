@@ -1,4 +1,6 @@
 #include <time.h>
+#include <math.h>
+#include <float.h>
 #include <ctype.h>
 #include <stdio.h>
 #include <assert.h>
@@ -11,9 +13,7 @@
 #include <stdbool.h>
 #include <pthread.h>
 #include <sys/socket.h>
-#include <math.h>
-#include <float.h>
-
+#include <linux/input-event-codes.h>
 
 #include <lua.h>
 #include <lauxlib.h>
@@ -708,6 +708,38 @@ struct hellwm_node *find_node_by_toplevel(struct hellwm_node *node, struct hellw
     if (found) return found;
 
     return find_node_by_toplevel(node->split.right, toplevel);
+}
+
+static struct hellwm_node *find_node_at(struct hellwm_node *node, struct wlr_box *area, double x, double y) 
+{
+    if (!node || !wlr_box_contains_point(area, x, y)) {
+        return NULL;
+    }
+
+    if (!node->is_split) {
+        return node;
+    }
+
+    int inner_gap = GLOBAL_SERVER->config_manager->decoration->inner_gap;
+
+    struct wlr_box left_area = *area;
+    struct wlr_box right_area = *area;
+
+    if (node->split.vertical_split) {
+        left_area.width = (area->width - inner_gap) * node->split.split_ratio;
+        right_area.x += left_area.width + inner_gap;
+        right_area.width -= left_area.width + inner_gap;
+    } else {
+        left_area.height = (area->height - inner_gap) * node->split.split_ratio;
+        right_area.y += left_area.height + inner_gap;
+        right_area.height -= left_area.height + inner_gap;
+    }
+
+    struct hellwm_node *found = find_node_at(node->split.left, &left_area, x, y);
+    if (found) {
+        return found;
+    }
+    return find_node_at(node->split.right, &right_area, x, y);
 }
 
 bool should_split_vertically(struct hellwm_node *node)
@@ -2283,27 +2315,65 @@ struct hellwm_output *toplevel_get_primary_output(struct hellwm_toplevel *toplev
 
 static void server_cursor_button(struct wl_listener *listener, void *data)
 {
+    struct hellwm_server *server = wl_container_of(listener, server, cursor_button);
     struct wlr_pointer_button_event *event = data;
 
-    /* notify the client with pointer focus that a button press has occurred */
-    wlr_seat_pointer_notify_button(GLOBAL_SERVER->seat, event->time_msec,
-            event->button, event->state);
+    wlr_seat_pointer_notify_button(server->seat, event->time_msec, event->button, event->state);
 
-    if(event->state == WL_POINTER_BUTTON_STATE_RELEASED && GLOBAL_SERVER->cursor_mode != HELLWM_CURSOR_PASSTHROUGH)
+    double sx, sy;
+    struct wlr_surface *surface = NULL;
+    struct hellwm_view *view = desktop_view_at(server, server->cursor->x, server->cursor->y, &surface, &sx, &sy);
+
+    if (event->state == WL_POINTER_BUTTON_STATE_RELEASED)
     {
-        //struct hellwm_output *primary_output = toplevel_get_primary_output(GLOBAL_SERVER->grabbed_toplevel);
+        if (server->grabbed_toplevel)
+        {
+            // A tiled window was being dragged and is now dropped.
+            struct hellwm_workspace *ws = server->active_workspace;
+            struct hellwm_node *source_node = find_node_by_toplevel(ws->layout_tree, server->grabbed_toplevel);
 
-        //if(primary_output != GLOBAL_SERVER->grabbed_toplevel->workspace->output)
-        //{
-        //    GLOBAL_SERVER->grabbed_toplevel->workspace = primary_output->active_workspace;
-        //    wl_list_remove(&GLOBAL_SERVER->grabbed_toplevel->link);
-        //    wl_list_insert(&primary_output->active_workspace->toplevels, &GLOBAL_SERVER->grabbed_toplevel->link);
-        //}
+            // CRASH FIX: Check if a valid target tile is under the cursor.
+            struct hellwm_node *target_node = find_node_at(ws->layout_tree, &ws->output->usable_area, server->cursor->x, server->cursor->y);
+            
+            // Only perform a swap if we have a valid source, a valid target, and they aren't the same.
+            if (source_node && target_node && target_node->toplevel && source_node != target_node) {
+                struct hellwm_toplevel *target_toplevel = target_node->toplevel;
+                target_node->toplevel = source_node->toplevel;
+                source_node->toplevel = target_toplevel;
+            }
+            
+            // Always revert the dragged toplevel back to the tile tree.
+            wlr_scene_node_reparent(&server->grabbed_toplevel->scene_tree->node, server->tile_tree);
+            server->layout_reapply = 1;
+        }
+        reset_cursor_mode(server);
+        return;
+    }
 
-        reset_cursor_mode(GLOBAL_SERVER);
+    struct wlr_keyboard *keyboard = wlr_seat_get_keyboard(server->seat);
+    uint32_t modifiers = wlr_keyboard_get_modifiers(keyboard);
+
+    if ((modifiers & WLR_MODIFIER_LOGO) && view && view->view_type == HELLWM_VIEW_TOPLEVEL) {
+        struct hellwm_toplevel *toplevel = view->toplevel;
+        hellwm_focus_toplevel(toplevel);
+
+        if (event->button == BTN_LEFT) {
+            if (toplevel->floating) {
+                begin_interactive(toplevel, HELLWM_CURSOR_MOVE, 0);
+            } else {
+                wlr_scene_node_reparent(&toplevel->scene_tree->node, server->floating_tree);
+                wlr_scene_node_raise_to_top(&toplevel->scene_tree->node);
+                begin_interactive(toplevel, HELLWM_CURSOR_MOVE, 0);
+            }
+        } else if (event->button == BTN_RIGHT) {
+            if (toplevel->floating) {
+                // For floating windows, resize from bottom-right corner as a sensible default.
+                begin_interactive(toplevel, HELLWM_CURSOR_RESIZE, WLR_EDGE_BOTTOM | WLR_EDGE_RIGHT);
+            } 
+        }
+        return; // Prevent the click from passing through to the client.
     }
 }
-
 
 static void server_cursor_axis(struct wl_listener *listener, void *data) 
 {
@@ -2515,12 +2585,6 @@ static void output_frame(struct wl_listener *listener, void *data)
 
         borders_toplevel_update(toplevel);
     }
-    
-    wl_list_for_each(toplevel, &GLOBAL_SERVER->active_workspace->floating_toplevels, link)
-    {
-        borders_toplevel_update(toplevel);
-    }
-
 
     wlr_scene_output_commit(scene_output, NULL);
     wlr_scene_output_send_frame_done(scene_output, &now);
@@ -5134,3 +5198,4 @@ int main(int argc, char *argv[])
 
     return 0;
 }
+
