@@ -20,7 +20,7 @@ PKGS      = wlroots-0.18 wayland-server xkbcommon libinput lua $(XLIBS) pixman-1
 HELLWMCFLAGS = `$(PKG_CONFIG) --cflags $(PKGS)` $(CFLAGS) $(DEVCFLAGS)
 LDLIBS    = `$(PKG_CONFIG) --libs $(PKGS)` $(LIBS)
 
-all: hellwm hellcli
+all: hellwm hellcli aether
 hellwm: hellwm.o
 	$(CC) hellwm.o $(LDLIBS) $(LDFLAGS) $(HELLWMCFLAGS) -o $@
 hellwm.o: hellwm.c cursor-shape-v1-protocol.h xdg-shell-protocol.h wlr-layer-shell-unstable-v1-protocol.h
@@ -42,8 +42,11 @@ cursor-shape-v1-protocol.h:
 hellcli:
 	$(CC) hellcli.c -o $@
 
+aether:
+	$(CC) ./aether_client.c -o $@ `$(PKG_CONFIG) --cflags --libs libevdev`
+
 clean:
-	rm -f hellwm hellcli *.o *-protocol.h *.log
+	rm -f hellwm hellcli aether *.o *-protocol.h *.log
 
 # CREATE PACKAGE
 release: clean

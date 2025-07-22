@@ -12,8 +12,11 @@
 #include <sys/un.h>
 #include <stdbool.h>
 #include <pthread.h>
-#include <sys/socket.h>
-#include <linux/input-event-codes.h>
+
+#include <errno.h> // For errno
+#include <netdb.h> // For getaddrinfo
+#include <sys/socket.h> // For socket functions
+#include <linux/input-event-codes.h> // For codes for mouse, keyboard etc.
 
 #include <lua.h>
 #include <lauxlib.h>
@@ -65,6 +68,8 @@
 #include <wlr/types/wlr_foreign_toplevel_management_v1.h>
 
 #include "wlr-layer-shell-unstable-v1-protocol.h"
+
+#include "aether_protocol.h"
 
 #define IPC_SOCKET_PATH "/tmp/hellwm.sock"
 #define IPC_BUFFER_SIZE 256
@@ -138,6 +143,11 @@ struct hellwm_server
     unsigned cursor_mode;
     unsigned mapped_functions;
     double cursor_grab_x, cursor_grab_y;
+
+    /* aether */
+    bool portal_active;
+    int portal_socket_fd;
+    struct wl_event_source *portal_event_source; // To monitor the socket
 
     /* hellwm */
     pthread_t ipc_thread;
@@ -484,9 +494,20 @@ struct hellwm_binary_workspaces_manager
     hellwm_config_keybind **keybinds;
 };
 
+struct aether_portal_config
+{
+    enum hellwm_direction direction;
+    char *hostname;
+    int port;
+};
+
 struct hellwm_config_manager
 {
     unsigned tiling_layout;
+
+    /* aether portal */
+    int portal_count;
+    struct aether_portal_config **portals;
 
     /* appearance */
     hellwm_config_manager_decoration *decoration;
@@ -688,6 +709,10 @@ static void xdg_popup_commit(struct wl_listener *listener, void *data);
 static void xdg_popup_destroy(struct wl_listener *listener, void *data);
 static void server_new_xdg_popup(struct wl_listener *listener, void *data);
 static void server_new_xdg_toplevel(struct wl_listener *listener, void *data);
+static int aether_handle_client_activity(int fd, uint32_t mask, void *data);
+
+void aether_portal_deactivate(struct hellwm_server *server);
+void aether_portal_activate(struct hellwm_server *server, struct aether_portal_config *portal);
 
 void layout_dwindle(struct hellwm_workspace *workspace);
 void calculate_layout(struct hellwm_node *node, struct wlr_box *area, int inner_gap, int outer_gap, int border_width);
@@ -1950,6 +1975,18 @@ static void keyboard_handle_key(struct wl_listener *listener, void *data)
     struct wlr_keyboard_key_event *event = data;
     struct wlr_seat *seat = server->seat;
 
+    if (server->portal_active)
+    {
+        struct aether_event net_event =
+        {
+            .type = AETHER_EVENT_KEY,
+            .value1 = event->keycode, // The raw keycode
+            .value2 = event->state,   // WL_KEYBOARD_KEY_STATE_PRESSED or RELEASED
+        };
+        send(server->portal_socket_fd, &net_event, sizeof(net_event), 0);
+        return; // Prevent local processing
+    }
+
     /* Translate libinput keycode -> xkbcommon */
     uint32_t keycode = event->keycode + 8;
 
@@ -2211,6 +2248,50 @@ static void process_cursor_resize(struct hellwm_server *server, uint32_t time)
 
 static void process_cursor_motion(struct hellwm_server *server, uint32_t time)
 {
+        if (server->portal_active) {
+        // This is handled in the cursor_motion listeners directly.
+        // We can leave this function to handle the activation/deactivation.
+        return;
+    }
+
+    // --- Activation Logic ---
+    // Get the current output the cursor is on
+    struct wlr_output *wlr_output = wlr_output_layout_output_at(server->output_layout, server->cursor->x, server->cursor->y);
+    if (!wlr_output) return;
+
+    // Check against configured portals
+    for (int i = 0; i < server->config_manager->portal_count; i++)
+    {
+        struct aether_portal_config *portal = server->config_manager->portals[i];
+        bool should_activate = false;
+
+        // Check boundary conditions (with a 1px buffer)
+        if (portal->direction == HELLWM_RIGHT && server->cursor->x >= (wlr_output->width - 1))
+        {
+            should_activate = true;
+        }
+        else if (portal->direction == HELLWM_LEFT && server->cursor->x <= 0) 
+        {
+            should_activate = true;
+        }
+        else if (portal->direction == HELLWM_UP && server->cursor->y <= 0) 
+        {
+            should_activate = true;
+        }
+        else if (portal->direction == HELLWM_DOWN && server->cursor->y <= (wlr_output->height - 1)) 
+        {
+            should_activate = true;
+        }
+
+        if (should_activate)
+        {
+            // Found a portal to activate!
+            aether_portal_activate(server, portal);
+            wlr_seat_pointer_clear_focus(server->seat); // Hide local cursor
+            return; // Stop further local processing
+        }
+    }
+
     if(server->cursor_mode == HELLWM_CURSOR_MOVE) {
         process_cursor_move(server, time);
         return;
@@ -2249,13 +2330,28 @@ static void server_cursor_motion(struct wl_listener *listener, void *data)
      * pointer motion event (i.e. a delta) */
     struct hellwm_server *server = wl_container_of(listener, server, cursor_motion);
     struct wlr_pointer_motion_event *event = data;
-    /* The cursor doesn't move unless we tell it to. The cursor automatically
-     * handles constraining the motion to the output layout, as well as any
-     * special configuration applied for the specific input device which
-     * generated the event. You can pass NULL for the device if you want to move
-     * the cursor around without any input. */
-    wlr_cursor_move(server->cursor, &event->pointer->base, event->delta_x, event->delta_y);
-    process_cursor_motion(server, event->time_msec);
+
+    /* If portal is active we can talk with other hellwm */
+    if (server->portal_active)
+    {
+        struct aether_event net_event =
+        {
+            .type = AETHER_EVENT_MOUSE_MOTION_REL,
+            .value1 = (int32_t)event->delta_x,
+            .value2 = (int32_t)event->delta_y,
+        };
+        send(server->portal_socket_fd, &net_event, sizeof(net_event), 0);
+    }
+    else
+    {
+        /* The cursor doesn't move unless we tell it to. The cursor automatically
+         * handles constraining the motion to the output layout, as well as any
+         * special configuration applied for the specific input device which
+         * generated the event. You can pass NULL for the device if you want to move
+         * the cursor around without any input. */
+        wlr_cursor_move(server->cursor, &event->pointer->base, event->delta_x, event->delta_y);
+        process_cursor_motion(server, event->time_msec);
+    }
 }
 
 static void server_cursor_motion_absolute(struct wl_listener *listener, void *data) 
@@ -2317,6 +2413,18 @@ static void server_cursor_button(struct wl_listener *listener, void *data)
 {
     struct hellwm_server *server = wl_container_of(listener, server, cursor_button);
     struct wlr_pointer_button_event *event = data;
+
+    if (server->portal_active)
+    {
+        struct aether_event net_event =
+        {
+            .type = AETHER_EVENT_MOUSE_BUTTON,
+            .value1 = event->button,
+            .value2 = event->state,
+        };
+        send(server->portal_socket_fd, &net_event, sizeof(net_event), 0);
+        return; // Prevent local processing
+    }
 
     wlr_seat_pointer_notify_button(server->seat, event->time_msec, event->button, event->state);
 
@@ -2382,6 +2490,20 @@ static void server_cursor_axis(struct wl_listener *listener, void *data)
     struct hellwm_server *server = wl_container_of(listener, server, cursor_axis);
     struct wlr_pointer_axis_event *event = data;
     /* Notify the client with pointer focus of the axis event. */
+    
+    if (server->portal_active)
+    {
+        struct aether_event net_event =
+        {
+            .type = AETHER_EVENT_MOUSE_SCROLL,
+            .value1 = (event->orientation == WL_POINTER_AXIS_VERTICAL_SCROLL) ? 0 : 1,
+            .value2 = (GLOBAL_SERVER->config_manager->input->natural_scroll == 0) ? -event->delta : event->delta
+        };
+        send(server->portal_socket_fd, &net_event, sizeof(net_event), 0);
+        //LOG("(float)(int32_t)net_event.value2: %f\n", (float)(int32_t)(event->delta));
+        //LOG("(float)net_event.value2: %f\n\n", event->delta);
+        return; // Prevent local processing
+    }
     wlr_seat_pointer_notify_axis(server->seat, event->time_msec, event->orientation, event->delta, event->delta_discrete, event->source, event->relative_direction);
 }
 
@@ -4313,6 +4435,38 @@ int hellwm_lua_decoration_animation_direction(lua_State *L)
     return 0;
 }
 
+int hellwm_lua_add_portal(lua_State *L)
+{
+    struct hellwm_server *server = GLOBAL_SERVER;
+    const char* direction_str = lua_tostring(L, 1);
+    const char* hostname = lua_tostring(L, 2);
+    int port = lua_tointeger(L, 3);
+
+    struct aether_portal_config *portal = calloc(1, sizeof(struct aether_portal_config));
+    portal->hostname = strdup(hostname);
+    portal->port = port;
+
+    // Convert string direction to your enum
+    if (strcmp(direction_str, "left") == 0) portal->direction = HELLWM_LEFT;
+    else if (strcmp(direction_str, "right") == 0) portal->direction = HELLWM_RIGHT;
+    else if (strcmp(direction_str, "up") == 0) portal->direction = HELLWM_UP;
+    else if (strcmp(direction_str, "down") == 0) portal->direction = HELLWM_DOWN;
+    else
+    {
+        LOG("Invalid aether_portal direction: %s\n", direction_str);
+        free(portal->hostname);
+        free(portal);
+        return 0;
+    }
+
+    // Add it to the config manager
+    server->config_manager->portals = realloc(server->config_manager->portals, (server->config_manager->portal_count + 1) * sizeof(struct aether_portal_config*));
+    server->config_manager->portals[server->config_manager->portal_count] = portal;
+    server->config_manager->portal_count++;
+
+    return 0;
+}
+
 void hellwm_config_manager_load_from_file(char * filename)
 {
     LOG("Loading config from: %s\n", filename);
@@ -4374,6 +4528,9 @@ void hellwm_config_manager_load_from_file(char * filename)
     lua_pushcfunction(L, hellwm_lua_decoration_animation_direction);
     lua_setglobal(L, "animation_direction");
 
+    lua_pushcfunction(L, hellwm_lua_add_portal);
+    lua_setglobal(L, "aether_portal");
+
     if (luaL_loadfile(L, filename) || lua_pcall(L, 0, 0, 0))
     {
         // TODO > Create dummy config manager to store all vars from config, so in case of an error it instead of crash it will just not apply.
@@ -4389,6 +4546,151 @@ void hellwm_config_manager_load_from_file(char * filename)
     lua_close(L);
 
     hellwm_config_print(GLOBAL_SERVER->config_manager);
+}
+
+// Deactivates the portal, returning control to the local machine
+void aether_portal_deactivate(struct hellwm_server *server)
+{
+    if (!server->portal_active) {
+        return;
+    }
+
+    // Stop listening to the socket in the event loop
+    if (server->portal_event_source) {
+        wl_event_source_remove(server->portal_event_source);
+    }
+    
+    // Close the socket
+    if (server->portal_socket_fd >= 0) {
+        close(server->portal_socket_fd);
+    }
+
+    // Reset state
+    server->portal_active = false;
+    server->portal_socket_fd = -1;
+    server->portal_event_source = NULL;
+    
+    // Make the local cursor visible again
+    wlr_cursor_set_xcursor(server->cursor, server->cursor_mgr, "default");
+    
+    LOG("Aether Portal deactivated.\n");
+}
+
+/**
+ * Event loop handler for the Aether Portal socket.
+ * This is called when the socket is readable. A readable event with 0 bytes
+ * indicates that the client has closed the connection.
+ */
+static int aether_handle_client_activity(int fd, uint32_t mask, void *data)
+{
+    struct hellwm_server *server = data;
+    char buf[1];
+
+    // Check for errors or disconnection.
+    // We use recv with MSG_PEEK to check the socket without consuming data.
+    if ((mask & WL_EVENT_HANGUP) || (mask & WL_EVENT_ERROR)) {
+        LOG("Aether Portal client hung up or errored.\n");
+        aether_portal_deactivate(server);
+        return 0; // The source is removed in deactivate, so this value doesn't matter.
+    }
+
+    ssize_t len = recv(fd, buf, sizeof(buf), MSG_PEEK | MSG_DONTWAIT);
+    if (len == 0) {
+        // Graceful shutdown from the client
+        LOG("Aether Portal client disconnected gracefully.\n");
+        aether_portal_deactivate(server);
+    } else if (len < 0 && errno != EWOULDBLOCK && errno != EAGAIN) {
+        // An actual read error occurred
+        LOG("Aether Portal socket error: %s\n", strerror(errno));
+        aether_portal_deactivate(server);
+    }
+    
+    // In all other cases (data is available or would block), we keep the
+    // source active and let the input handlers read the real data.
+    return 1;
+}
+
+// Activates the portal by connecting to the client
+void aether_portal_activate(struct hellwm_server *server, struct aether_portal_config *portal)
+{
+    if (server->portal_active) {
+        LOG("Portal is already active, ignoring request.\n");
+        return;
+    }
+    if (!portal) {
+        LOG("Attempted to activate a NULL portal.\n");
+        return;
+    }
+
+    LOG("Activating Aether Portal to %s:%d\n", portal->hostname, portal->port);
+
+    struct addrinfo hints;
+    struct addrinfo *result, *rp;
+    int new_socket_fd, s;
+
+    // Convert port number to string for getaddrinfo
+    char port_str[6]; // max port is 65535
+    snprintf(port_str, sizeof(port_str), "%d", portal->port);
+    
+    memset(&hints, 0, sizeof(struct addrinfo));
+    hints.ai_family = AF_UNSPEC;     // Allow IPv4 or IPv6
+    hints.ai_socktype = SOCK_STREAM; // TCP socket
+    hints.ai_flags = 0;
+    hints.ai_protocol = 0;
+
+    s = getaddrinfo(portal->hostname, port_str, &hints, &result);
+    if (s != 0) {
+        LOG("getaddrinfo: %s\n", gai_strerror(s));
+        return;
+    }
+
+    // getaddrinfo() returns a list of address structures.
+    // Try each address until we successfully connect().
+    for (rp = result; rp != NULL; rp = rp->ai_next) {
+        new_socket_fd = socket(rp->ai_family, rp->ai_socktype, rp->ai_protocol);
+        if (new_socket_fd == -1) {
+            continue;
+        }
+
+        if (connect(new_socket_fd, rp->ai_addr, rp->ai_addrlen) != -1) {
+            break; // Success
+        }
+
+        close(new_socket_fd);
+    }
+
+    freeaddrinfo(result); // No longer needed
+
+    if (rp == NULL) { // No address succeeded
+        LOG("Could not connect to Aether Portal client at %s.\n", portal->hostname);
+        return;
+    }
+
+    // --- We are now connected ---
+    
+    server->portal_socket_fd = new_socket_fd;
+    server->portal_active = true;
+    
+    // Add the socket to the wlroots event loop to monitor for disconnection
+    server->portal_event_source = wl_event_loop_add_fd(
+        server->event_loop,
+        server->portal_socket_fd,
+        WL_EVENT_READABLE,
+        aether_handle_client_activity,
+        server // Pass our server state to the handler
+    );
+
+    if (!server->portal_event_source) {
+        LOG("Failed to add socket to event loop!\n");
+        close(server->portal_socket_fd);
+        server->portal_active = false;
+        return;
+    }
+
+    // Hide the local cursor since control is now remote
+    wlr_seat_pointer_clear_focus(server->seat);
+    wlr_cursor_set_xcursor(server->cursor, server->cursor_mgr, "default");
+    LOG("Aether Portal activated successfully.\n");
 }
 
 bool hellwm_convert_string_to_xkb_keys(xkb_keysym_t **keysyms_arr, const char *keys_str, int *num_keys)
