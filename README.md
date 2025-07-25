@@ -1,5 +1,7 @@
 # HellWM Wayland Compositor
 
+<img width="1280" height="720" alt="image" src="https://github.com/user-attachments/assets/e042d889-bad2-4df1-914d-83974afaaa6f" />
+
 ## Why?
 I got inspired by Vaxry, I thoguht that if someone from my country could create 'base' for Hyprland in a month, I should try writing my own WaylandCompositor too - it can't be that hard... right? (Oh god, how mistaken I was).
 
